@@ -50,12 +50,13 @@ def run_backtest(
     df: pd.DataFrame,
     df_daily: pd.DataFrame | None = None,
     funding_rates: pd.DataFrame | None = None,
+    start_balance: float | None = None,
 ) -> pd.DataFrame:
     df = ind.add_indicators(df)
     if df_daily is not None and not df_daily.empty:
         df = ind.add_daily_trend(df, df_daily)
     trades = []
-    balance = config.CAPITAL_USDT
+    balance = start_balance if start_balance is not None else config.CAPITAL_USDT
 
     i = 2
     while i < len(df) - 1:

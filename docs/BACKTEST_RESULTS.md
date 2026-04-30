@@ -24,18 +24,26 @@ Latest result:
 
 **Note:** BTC's flat backtest is positive, but its walk-forward average is still near break-even. Do not move BTC alone to live trading.
 
-## Multi-Symbol Flat Backtest
+## Multi-Symbol Portfolio Backtest (corrected capital allocation)
 
-Latest `multi_symbol_results.csv` summary:
+Latest `multi_symbol_results.csv` runs with 1000 USDT total, 250 USDT per symbol:
 
-| Symbol | Trades | Win Rate | PnL | Max DD | Return |
-|---|---:|---:|---:|---:|---:|
-| BTC/USDT | 86 | 66.3% | +249.88 | 54.47 | 24.99% |
-| ETH/USDT | 77 | 76.6% | +369.30 | 35.36 | 36.93% |
-| SOL/USDT | 90 | 78.9% | +601.86 | 67.49 | 60.19% |
-| BNB/USDT | 70 | 72.9% | +207.43 | 58.48 | 20.74% |
+| Symbol | Start | Trades | Win Rate | PnL | Max DD | Return |
+|---|---:|---:|---:|---:|---:|---:|
+| BTC/USDT | 250 | 86 | 66.3% | +62.21 | 13.61 | 24.88% |
+| ETH/USDT | 250 | 77 | 76.6% | +92.37 | 8.83 | 36.95% |
+| SOL/USDT | 250 | 90 | 78.9% | +150.49 | 16.88 | 60.20% |
+| BNB/USDT | 250 | 70 | 72.9% | +51.86 | 14.62 | 20.74% |
 
-Flat backtest is 4/4 positive, average +357 USDT/symbol. Walk-forward (see [WALK_FORWARD.md](WALK_FORWARD.md)) and live/paper testing are still required for the live decision.
+**Portfolio totals:**
+
+| Metric | Value |
+|---|---:|
+| Total PnL (3 yr) | +356.93 USDT (+35.69%) |
+| **CAGR** | **+10.71%/yr** |
+| Conservative summed DD | 53.94 USDT (5.4%) |
+
+Earlier reports presented the per-symbol PnLs summed to "+1,178 USDT" — that mistakenly assumed 1000 USDT per symbol. Corrected: see [METHODOLOGY_FIX.md](METHODOLOGY_FIX.md).
 
 ## Funding Model
 

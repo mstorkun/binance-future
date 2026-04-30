@@ -1,28 +1,43 @@
 # Multi-Symbol Test Results
 
+> ⚠️ **PORTFOLIO TOTALS REVISED (2026-04-30)**
+>
+> Earlier versions of this document presented "+1,178 USDT" as the portfolio
+> result. That was a misreading — each symbol had been backtested with its
+> own 1000 USDT sandbox, and the four results were summed. With the correct
+> shared-capital model (1000 USDT split across 4 symbols at 250 each), the
+> realistic portfolio result is **+356.93 USDT over 3 years (CAGR 10.71%/yr)**.
+>
+> See [METHODOLOGY_FIX.md](METHODOLOGY_FIX.md) for the bug, the fix, and the
+> revised verdict.
+
 **Question:** Is the Donchian breakout strategy specific to BTC, or a general edge?
 
 **Method:** 3-year backtest + walk-forward across BTC, ETH, SOL, BNB with the same parameter set. Both flat backtest and walk-forward use historical funding data; if not available, they fall back to the conservative default.
 
-> Numbers below reflect the **post-notional-fix** run. The earlier (~+76 BTC, +474 SOL) figures came from the doubled cost computation that was corrected in `backtest.py:127`.
+The numbers below reflect the **post-notional-fix + post-capital-allocation-fix** run.
 
 ---
 
-## 1. Flat Backtest (3 years, same parameters)
+## 1. Flat Backtest — Per Symbol (each tested with 250 USDT, 1/4 of total capital)
 
 ```
-symbol     trades  win_rate  total_pnl   max_dd   pnl_pct  pnl_dd
-BTC/USDT       86    66.3%   +249.88    54.47    24.99%    4.59
-ETH/USDT       77    76.6%   +369.30    35.36    36.93%   10.45  <- strong
-SOL/USDT       90    78.9%   +601.86    67.49    60.19%    8.92  <- strongest
-BNB/USDT       70    72.9%   +207.43    58.48    20.74%    3.55
+symbol     start  trades  win_rate  total_pnl   max_dd   pnl_pct
+BTC/USDT     250      86    66.3%     +62.21    13.61    24.88%
+ETH/USDT     250      77    76.6%     +92.37     8.83    36.95%
+SOL/USDT     250      90    78.9%    +150.49    16.88    60.20%
+BNB/USDT     250      70    72.9%     +51.86    14.62    20.74%
 ```
 
-**Summary:**
+**Per-symbol summary:**
 - 4/4 symbols positive PnL.
-- Average PnL: +357 USDT/symbol over 3 years.
-- Strongest: SOL (+60% return).
-- Weakest: BNB and BTC (+21% and +25% respectively).
+- Strongest: SOL (+60% return on its 250 USDT slice).
+- Weakest: BNB and BTC (+21% / +25%).
+
+**Portfolio total (1000 USDT split into 4 × 250):**
+- Total PnL (3 yr): **+356.93 USDT (+35.69%)**
+- **CAGR: +10.71%/yr**
+- Conservative summed DD: 53.94 USDT (5.4%)
 
 ---
 
@@ -79,8 +94,9 @@ Backtest: +602 USDT, WF: 6/7 positive. SOL volatility is high; slippage may be w
 
 ### Option B - Portfolio: ETH + SOL + BNB (current)
 Split 1,000 USDT across 3 symbols (333 USDT each). This is **already implemented** - `bot.py` iterates over `config.SYMBOLS = ["SOL/USDT", "ETH/USDT", "BNB/USDT"]`.
-- Combined backtest PnL: +369 + 602 + 207 = **+1,178 USDT** (3 years).
+- Approximate combined backtest PnL: +124 + 200 + 69 ≈ **+393 USDT (3 years, ~11.7%/yr CAGR)** — proportional to the 250-USDT-per-symbol numbers above scaled to 333.
 - Correlation caveat: crypto coins correlate ~0.85, so true diversification is limited.
+- The earlier "+1,178 USDT" claim came from running each symbol with its own 1000 USDT sandbox; that was a methodology bug — see [METHODOLOGY_FIX.md](METHODOLOGY_FIX.md).
 
 ### Option C - Drop BTC entirely
 BTC excluded; only ETH/SOL/BNB are traded. (Matches current config.)

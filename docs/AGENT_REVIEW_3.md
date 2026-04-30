@@ -1,5 +1,18 @@
 # 5-Agent Review Round 3 — Hybrid Plan Validation
 
+> ⚠️ **VERDICT SUSPENDED (2026-04-30)**
+>
+> Codex flagged a critical methodology error after this review was published:
+> the multi-symbol backtest was running each symbol with a full 1000 USDT
+> sandbox, then summing the four results as if they were a single portfolio.
+> When corrected to a real shared-capital test (1000 USDT split across 4
+> symbols at 250 USDT each), the realistic outcome is **+357 USDT over 3
+> years = ~10.7%/yr CAGR**, not 30-60%/yr.
+>
+> The "GO with refined hybrid" verdict in this document is therefore
+> **suspended**. See [METHODOLOGY_FIX.md](METHODOLOGY_FIX.md) for the
+> corrected numbers and revised plan.
+
 **Date:** 2026-04-30
 **Trigger:** User request for 1H, 5x, 10-20% risk, 100%+/yr.
 Hybrid plan proposed: 1H, 5x, 3% per-trade, 50-80%/yr target.
