@@ -1,69 +1,69 @@
 # Binance Futures Trading Bot
 
-Binance Futures için 4 saatlik Donchian breakout trend takip botu.
+A 4-hour Donchian breakout trend-following bot for Binance Futures.
 
-> Durum: Araştırma ve test aşamasında. Backtest altyapısı ilerledi, ancak canlı para ile kullanılmaya hazır değil. En güncel karar için `docs/MULTI_SYMBOL.md` ve `docs/WALK_FORWARD.md` dosyalarından başlayın.
+> **Status:** Research and testing phase. The backtest infrastructure has matured, but the bot is **not** ready for live trading. Start with [docs/MULTI_SYMBOL.md](docs/MULTI_SYMBOL.md) and [docs/WALK_FORWARD.md](docs/WALK_FORWARD.md) for the latest decision context.
 
-## Hızlı Bakış
+## Quick Overview
 
-| Başlık | Değer |
+| Item | Value |
 |---|---|
-| Sermaye varsayımı | 1000 USDT |
-| Ana timeframe | 4 saat |
-| Yüksek timeframe filtresi | 1D EMA50 |
-| Kaldıraç | 3x |
-| İşlem başı risk | %2 |
-| Ana sinyal | Donchian breakout |
-| Filtreler | Hacim, ADX, RSI, 1D trend |
-| Çıkış | ATR initial SL, trailing SL, Donchian exit |
+| Target capital | 1,000 USDT |
+| Primary timeframe | 4 hours |
+| Higher timeframe filter | 1D EMA50 |
+| Leverage | 3x |
+| Risk per trade | 2% |
+| Primary signal | Donchian breakout |
+| Filters | Volume, ADX, RSI, 1D trend |
+| Exits | ATR initial SL, trailing SL, Donchian exit |
 
-## Strateji
+## Strategy
 
-Giriş mantığı:
+**Entry logic:**
 
-1. 4H kapanış fiyatı önceki Donchian kanalını kırar.
-2. Hacim, 20 bar ortalamasının belirlenen katının üstündedir.
-3. ADX trend gücü eşiğinin üstündedir.
-4. RSI aşırı alım/satım bölgesinde değildir.
-5. 1D trend filtresi aynı yönü onaylar.
+1. The 4H close breaks the prior Donchian channel.
+2. The bar volume is above a multiple of the 20-bar moving average.
+3. ADX is above the trend-strength threshold.
+4. RSI is not in extreme overbought/oversold territory.
+5. The 1D trend filter confirms the same direction.
 
-Çıkış mantığı:
+**Exit logic:**
 
-- İlk stop-loss: ATR tabanlı.
-- Trailing stop: kazancın bir bölümünü kilitler.
-- Erken çıkış: ters yönde daha kısa Donchian kanal kırılımı.
+- Initial stop-loss: ATR-based.
+- Trailing stop: locks in a portion of the gains.
+- Early exit: a shorter Donchian channel breaks in the opposite direction.
 
-## Güncel Bulgular
+## Current Findings
 
-- Tek BTC backtest sonucu zayıf ve walk-forward tarafında negatif.
-- Çoklu sembol testinde ETH, SOL ve BNB sonuçları BTC'den daha iyi görünüyor.
-- 4 sembol walk-forward özeti: 3/4 sembolde test ortalaması pozitif, fakat train-test farkı hâlâ yüksek.
-- Sonuç: Strateji umut verici olabilir, ama overfitting riski devam ediyor. Testnet/paper aşamasına geçmeden önce ek sağlamlık testleri gerekli.
+- The single-BTC backtest is weak and walk-forward is borderline negative.
+- Multi-symbol testing on ETH, SOL, and BNB looks better than BTC.
+- 4-symbol walk-forward summary: 3/4 symbols have a positive test average, but the train-vs-test gap is still large.
+- Verdict: the strategy may be promising, but overfitting risk remains. Additional robustness testing is required before any testnet/paper-trading stage.
 
-## Dosyalar
+## Files
 
 ```text
-config.py                    Parametreler
-data.py                      Canlı veri ve borsa sorguları
-indicators.py                ATR, RSI, ADX, Donchian, günlük trend
-strategy.py                  Sinyal ve çıkış kuralları
-risk.py                      Pozisyon boyutu ve SL/TP hesabı
-order_manager.py             Emir açma, SL güncelleme, pozisyon kapama
-bot.py                       Tek sembollü testnet/canlı bot döngüsü
-backtest.py                  Tek sembol backtest
-optimize.py                  Parametre tarama
-walk_forward.py              Tek sembol walk-forward
-multi_symbol_backtest.py     Çoklu sembol düz backtest
-multi_symbol_walk_forward.py Çoklu sembol walk-forward
-monte_carlo.py               Trade-shuffle drawdown testi
-docs/                        İnceleme ve sonuç raporları
+config.py                    Parameters
+data.py                      Live data and exchange queries
+indicators.py                ATR, RSI, ADX, Donchian, daily trend
+strategy.py                  Signal and exit rules
+risk.py                      Position size and SL/TP calculation
+order_manager.py             Order placement, SL update, position close
+bot.py                       Multi-symbol portfolio bot loop (testnet/live)
+backtest.py                  Single-symbol backtest
+optimize.py                  Parameter sweep
+walk_forward.py              Single-symbol walk-forward
+multi_symbol_backtest.py     Multi-symbol straight backtest
+multi_symbol_walk_forward.py Multi-symbol walk-forward
+monte_carlo.py               Monte Carlo trade-shuffle
+docs/                        Review and result reports
 ```
 
-## Kurulum
+## Setup
 
 ```bash
 pip install -r requirements.txt
-copy .env.example .env
+cp .env.example .env
 python backtest.py
 python walk_forward.py
 python multi_symbol_backtest.py
@@ -71,8 +71,12 @@ python multi_symbol_walk_forward.py
 python monte_carlo.py --trades backtest_results.csv
 ```
 
-Canlı/testnet bot için API anahtarlarını `.env` veya ortam değişkenlerine girin. `config.TESTNET = True` kalmadan gerçek para moduna geçmeyin.
+For the live/testnet bot, place your API keys in `.env` or environment variables. **Do not switch off `config.TESTNET = True` without going through the gating criteria.**
 
-## Güvenlik Notu
+## Python Version
 
-Bu repo yatırım tavsiyesi değildir. Vadeli işlemler kaldıraç, likidasyon, funding, slippage ve API/bağlantı riski taşır. Canlıya geçmeden önce testnet, paper trading, alarm/monitoring ve küçük sermaye aşaması zorunlu kabul edilmelidir.
+Python 3.10+ is required (the codebase uses PEP 604 union types such as `pd.DataFrame | None`).
+
+## Safety Notice
+
+This repository is **not** investment advice. Futures trading carries leverage, liquidation, funding, slippage, and API/connectivity risks. Before any live trading, the following stages are mandatory: testnet, paper trading, alarm/monitoring, and a small-capital ramp-up.

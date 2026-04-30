@@ -1,126 +1,126 @@
-# Notional Bug Fix — Etki Raporu
+# Notional Bug Fix — Impact Report
 
-**Tarih:** 2026-04-30
-**Bulan:** 5 ajan denetim turu (Ajan 1 — Funding Cost Modeling)
-**Düzeltme:** `backtest.py:127`
+**Date:** 2026-04-30
+**Found by:** 5-agent audit round (Agent 1 — Funding Cost Modeling)
+**Fix:** `backtest.py:127`
 
 ---
 
 ## Bug
 
 ```python
-# YANLIŞ (çift sayım)
+# WRONG (double counting)
 notional = (entry + exit_price) * size
 
-# DOĞRU (ortalama × büyüklük)
+# CORRECT (average × size)
 notional = (entry + exit_price) / 2 * size
 ```
 
-`(entry + exit_price)` zaten iki fiyatın **toplamı**. Ortalama nominal için 2'ye bölünmesi gerekiyor. Bug nedeniyle:
-- Komisyon (%0.08) **2× düşülüyordu**
-- Slippage (%0.15) **2× düşülüyordu**
-- Funding (signed) **2× düşülüyordu**
+`(entry + exit_price)` is already the **sum** of the two prices. It needs to be divided by 2 for the average notional. Due to the bug:
+- Commission (0.08%) was being **deducted 2×**
+- Slippage (0.15%) was being **deducted 2×**
+- Funding (signed) was being **deducted 2×**
 
-Bu, gerçek getiriyi sistematik olarak baskılıyordu.
+This was systematically suppressing real returns.
 
 ---
 
-## Etki — Düz Backtest (3 yıl)
+## Impact — Flat Backtest (3 years)
 
-| Sembol | Önce (bug'lı) | Sonra (fix) | Δ |
+| Symbol | Before (buggy) | After (fix) | Δ |
 |---|---:|---:|---:|
 | BTC/USDT | +76.03 | **+249.88** | +173.85 (+229%) |
 | ETH/USDT | +243.94 | **+369.30** | +125.36 (+51%) |
 | SOL/USDT | +473.80 | **+601.86** | +128.06 (+27%) |
 | BNB/USDT | +79.11 | **+207.43** | +128.32 (+162%) |
-| **Ortalama** | +218 | **+357** | +%64 |
+| **Average** | +218 | **+357** | +64% |
 
-Win rate'ler de yukarı çıktı:
-- BTC: %55.8 → **%66.3**
-- ETH: %63.6 → **%76.6**
-- SOL: %72.2 → **%78.9**
-- BNB: %57.1 → **%72.9**
+Win rates also went up:
+- BTC: 55.8% → **66.3%**
+- ETH: 63.6% → **76.6%**
+- SOL: 72.2% → **78.9%**
+- BNB: 57.1% → **72.9%**
 
-**Yorum:** Gider 2× şiştiği için kazanan trade'ler bile zarar gözüküyordu. Fix sonrası gerçek tablo ortaya çıktı.
+**Interpretation:** Because expenses were inflated 2×, even winning trades looked like losses. The real picture emerged after the fix.
 
 ---
 
-## Etki — Walk-Forward (BTC, 7 dönem)
+## Impact — Walk-Forward (BTC, 7 periods)
 
-| | Önce | Sonra |
+| | Before | After |
 |---|---:|---:|
-| Pozitif dönem | 3/7 | **4/7** |
-| Test ortalama | -13.2$ | **-0.6$** |
-| Train ortalama | +192 | +292 |
-| Train>Test farkı | +205 | +293 |
+| Positive periods | 3/7 | **4/7** |
+| Test average | -13.2$ | **-0.6$** |
+| Train average | +192 | +292 |
+| Train>Test gap | +205 | +293 |
 
-BTC walk-forward break-even'a yakınlaştı ama hala marjinal.
+BTC walk-forward got close to break-even but is still marginal.
 
 ---
 
-## Etki — Multi-Symbol Walk-Forward (4 sembol × 7 dönem)
+## Impact — Multi-Symbol Walk-Forward (4 symbols × 7 periods)
 
-| Sembol | Önce | Sonra |
+| Symbol | Before | After |
 |---|---|---|
-| BTC | 3/7 pozitif, ort -13$ | **4/7**, ort **-0.6$** |
-| ETH | 4/7 pozitif, ort +5$ | **5/7**, ort **+17$** |
-| SOL | 5/7 pozitif, ort +14$ | **6/7**, ort **+29$** |
-| BNB | 4/7 pozitif, ort +7$ | **6/7**, ort **+40$** |
+| BTC | 3/7 positive, avg -13$ | **4/7**, avg **-0.6$** |
+| ETH | 4/7 positive, avg +5$ | **5/7**, avg **+17$** |
+| SOL | 5/7 positive, avg +14$ | **6/7**, avg **+29$** |
+| BNB | 4/7 positive, avg +7$ | **6/7**, avg **+40$** |
 
-**Toplam test pencere:**
-- Önce: 16/28 pozitif (%57)
-- Sonra: **21/28 pozitif (%75)** ← belirgin iyileşme
+**Total test windows:**
+- Before: 16/28 positive (57%)
+- After: **21/28 positive (75%)** ← clear improvement
 
-**Test ortalaması (sembol arası):** +2.3$ → **+21.4$** (10× artış)
+**Test average (across symbols):** +2.3$ → **+21.4$** (10× increase)
 
 ---
 
-## Etki — Monte Carlo (BTC)
+## Impact — Monte Carlo (BTC)
 
-| | Önce | Sonra |
+| | Before | After |
 |---|---:|---:|
-| Tarihsel DD | 54$ | 54$ |
-| MC DD medyan | 98$ | **78$** |
+| Historical DD | 54$ | 54$ |
+| MC DD median | 98$ | **78$** |
 | MC DD p95 | 161$ | **129$** |
 | MC DD max | 225$ | **199$** |
-| MC PnL (sabit) | 76$ | **250$** |
+| MC PnL (fixed) | 76$ | **250$** |
 
-DD p95 161 → 129 (sermayenin %16'sından %13'e düştü).
+DD p95 went 161 → 129 (dropped from 16% to 13% of capital).
 
 ---
 
-## Yeni Verdikt
+## New Verdict
 
-### 4/4 Sembolde Pozitif
-- Düz backtest: 4/4 pozitif (önceden de öyleydi ama PnL çok daha yüksek)
-- Walk-forward: 3/4 sembolde test ortalaması pozitif (BTC marjinal)
-- Toplam test pencerelerinin %75'i pozitif
+### Positive on 4/4 Symbols
+- Flat backtest: 4/4 positive (was already so, but PnL is much higher)
+- Walk-forward: test average positive on 3/4 symbols (BTC marginal)
+- 75% of total test windows positive
 
-### Hala Şart Olanlar
-1. **Block-bootstrap MC** — IID varsayım ihlali
-2. **Çoklu sembol Monte Carlo** — sadece BTC'de yapıldı
-3. **Parametre stabilite haritası** — yakın parametreler de iyi çalışıyor mu?
-4. **Production altyapı** — Telegram, retry, state desync (Ajan 5)
-5. **Testnet 2 ay paper trading**
+### Still Required
+1. **Block-bootstrap MC** — IID assumption violation
+2. **Multi-symbol Monte Carlo** — only done on BTC
+3. **Parameter stability map** — do nearby parameters also work well?
+4. **Production infrastructure** — Telegram, retry, state desync (Agent 5)
+5. **Testnet 2 months paper trading**
 
-### Canlı Karar
+### Live Decision
 
-Strateji "umut verici hipotez" → **"sağlam aday"** seviyesine yükseldi:
-- 4 sembolde pozitif PnL
-- 21/28 walk-forward dönemi karlı
-- DD p95 sermayenin %13'ü (kabul edilebilir)
+The strategy has been upgraded from "promising hypothesis" → **"solid candidate"**:
+- Positive PnL on 4 symbols
+- 21/28 walk-forward periods profitable
+- DD p95 is 13% of capital (acceptable)
 
-Ama **henüz canlı para değil**. Sıradaki kapı testnet/paper trading.
+But **not live money yet**. The next door is testnet/paper trading.
 
 ---
 
 ## Reproducibility
 
 ```bash
-git checkout 5a53f30^      # bug öncesi commit
-python backtest.py          # eski sayılar
+git checkout 5a53f30^      # commit before bug
+python backtest.py          # old numbers
 git checkout main
-python backtest.py          # yeni sayılar (fix uygulanmış)
+python backtest.py          # new numbers (fix applied)
 ```
 
-Tüm sonuçlar `*_results.csv` dosyalarında.
+All results are in `*_results.csv` files.

@@ -1,33 +1,33 @@
-# Çoklu Sembol Test Sonuçları
+# Multi-Symbol Test Results
 
-**Soru:** Donchian breakout stratejisi BTC'ye özel mi, yoksa genel bir kenar (edge) mi?
+**Question:** Is the Donchian breakout strategy specific to BTC, or is it a general edge?
 
-**Yöntem:** Aynı parametre seti ile BTC, ETH, SOL, BNB üzerinde 3 yıllık backtest + walk-forward.
-Düz backtest ve walk-forward tarihsel funding verisi kullanır; veri çekilemezse fallback varsayımına düşer.
+**Method:** 3-year backtest + walk-forward on BTC, ETH, SOL, BNB using the same parameter set.
+The plain backtest and walk-forward use historical funding data; if the data cannot be fetched, the fallback assumption is used.
 
 ---
 
-## 1. Düz Backtest (3 yıl, aynı parametreler)
+## 1. Plain Backtest (3 years, same parameters)
 
 ```
 symbol     trades  win_rate  total_pnl   max_dd  pnl_pct  pnl_dd
 BTC/USDT       86    %55.8      +76.03    54.25    %7.60    1.38
-ETH/USDT       77    %63.6     +243.94    39.81   %24.39    5.98  ← güçlü
-SOL/USDT       90    %72.2     +473.80    71.70   %47.38    6.52  ← çok güçlü
+ETH/USDT       77    %63.6     +243.94    39.81   %24.39    5.98  ← strong
+SOL/USDT       90    %72.2     +473.80    71.70   %47.38    6.52  ← very strong
 BNB/USDT       70    %57.1      +79.11    63.52    %7.91    1.23
 ```
 
-**Özet:**
-- 4/4 sembol pozitif PnL ✓
-- Ortalama PnL: +218 USDT/sembol (3 yıl)
-- En güçlü: SOL (+47% getiri)
-- En zayıf: BTC, BNB (+6-7% getiri)
+**Summary:**
+- 4/4 symbols with positive PnL ✓
+- Average PnL: +218 USDT/symbol (3 years)
+- Strongest: SOL (+47% return)
+- Weakest: BTC, BNB (+6-7% return)
 
 ---
 
-## 2. Walk-Forward (4 sembol × 7 dönem = 28 test penceresi)
+## 2. Walk-Forward (4 symbols × 7 periods = 28 test windows)
 
-Her dönem: 18 ay train + 3 ay test, 3 ay roll.
+Each period: 18 months train + 3 months test, 3 months roll.
 
 ```
 symbol     periods  train_avg  test_avg  test_total  test_pos  pos_ratio  test_dd_avg  overfit
@@ -37,63 +37,63 @@ SOL/USDT         7    +243.9   +13.7       +96.07        5       71.4%      17.2
 BNB/USDT         7    +110.8    +6.8       +47.71        4       57.1%      23.1       +104
 ```
 
-**Özet:**
-- 3/4 sembolde test ortalaması POZİTİF (sadece BTC negatif)
-- 28 dönemden 16'sı pozitif (%57)
-- En güvenilir: **SOL** (5/7 dönem pozitif, +13.7 ortalama, en düşük DD)
-- En kötü: **BTC** (3/7 dönem pozitif, -13.2 ortalama)
+**Summary:**
+- Test average is POSITIVE in 3/4 symbols (only BTC is negative)
+- 16 of 28 periods are positive (57%)
+- Most reliable: **SOL** (5/7 periods positive, +13.7 average, lowest DD)
+- Worst: **BTC** (3/7 periods positive, -13.2 average)
 
 ---
 
-## 3. Yorumlama
+## 3. Interpretation
 
-### İyi haber
+### Good news
 
-- Donchian breakout BTC'ye özel **değil** — 4 sembolde de pozitif
-- ETH/SOL/BNB BTC'den daha iyi performans gösteriyor (altcoinlerde trend daha kalıcı)
-- SOL özellikle güçlü: %71 pozitif dönem, ortalama +13.7 USDT/dönem
+- Donchian breakout is **not** specific to BTC — positive on all 4 symbols
+- ETH/SOL/BNB perform better than BTC (trends are more persistent in altcoins)
+- SOL is particularly strong: 71% positive periods, average +13.7 USDT/period
 
-### Kötü haber
+### Bad news
 
-- BTC tek başına yeterli değil — overfitting çok yüksek (+183 fark)
-- Tüm sembollerde train>test farkı büyük (overfitting var)
-- Test dönemlerinde DD artıyor (avg 18-39 USDT)
+- BTC alone is not enough — overfitting is very high (+183 gap)
+- The train>test gap is large across all symbols (overfitting present)
+- DD increases in test periods (avg 18-39 USDT)
 
-### Net Sonuç
+### Net Conclusion
 
-> **Strateji gerçek bir kenar taşıyor olabilir**, ama kanıt henüz kesin değil.
-> BTC zayıf; SOL/ETH daha umut verici. Canlı karar için parametre stabilitesi,
-> Monte Carlo ve testnet/paper sonuçları beklenmeli.
+> **The strategy may carry a real edge**, but the evidence is not yet conclusive.
+> BTC is weak; SOL/ETH are more promising. For a live decision, parameter stability,
+> Monte Carlo, and testnet/paper results should be awaited.
 
 ---
 
-## 4. Öneriler
+## 4. Recommendations
 
-### Seçenek A — SOL bot (en güçlü sembol)
+### Option A — SOL bot (strongest symbol)
 ```python
 # config.py
 SYMBOL = "SOL/USDT"
 ```
-Backtest: +474 USDT, WF: 5/7 pozitif. Ama SOL volatilitesi yüksek, slippage daha kötü olabilir.
+Backtest: +474 USDT, WF: 5/7 positive. However, SOL volatility is high and slippage may be worse.
 
-### Seçenek B — Portföy: ETH + SOL + BNB
-1000 USDT'yi 3 sembole böl (333 USDT/sembol). Diversifikasyon avantajı.
-- Düz backtest ortalaması: (+244 + 474 + 79) / 3 ≈ +266 USDT/sembol (3 yıl)
-- Korelasyon riski: kripto coinleri birbirine ~0.85 korele, gerçek diversifikasyon sınırlı
+### Option B — Portfolio: ETH + SOL + BNB
+Split 1000 USDT across 3 symbols (333 USDT/symbol). Diversification advantage.
+- Plain backtest average: (+244 + 474 + 79) / 3 ≈ +266 USDT/symbol (3 years)
+- Correlation risk: crypto coins are ~0.85 correlated to each other, so real diversification is limited
 
-### Seçenek C — BTC'yi tamamen at
-BTC liste dışı. Sadece ETH/SOL/BNB.
+### Option C — Drop BTC entirely
+BTC off the list. Only ETH/SOL/BNB.
 
-**Tavsiyem: Seçenek B'yi testnet/paper aşamasında denemek** — canlı para kararı için erken.
+**My recommendation: try Option B in the testnet/paper phase** — it's too early for a real-money decision.
 
 ---
 
-## 5. Sonraki Test Adımları
+## 5. Next Test Steps
 
-Strateji "promising → çalışabilir" seviyesine çıktı. Ama hala şart:
+The strategy has moved from "promising → potentially viable." But the following are still required:
 
-1. **Parametre stabilite haritası** — donchian 18-22, vol 1.3-1.7 dene, gradient yumuşak mı?
-2. **Monte Carlo trade-shuffle** — DD %95 worst-case ölç
-3. **Çoklu sembol bot.py desteği** — şu an tek sembol
-4. **Testnet 1-2 ay paper trading** — slippage/funding gerçek mi?
-5. **Küçük canlı (200 USDT)** — 3 ay performans izlemesi
+1. **Parameter stability map** — try donchian 18-22, vol 1.3-1.7; is the gradient smooth?
+2. **Monte Carlo trade-shuffle** — measure 95% worst-case DD
+3. **Multi-symbol bot.py support** — currently single symbol
+4. **1-2 months testnet paper trading** — is slippage/funding realistic?
+5. **Small live (200 USDT)** — 3-month performance monitoring

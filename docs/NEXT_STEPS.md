@@ -1,95 +1,95 @@
-# Sonraki Adımlar
+# Next Steps
 
-Bu dosya güncel Donchian breakout + çoklu sembol mimarisi için karar listesidir.
+This file is the decision list for the current Donchian breakout + multi-symbol architecture.
 
-## Tamamlananlar
+## Completed
 
-- [x] EMA crossover bırakıldı.
-- [x] Donchian breakout + hacim + 1D trend filtresi eklendi.
-- [x] ADX ve RSI filtreleri eklendi.
-- [x] Tek sembol backtest ve walk-forward güncellendi.
-- [x] Çoklu sembol düz backtest eklendi.
-- [x] Çoklu sembol walk-forward eklendi.
-- [x] Backtest maliyetlerine komisyon, slippage ve funding dahil edildi.
-- [x] Funding modeli tarihsel veri alabilecek şekilde genişletildi.
-- [x] Monte Carlo trade-shuffle aracı eklendi.
+- [x] EMA crossover dropped.
+- [x] Donchian breakout + volume + 1D trend filter added.
+- [x] ADX and RSI filters added.
+- [x] Single-symbol backtest and walk-forward updated.
+- [x] Multi-symbol flat backtest added.
+- [x] Multi-symbol walk-forward added.
+- [x] Commission, slippage, and funding included in backtest costs.
+- [x] Funding model extended to support historical data.
+- [x] Monte Carlo trade-shuffle tool added.
 
-## Şu Anki Karar
+## Current Decision
 
-Canlı para ile çalıştırma yok.
+No live-money execution.
 
-Mevcut kanıt:
+Existing evidence:
 
-- BTC tek başına zayıf.
-- ETH/SOL/BNB daha umut verici.
-- Çoklu sembol walk-forward pozitif sinyal veriyor ama train-test farkı yüksek.
+- BTC alone is weak.
+- ETH/SOL/BNB are more promising.
+- Multi-symbol walk-forward gives positive signal but train-test gap is high.
 
-Bu yüzden bir sonraki aşama canlı değil, sağlamlık testidir.
+So the next stage is not live, but robustness testing.
 
-## Öncelik 1: Parametre Stabilite Haritası
+## Priority 1: Parameter Stability Map
 
-Amaç: Sonuç tek bir parametre noktasına mı bağlı, yoksa yakın parametrelerde de çalışıyor mu?
+Goal: Is the result tied to a single parameter point, or does it also work on nearby parameters?
 
-Test alanı:
+Test space:
 
 - Donchian: 15, 18, 20, 22, 25, 30
 - Volume multiplier: 1.2, 1.4, 1.5, 1.7, 2.0
 - SL ATR: 1.5, 2.0, 2.5
-- Semboller: ETH, SOL, BNB, BTC kontrol
+- Symbols: ETH, SOL, BNB, BTC control
 
-Başarı kriteri:
+Success criteria:
 
-- Sadece tek kombinasyon değil, yakın komşular da pozitif olmalı.
-- SOL/ETH sonuçları tek bir aşırı optimize parametreye bağlı kalmamalı.
+- Not just a single combination, but nearby neighbors must also be positive.
+- SOL/ETH results must not depend on a single over-optimized parameter.
 
-## Öncelik 2: Monte Carlo Sonuçlarını Sembollere Yay
+## Priority 2: Spread Monte Carlo Results Across Symbols
 
-Araç eklendi ve BTC `backtest_results.csv` için çalıştırıldı.
+Tool added and run for BTC `backtest_results.csv`.
 
-Komut:
+Command:
 
 ```bash
 python monte_carlo.py --trades backtest_results.csv
 ```
 
-Çıktı:
+Output:
 
-- BTC tarihsel DD: 54.25 USDT.
+- BTC historical DD: 54.25 USDT.
 - BTC Monte Carlo DD p95: 160.81 USDT.
 - BTC Monte Carlo DD max: 225.16 USDT.
 
-Yorum: İşlem sırası kötüleşince drawdown yaklaşık 3x büyüyebiliyor. Aynı test ETH/SOL/BNB için de üretilmeli.
+Interpretation: When trade order worsens, drawdown can grow roughly 3x. The same test should also be produced for ETH/SOL/BNB.
 
-## Öncelik 3: Paper/Testnet
+## Priority 3: Paper/Testnet
 
-Koşul:
+Conditions:
 
-- En az 1-2 ay.
-- ETH/SOL/BNB ağırlıklı izleme.
-- Her emir için gerçek fill, slippage ve funding kaydı.
+- At least 1-2 months.
+- ETH/SOL/BNB-weighted monitoring.
+- Real fill, slippage, and funding records for every order.
 
-Gerekli eksikler:
+Required missing pieces:
 
-- Telegram/healthcheck alarmı.
+- Telegram/healthcheck alarm.
 - Reconnect/backoff.
-- Açık pozisyon ve açık emir uyumsuzluğu alarmı.
-- Çoklu sembol `bot.py` desteği.
+- Open position and open order mismatch alarm.
+- Multi-symbol `bot.py` support.
 
-## Canlıya Geçiş Kuralı
+## Live Transition Rule
 
-Ancak şu şartlarla:
+Only under these conditions:
 
-- Testnet/paper sonuçları beklentiyle uyumlu.
-- Maksimum DD Monte Carlo sınırının altında.
-- Alarm ve acil durdurma mekanizması çalışıyor.
-- İlk canlı sermaye 1000 USDT değil, 100-200 USDT.
+- Testnet/paper results are consistent with expectations.
+- Maximum DD is below the Monte Carlo limit.
+- Alarm and emergency stop mechanism is working.
+- Initial live capital is not 1000 USDT, but 100-200 USDT.
 
-## Bırakma Kuralı
+## Abandonment Rule
 
-Bot paper veya küçük canlı aşamada:
+While the bot is in paper or small-live stage:
 
-- 2 ay üst üste negatifse,
-- Beklenen max DD'nin 2 katını aşarsa,
-- Emir/state desync üretirse,
+- If negative for 2 consecutive months,
+- If it exceeds 2x the expected max DD,
+- If it produces order/state desync,
 
-bot durdurulur ve strateji yeniden değerlendirilir.
+the bot is stopped and the strategy is reevaluated.

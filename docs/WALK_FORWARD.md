@@ -1,60 +1,60 @@
-# Walk-Forward Analiz
+# Walk-Forward Analysis
 
-Amaç: Parametrelerin geçmiş veriye fazla uyup uymadığını ölçmek.
+Goal: Measure whether parameters are overfitting to historical data.
 
-Yöntem:
+Method:
 
-- Train: 3000 adet 4H bar, yaklaşık 16-18 ay.
-- Test: 500 adet 4H bar, yaklaşık 3 ay.
-- Roll: 500 adet 4H bar.
-- Her dönemde parametreler sadece train üzerinde seçilir, sonra test döneminde denenir.
+- Train: 3000 4H bars, approximately 16-18 months.
+- Test: 500 4H bars, approximately 3 months.
+- Roll: 500 4H bars.
+- In each period, parameters are selected only on the train set, then tested in the test period.
 
-## Güncel BTC Sonucu
+## Current BTC Result
 
-`walk_forward_results.csv` son çalıştırmada 7 test penceresi içeriyor.
+`walk_forward_results.csv` contains 7 test windows from the latest run.
 
-| Dönem | Train PnL | Test PnL | Test WR | Test Trade | Test DD |
+| Period | Train PnL | Test PnL | Test WR | Test Trades | Test DD |
 |---|---:|---:|---:|---:|---:|
-| 1 | +167.45 | +20.09 | %61.5 | 13 | 37.35 |
-| 2 | +192.30 | -7.11 | %50.0 | 6 | 49.11 |
-| 3 | +241.57 | -69.37 | %33.3 | 9 | 78.39 |
-| 4 | +237.77 | +20.79 | %66.7 | 6 | 6.95 |
-| 5 | +223.36 | -71.76 | %18.2 | 11 | 69.09 |
-| 6 | +59.05 | +16.48 | %75.0 | 4 | 23.35 |
-| 7 | +116.88 | -1.71 | %50.0 | 4 | 3.81 |
+| 1 | +167.45 | +20.09 | 61.5% | 13 | 37.35 |
+| 2 | +192.30 | -7.11 | 50.0% | 6 | 49.11 |
+| 3 | +241.57 | -69.37 | 33.3% | 9 | 78.39 |
+| 4 | +237.77 | +20.79 | 66.7% | 6 | 6.95 |
+| 5 | +223.36 | -71.76 | 18.2% | 11 | 69.09 |
+| 6 | +59.05 | +16.48 | 75.0% | 4 | 23.35 |
+| 7 | +116.88 | -1.71 | 50.0% | 4 | 3.81 |
 
-## Özet
+## Summary
 
-| Metrik | Değer |
+| Metric | Value |
 |---|---:|
-| Test dönemi | 7 |
-| Pozitif test dönemi | 3/7 |
-| Ortalama test PnL | -13.23 USDT |
-| Toplam test PnL | -92.59 USDT |
-| Ortalama train PnL | +176.91 USDT |
-| Ortalama train-test farkı | +190.14 USDT |
+| Test periods | 7 |
+| Positive test periods | 3/7 |
+| Average test PnL | -13.23 USDT |
+| Total test PnL | -92.59 USDT |
+| Average train PnL | +176.91 USDT |
+| Average train-test gap | +190.14 USDT |
 
-## Yorum
+## Comment
 
-BTC tek başına hâlâ güvenilir görünmüyor. Train dönemleri güçlü, test dönemleri zayıf. Bu tablo overfitting riskinin devam ettiğini gösteriyor.
+BTC alone still does not look reliable. Train periods are strong, test periods are weak. This pattern indicates that overfitting risk persists.
 
-Bu sonuç, stratejinin tamamen çöpe atılması gerektiği anlamına gelmez; ancak BTC üzerinde seçilen parametrelerin geleceğe taşınmadığını gösterir. Bu yüzden çoklu sembol testine bakmak daha doğru: `docs/MULTI_SYMBOL.md`.
+This result does not mean the strategy should be thrown out entirely; rather, it shows that parameters selected on BTC do not carry forward into the future. Therefore, it is more appropriate to look at the multi-symbol test: `docs/MULTI_SYMBOL.md`.
 
-## Sonuç
+## Conclusion
 
-BTC/USDT tek sembol ile canlıya geçilmemeli.
+Do not go live with BTC/USDT as a single symbol.
 
-Öncelik:
+Priority:
 
-1. Çoklu sembol portföy testi.
-2. Parametre stabilite haritası.
+1. Multi-symbol portfolio test.
+2. Parameter stability map.
 3. Monte Carlo trade-shuffle.
 4. Testnet/paper trading.
 
-## Yeniden Üretim
+## Reproduction
 
 ```bash
 python walk_forward.py
 ```
 
-Çıktı: `walk_forward_results.csv`
+Output: `walk_forward_results.csv`

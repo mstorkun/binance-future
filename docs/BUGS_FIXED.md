@@ -1,121 +1,121 @@
-# Düzeltilen Bug'lar
+# Fixed Bugs
 
-5 ajan denetiminde tespit edilen ve düzeltilen kritik bug'lar.
+Critical bugs identified and fixed during the 5-agent audit.
 
-## 1. Wilder Smoothing — KRİTİK
+## 1. Wilder Smoothing — CRITICAL
 
-**Sorun:** `indicators.py` ATR/RSI/ADX hesabında `ewm(span=N)` (alpha=2/(N+1)) kullanıyordu. Bu standart **değil**.
+**Issue:** `indicators.py` was using `ewm(span=N)` (alpha=2/(N+1)) for ATR/RSI/ADX. This is **not** standard.
 
-**Standart:** Wilder smoothing — `alpha=1/N`. TradingView, Binance, MT4 hep bunu kullanır. Yanlış formül ATR'yi gerçek değerden hızlı tepki verecek şekilde bozuyor, SL mesafelerini ve ADX değerlerini bozuk veriyor.
+**Standard:** Wilder smoothing — `alpha=1/N`. TradingView, Binance, MT4 all use this. The wrong formula makes ATR react faster than its true value, distorting SL distances and ADX values.
 
-**Düzeltme:** `_wilder()` yardımcı fonksiyonu eklendi, tüm Wilder-tabanlı indikatörler ona geçti. EMA klasik span ile kaldı (zaten doğru).
-
----
-
-## 2. PnL'de `*LEVERAGE` Çarpımı — KRİTİK
-
-**Sorun:** `backtest.py` ve `optimize.py` PnL hesabını `(exit-entry) * size * LEVERAGE` ile yapıyordu. Bu **yanlış**. Kaldıraç **margin gereksinimini** etkiler, **PnL'yi etkilemez**.
-
-Doğru formül: `PnL = (exit-entry) * size`. Position size hesabı zaten kaldıraçtan bağımsız (risk_usdt / stop_dist).
-
-**Etki:** Tüm raporlanan PnL **3x şişmiş**. 1016 USDT → gerçek 339 USDT.
-
-**Düzeltme:** `*LEVERAGE` çarpımı kaldırıldı.
+**Fix:** Added a `_wilder()` helper, all Wilder-based indicators switched to it. EMA stayed on classic span (already correct).
 
 ---
 
-## 3. Komisyon ve Slippage Modellenmemiş — YÜKSEK
+## 2. `*LEVERAGE` Multiplier in PnL — CRITICAL
 
-**Sorun:** Backtest komisyon ve slippage göz ardı ediyordu. 57 trade × ortalama 1500-2000 USDT pozisyon için:
-- Komisyon: %0.08 round-trip × 57 × 1750 = ~80 USDT
-- Slippage: %0.1 round-trip × 57 × 1750 = ~100 USDT
+**Issue:** `backtest.py` and `optimize.py` computed PnL as `(exit-entry) * size * LEVERAGE`. This is **wrong**. Leverage affects **margin requirement**, **not PnL**.
 
-**Düzeltme:** Backtest'te her işlem PnL'sinden `notional × 0.0009` (komisyon + slippage) düşülüyor.
+Correct formula: `PnL = (exit-entry) * size`. Position size calculation is already independent of leverage (risk_usdt / stop_dist).
 
----
+**Impact:** All reported PnL was **inflated 3x**. 1016 USDT → real 339 USDT.
 
-## 4. Çift `reduceOnly` Emir Çakışması — KRİTİK
-
-**Sorun:** `order_manager.py` aynı pozisyon için hem `stop_market` hem `trailing_stop_market` emri kuruyordu. İkisi de `reduceOnly=True`. Biri tetiklenince diğeri "Order would immediately trigger" veya "ReduceOnly Order is rejected" hatası verir.
-
-**Düzeltme:** Sadece initial `stop_market` emri kuruluyor. Trailing SL bot tarafından **manuel** güncelleniyor (her döngüde eski iptal + yeni koy).
+**Fix:** `*LEVERAGE` multiplier removed.
 
 ---
 
-## 5. `open_position` Atomik Değil — KRİTİK
+## 3. Commission and Slippage Not Modeled — HIGH
 
-**Sorun:** Market emir başarılı olup SL emri başarısız olursa pozisyon **korumasız** kalır. Aşırı volatilitede ölümcül.
+**Issue:** Backtest was ignoring commission and slippage. For 57 trades × average 1500-2000 USDT position:
+- Commission: 0.08% round-trip × 57 × 1750 = ~80 USDT
+- Slippage: 0.1% round-trip × 57 × 1750 = ~100 USDT
 
-**Düzeltme:** `open_position` atomik:
+**Fix:** In the backtest, `notional × 0.0009` (commission + slippage) is deducted from each trade's PnL.
+
+---
+
+## 4. Double `reduceOnly` Order Conflict — CRITICAL
+
+**Issue:** `order_manager.py` was placing both a `stop_market` and a `trailing_stop_market` order for the same position. Both `reduceOnly=True`. When one triggers, the other gives an "Order would immediately trigger" or "ReduceOnly Order is rejected" error.
+
+**Fix:** Only the initial `stop_market` order is placed. Trailing SL is updated **manually** by the bot (every cycle: cancel old + place new).
+
+---
+
+## 5. `open_position` Not Atomic — CRITICAL
+
+**Issue:** If the market order succeeds but the SL order fails, the position is left **unprotected**. Fatal under extreme volatility.
+
+**Fix:** `open_position` is atomic:
 ```python
-1. Market emir at
-2. SL kurulmaya çalış
-3. SL başarısız → pozisyonu hemen market kapat (rollback)
+1. Place market order
+2. Try to set SL
+3. SL fails → immediately market-close the position (rollback)
 ```
 
-`_safe_close_market()` yardımcısı eklendi.
+A `_safe_close_market()` helper was added.
 
 ---
 
-## 6. Min Notional Kontrolü Yok — YÜKSEK
+## 6. No Min Notional Check — HIGH
 
-**Sorun:** Binance Futures BTC için min notional ~100 USDT. Küçük pozisyonlar reddedilir, sessiz hata.
+**Issue:** Binance Futures min notional for BTC is ~100 USDT. Small positions get rejected, silent failure.
 
-**Düzeltme:** `open_position` öncesi `notional = size * price` hesaplanıp 100 USDT altındaysa pozisyon açılmıyor (warning log).
-
----
-
-## 7. Sembol Bazlı Pozisyon Kontrolü Yok — YÜKSEK
-
-**Sorun:** `bot.py` `MAX_OPEN_POSITIONS=2` ile çalışıyordu ama tek sembol kullanılıyor. Aynı sembolde iki pozisyon mantıksal hata. Üstelik mevcut pozisyon kontrol edilmiyor, sinyal gelince üzerine pozisyon ekleniyor.
-
-**Düzeltme:** `_has_open_position()` borsa state'ini sorguluyor. Açık pozisyon varsa sadece SL update / trend exit kontrolü yapılıyor.
+**Fix:** Before `open_position`, `notional = size * price` is computed; if below 100 USDT the position is not opened (warning log).
 
 ---
 
-## 8. State Recovery Yok — ORTA
+## 7. No Per-Symbol Position Check — HIGH
 
-**Sorun:** Bot restart edilirse açık pozisyondan ve mevcut SL'den haberi yok.
+**Issue:** `bot.py` was running with `MAX_OPEN_POSITIONS=2` but only a single symbol is used. Two positions on the same symbol is a logical error. Moreover, the existing position was not being checked, and a new position was being added on top when a signal arrived.
 
-**Düzeltme:** Bot başlangıçta borsadan pozisyonları çekip `active_position` state'ini yeniden kuruyor. Trailing SL hesaplaması mevcut entry fiyatından devam ediyor.
-
----
-
-## 9. Look-Ahead Bias — YOK ✓
-
-**Bulgu:** `strategy.get_signal` `df.iloc[-2]` (kapanmış mum) kullanıyor, entry `(i+1).open` doğru. Look-ahead **yok**.
-
-**Aksiyon:** Yok, kod temiz.
+**Fix:** `_has_open_position()` queries exchange state. If a position is open, only SL update / trend exit checks run.
 
 ---
 
-## 10. Intra-Bar Sıralama — KISMEN HATALI
+## 8. No State Recovery — MEDIUM
 
-**Sorun:** Backtest aynı barda önce trailing SL günceller (high/low ile), sonra SL kontrol eder. Bu iyimser yanlılık (gerçekte sıra bilinmez).
+**Issue:** If the bot is restarted, it has no knowledge of the open position or existing SL.
 
-**Etki:** Backtest sonuçları %5-10 iyimser olabilir.
-
-**Düzeltme:** Mevcut yapı korundu (literatürde standart yaklaşım), commission/slippage marjı bunu absorbe ediyor.
+**Fix:** At startup the bot fetches positions from the exchange and rebuilds `active_position` state. Trailing SL calculation continues from the existing entry price.
 
 ---
 
-## 11. Overfitting / Walk-Forward — KRİTİK
+## 9. Look-Ahead Bias — NONE ✓
 
-**Sorun:** `optimize.py` 108 kombinasyon test edip en iyisini seçiyordu. Tek dönem fit, walk-forward yok.
+**Finding:** `strategy.get_signal` uses `df.iloc[-2]` (closed candle), entry at `(i+1).open` is correct. Look-ahead **absent**.
 
-**Düzeltme:** `walk_forward.py` eklendi. Train/test ayrımı ile gerçek out-of-sample sonuç ölçülüyor.
-
-**Sonuç:** Train ortalama +71.5 USDT, **test ortalama -1.5 USDT**. Strateji overfit.
+**Action:** None, code is clean.
 
 ---
 
-## Kalan Eksikler
+## 10. Intra-Bar Ordering — PARTIALLY FLAWED
 
-⚠️ Bu bug'lar henüz düzeltilmedi (öncelik düşük veya yeniden yapı gerekli):
+**Issue:** Within the same bar, the backtest first updates trailing SL (using high/low), then checks SL. This is an optimistic bias (in reality the order is unknown).
 
-- stepSize/precision kontrolü (Binance lot size)
-- ccxt `priceProtect` parametresi (slippage limiti)
-- `ccxt.NetworkError`, `RateLimitExceeded` için exponential backoff
-- Hedge mode tespiti ve uyarısı
-- Periyodik `exchange.close()` (uzun çalışmada session sızıntısı)
-- Funding rate hesaba katılması (8 saatlik perpetual fonlama)
+**Impact:** Backtest results may be 5-10% optimistic.
+
+**Fix:** Existing structure preserved (standard approach in literature), commission/slippage margin absorbs this.
+
+---
+
+## 11. Overfitting / Walk-Forward — CRITICAL
+
+**Issue:** `optimize.py` was testing 108 combinations and picking the best. Single-period fit, no walk-forward.
+
+**Fix:** `walk_forward.py` was added. True out-of-sample results are measured via train/test split.
+
+**Result:** Train average +71.5 USDT, **test average -1.5 USDT**. Strategy is overfit.
+
+---
+
+## Remaining Gaps
+
+⚠️ These bugs are not yet fixed (low priority or require restructuring):
+
+- stepSize/precision check (Binance lot size)
+- ccxt `priceProtect` parameter (slippage limit)
+- Exponential backoff for `ccxt.NetworkError`, `RateLimitExceeded`
+- Hedge mode detection and warning
+- Periodic `exchange.close()` (session leak on long runs)
+- Funding rate accounting (8-hour perpetual funding)

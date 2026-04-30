@@ -1,66 +1,66 @@
-# Backtest Sonuçları
+# Backtest Results
 
-Bu rapor güncel Donchian breakout mimarisi içindir. Eski EMA crossover sonuçları artık karar için kullanılmamalı.
+This report covers the current Donchian breakout architecture. The old EMA crossover results should no longer be used for decision-making.
 
 ## Model
 
-- Sinyal: Donchian breakout.
-- Filtreler: hacim, ADX, RSI, 1D EMA50 trend.
-- Risk: ATR tabanlı SL, %2 işlem başı risk, 3x kaldıraç.
-- Maliyetler: taker komisyon, slippage ve funding.
+- Signal: Donchian breakout.
+- Filters: volume, ADX, RSI, 1D EMA50 trend.
+- Risk: ATR-based SL, 2% risk per trade, 3x leverage.
+- Costs: taker fee, slippage, and funding.
 
-## BTC/USDT Düz Backtest
+## BTC/USDT Plain Backtest
 
-Son kayıtlı sonuç:
+Latest recorded result:
 
-| Metrik | Değer |
+| Metric | Value |
 |---|---:|
-| İşlem | 86 |
-| Win rate | %55.8 |
-| Toplam PnL | +76.03 USDT |
+| Trades | 86 |
+| Win rate | 55.8% |
+| Total PnL | +76.03 USDT |
 | Max DD | 54.25 USDT |
-| 3 yıl getiri | %7.60 |
+| 3-year return | 7.60% |
 | PnL/DD | 1.38 |
 
-Yorum: BTC düz backtest pozitif ama zayıf. Walk-forward sonucu negatif olduğu için tek başına canlıya geçiş gerekçesi değildir.
+Comment: BTC plain backtest is positive but weak. Since the walk-forward result is negative, this alone is not sufficient justification to go live.
 
-## Çoklu Sembol Düz Backtest
+## Multi-Symbol Plain Backtest
 
-`multi_symbol_results.csv` son kayıtlı özet:
+Latest recorded summary from `multi_symbol_results.csv`:
 
-| Sembol | İşlem | Win Rate | PnL | Max DD | Getiri |
+| Symbol | Trades | Win Rate | PnL | Max DD | Return |
 |---|---:|---:|---:|---:|---:|
-| BTC/USDT | 86 | %55.8 | +76.03 | 54.25 | %7.60 |
-| ETH/USDT | 77 | %63.6 | +243.94 | 39.81 | %24.39 |
-| SOL/USDT | 90 | %72.2 | +473.80 | 71.70 | %47.38 |
-| BNB/USDT | 70 | %57.1 | +79.11 | 63.52 | %7.91 |
+| BTC/USDT | 86 | 55.8% | +76.03 | 54.25 | 7.60% |
+| ETH/USDT | 77 | 63.6% | +243.94 | 39.81 | 24.39% |
+| SOL/USDT | 90 | 72.2% | +473.80 | 71.70 | 47.38% |
+| BNB/USDT | 70 | 57.1% | +79.11 | 63.52 | 7.91% |
 
-Bu düz backtest 4/4 pozitif, ancak düz backtest tek başına yeterli değildir. Ana karar walk-forward ve canlı/paper test ile verilmelidir.
+This plain backtest is 4/4 positive, but a plain backtest alone is not enough. The main decision should be made with walk-forward and live/paper testing.
 
-## Funding Modeli
+## Funding Model
 
-`backtest.py` artık opsiyonel tarihsel funding serisi kabul eder:
+`backtest.py` now accepts an optional historical funding series:
 
-- Funding verisi varsa long/short yönüne göre signed funding hesaplanır.
-- Funding verisi yoksa `config.DEFAULT_FUNDING_RATE_PER_8H` fallback olarak kullanılır.
-- Bu fallback konservatiftir; gerçek funding bazen maliyet, bazen gelir olabilir.
+- If funding data is available, signed funding is computed based on long/short direction.
+- If funding data is unavailable, `config.DEFAULT_FUNDING_RATE_PER_8H` is used as a fallback.
+- This fallback is conservative; real funding can sometimes be a cost and sometimes an income.
 
 ## Monte Carlo Drawdown
 
-Mevcut `backtest_results.csv` üzerinde 1000 trade-shuffle denemesi:
+1000 trade-shuffle trials over the existing `backtest_results.csv`:
 
-| Metrik | Değer |
+| Metric | Value |
 |---|---:|
 | PnL p05 | +76.03 USDT |
-| PnL medyan | +76.03 USDT |
+| PnL median | +76.03 USDT |
 | PnL p95 | +76.03 USDT |
-| DD medyan | 98.46 USDT |
+| DD median | 98.46 USDT |
 | DD p95 | 160.81 USDT |
 | DD max | 225.16 USDT |
 
-Toplam PnL aynı trade seti karıştırıldığı için değişmiyor; asıl sinyal drawdown tarafında. BTC backtest'in tarihsel DD'si 54.25 USDT iken, sıra riski %95 senaryoda 160.81 USDT'ye çıkıyor. Bu nedenle canlı risk %2 yerine daha düşük başlamalı veya portföy/pozisyon limiti eklenmeli.
+Total PnL does not change because the same trade set is shuffled; the real signal is on the drawdown side. While the BTC backtest's historical DD is 54.25 USDT, the sequence risk rises to 160.81 USDT in the 95% scenario. For this reason, live risk should start lower than 2%, or a portfolio/position limit should be added.
 
-## Yeniden Üretim
+## Reproduction
 
 ```bash
 python backtest.py
@@ -68,7 +68,7 @@ python multi_symbol_backtest.py
 python monte_carlo.py --trades backtest_results.csv
 ```
 
-Çıktılar:
+Outputs:
 
 - `backtest_results.csv`
 - `multi_symbol_results.csv`

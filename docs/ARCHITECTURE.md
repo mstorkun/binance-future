@@ -1,10 +1,10 @@
-# Sistem Mimarisi
+# System Architecture
 
-## Bileşen Diyagramı
+## Component Diagram
 
 ```
                      ┌─────────────────┐
-                     │     bot.py      │  Ana döngü (canlı çalışma)
+                     │     bot.py      │  Main loop (live execution)
                      │  schedule.run() │
                      └────────┬────────┘
                               │
@@ -28,67 +28,67 @@
         ▼                                           ▼
    ┌──────────────┐                          ┌─────────────────┐
    │ Binance API  │  ◄────────────────────── │ order_manager.py│
-   │              │      market/stop emir     │ open_position  │
+   │              │      market/stop order    │ open_position  │
    │              │                           │ update_trail   │
    │              │                           │ close_market   │
    └──────────────┘                           └─────────────────┘
 ```
 
-## Veri Akışı (Canlı Bot)
+## Data Flow (Live Bot)
 
 ```
-Her saatte bir (4H mum kapanışını yakalamak için):
+Once per hour (to catch the 4H candle close):
 
-1. data.fetch_balance()        → bakiye
-2. data.fetch_ohlcv()          → son 200 mum
-3. indicators.add_indicators() → EMA, ADX, RSI, ATR ekle
-4. _has_open_position()        → borsadan açık pozisyon sorgu
+1. data.fetch_balance()        → balance
+2. data.fetch_ohlcv()          → last 200 candles
+3. indicators.add_indicators() → add EMA, ADX, RSI, ATR
+4. _has_open_position()        → query open position from exchange
 
-5a. AÇIK POZİSYON VAR:
-    - strategy.check_exit() → trend tersine döndü mü?
-        → Evet → close_position_market() + state temizle
-        → Hayır → trailing SL güncelle
-            (extreme = max/min güncelle)
-            (yeni SL eskiden iyiyse → cancel + new stop_market)
+5a. POSITION OPEN:
+    - strategy.check_exit() → has the trend reversed?
+        → Yes → close_position_market() + clear state
+        → No  → update trailing SL
+            (extreme = update max/min)
+            (if new SL is better than old → cancel + new stop_market)
 
-5b. AÇIK POZİSYON YOK:
+5b. NO OPEN POSITION:
     - strategy.get_signal() → LONG/SHORT/None
-        → None → çık
-        → Var → om.set_leverage() → om.open_position()
-            (atomik: market + stop_market, başarısız → rollback)
-            (active_position state'i kaydet)
+        → None → exit
+        → Signal → om.set_leverage() → om.open_position()
+            (atomic: market + stop_market, on failure → rollback)
+            (save active_position state)
 
-6. risk.daily_loss_exceeded() → günlük limit aşıldı mı?
-    → Evet → close_all() ve dur
+6. risk.daily_loss_exceeded() → daily limit exceeded?
+    → Yes → close_all() and stop
 ```
 
-## Veri Akışı (Backtest)
+## Data Flow (Backtest)
 
 ```
-1. fetch_long_history(years=3)  → 3 yıl 4H veri (6570 bar)
-2. indicators.add_indicators() → indikatörleri ekle
+1. fetch_long_history(years=3)  → 3 years of 4H data (6570 bars)
+2. indicators.add_indicators() → add indicators
 3. for each bar:
-    - get_signal(window) → sinyal var mı?
-    - Var ise: bir sonraki barın open'ında giriş simüle et
-    - İlerleyen barlarda:
-        - trend ters → kapatma
-        - trailing SL hit → kapatma
-    - PnL hesapla, komisyon + slippage düş
-4. CSV'ye yaz, özet raporla
+    - get_signal(window) → is there a signal?
+    - If yes: simulate entry at next bar's open
+    - On subsequent bars:
+        - trend reversal → close
+        - trailing SL hit → close
+    - Compute PnL, deduct commission + slippage
+4. Write to CSV, summary report
 ```
 
-## Veri Akışı (Walk-Forward)
+## Data Flow (Walk-Forward)
 
 ```
-1. 6570 bar veri çek
+1. Pull 6570 bars of data
 2. for period in 3:
     - train_window = bar[start : start + 3000]
     - test_window  = bar[start + 3000 : start + 4000]
-    - find_best_params(train_window) → 54 kombinasyon test
+    - find_best_params(train_window) → test 54 combinations
     - run_segment(test_window, best_params) → out-of-sample
-    - sonucu kaydet
+    - save result
     - start += 1000
-3. Train ortalama vs test ortalama karşılaştır
+3. Compare train average vs test average
 ```
 
 ## State Management
@@ -97,60 +97,60 @@ Her saatte bir (4H mum kapanışını yakalamak için):
 - `active_position`: dict | None
   - `side`: "long" / "short"
   - `entry`: float
-  - `sl`: float (trailing güncellendikçe değişir)
-  - `size`: float (kontrat)
-  - `extreme`: float (long için max, short için min)
-- `daily_start_bal`: float | None (UTC 00:01'de sıfırlanır)
+  - `sl`: float (changes as trailing updates)
+  - `size`: float (contracts)
+  - `extreme`: float (max for long, min for short)
+- `daily_start_bal`: float | None (resets at UTC 00:01)
 
-**Borsa state:**
-- `exchange.fetch_positions(SYMBOL)` — otorite kaynak
-- Bot her döngüde borsa state'ini sorguluyor, kendi state'ini ona göre senkronize ediyor (drift önleme)
+**Exchange state:**
+- `exchange.fetch_positions(SYMBOL)` — source of truth
+- The bot queries exchange state every cycle and synchronizes its own state to it (drift prevention)
 
-## Kritik Tasarım Kararları
+## Critical Design Decisions
 
-### 1. Trailing SL — Bot Tarafında Manuel
+### 1. Trailing SL — Manual on the Bot Side
 
-**Alternatif:** Binance'in `TRAILING_STOP_MARKET` emir tipi.
+**Alternative:** Binance's `TRAILING_STOP_MARKET` order type.
 
-**Seçilen:** Bot her döngüde eski SL'i iptal edip yenisini koyar.
+**Chosen:** Bot cancels old SL and places new one each cycle.
 
-**Sebep:** Binance'in trailing emri callback rate'e dayanıyor (yüzde). Bizim kuralımız "kazancın %15'ini geri ver" dinamik (her bar yeniden hesap). Manuel kontrol daha esnek.
+**Reason:** Binance's trailing order is based on callback rate (percentage). Our rule "give back 15% of profit" is dynamic (recomputed each bar). Manual control is more flexible.
 
-**Risk:** Cancel + create arasında borsa fiyat hareketi olursa pozisyon korumasız kalır. ~50ms pencere. Düşük risk.
+**Risk:** If the exchange price moves between cancel + create, the position is left unprotected. ~50ms window. Low risk.
 
-### 2. Atomik Pozisyon Açma + Rollback
+### 2. Atomic Position Open + Rollback
 
-**Alternatif:** Sırayla emir → SL → trailing.
+**Alternative:** Sequential order → SL → trailing.
 
-**Seçilen:** Market emir, sonra SL, başarısızsa market kapat.
+**Chosen:** Market order, then SL; on failure, market close.
 
-**Sebep:** Crypto'da volatilite spike'larında SL emri reddedilebilir. Pozisyon korumasız kalmamalı.
+**Reason:** During crypto volatility spikes the SL order can be rejected. The position must not be left unprotected.
 
 ### 3. Wilder Smoothing
 
-**Alternatif:** EMA span (kolay).
+**Alternative:** EMA span (easy).
 
-**Seçilen:** Wilder (`alpha=1/N`).
+**Chosen:** Wilder (`alpha=1/N`).
 
-**Sebep:** Standart RSI/ADX/ATR Wilder kullanır. Span kullanmak indikatörleri TradingView, Binance ile uyumsuz hale getiriyordu.
+**Reason:** Standard RSI/ADX/ATR use Wilder. Using span made indicators incompatible with TradingView and Binance.
 
-## Test Stratejisi
+## Test Strategy
 
-| Test Türü | Yöntem | Amaç |
+| Test Type | Method | Goal |
 |---|---|---|
-| Geçmiş veri backtest | `backtest.py` | Strateji çalışıyor mu? |
-| Parametre tarama | `optimize.py` | En iyi parametreler? |
-| Walk-forward | `walk_forward.py` | Overfitting var mı? |
-| Testnet (Binance) | `bot.py` + testnet | Canlı emir mantığı çalışıyor mu? |
-| Canlı (küçük sermaye) | `bot.py` + canlı | Gerçek slippage/funding ne? |
+| Historical backtest | `backtest.py` | Does the strategy work? |
+| Parameter sweep | `optimize.py` | Best parameters? |
+| Walk-forward | `walk_forward.py` | Is there overfitting? |
+| Testnet (Binance) | `bot.py` + testnet | Does live order logic work? |
+| Live (small capital) | `bot.py` + live | What is real slippage/funding? |
 
-## Bağımlılıklar
+## Dependencies
 
 ```
 ccxt>=4.2.0       # Binance API
-pandas>=2.0.0     # Veri/indikatör
-schedule>=1.2.0   # Zamanlayıcı
-python-dotenv     # .env yükleme
+pandas>=2.0.0     # Data/indicators
+schedule>=1.2.0   # Scheduler
+python-dotenv     # .env loading
 ```
 
-`pandas-ta` ve `numba` kullanılmıyor — saf pandas yeterli, kurulum kolay.
+`pandas-ta` and `numba` are not used — plain pandas is sufficient and easy to install.
