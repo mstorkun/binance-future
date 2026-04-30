@@ -1,64 +1,64 @@
 # Backtest Results
 
-This report covers the current Donchian breakout architecture. The old EMA crossover results should no longer be used for decision-making.
+This report covers the current Donchian breakout architecture **after the notional bug fix** (`backtest.py:127`). Old EMA crossover results should no longer be used for decisions.
 
 ## Model
 
 - Signal: Donchian breakout.
 - Filters: volume, ADX, RSI, 1D EMA50 trend.
-- Risk: ATR-based SL, 2% risk per trade, 3x leverage.
-- Costs: taker fee, slippage, and funding.
+- Risk: ATR-based SL, 2% per-trade risk, 3x leverage.
+- Costs: taker commission (0.08% round-trip), slippage (0.15% round-trip), funding (signed, historical).
 
-## BTC/USDT Plain Backtest
+## BTC/USDT Flat Backtest
 
-Latest recorded result:
+Latest result:
 
 | Metric | Value |
 |---|---:|
 | Trades | 86 |
-| Win rate | 55.8% |
-| Total PnL | +76.03 USDT |
-| Max DD | 54.25 USDT |
-| 3-year return | 7.60% |
-| PnL/DD | 1.38 |
+| Win rate | 66.3% |
+| Total PnL | +249.88 USDT |
+| Max DD | 54.47 USDT |
+| 3-year return | 24.99% |
+| PnL/DD | 4.59 |
 
-Comment: BTC plain backtest is positive but weak. Since the walk-forward result is negative, this alone is not sufficient justification to go live.
+**Note:** BTC's flat backtest is positive, but its walk-forward average is still near break-even. Do not move BTC alone to live trading.
 
-## Multi-Symbol Plain Backtest
+## Multi-Symbol Flat Backtest
 
-Latest recorded summary from `multi_symbol_results.csv`:
+Latest `multi_symbol_results.csv` summary:
 
 | Symbol | Trades | Win Rate | PnL | Max DD | Return |
 |---|---:|---:|---:|---:|---:|
-| BTC/USDT | 86 | 55.8% | +76.03 | 54.25 | 7.60% |
-| ETH/USDT | 77 | 63.6% | +243.94 | 39.81 | 24.39% |
-| SOL/USDT | 90 | 72.2% | +473.80 | 71.70 | 47.38% |
-| BNB/USDT | 70 | 57.1% | +79.11 | 63.52 | 7.91% |
+| BTC/USDT | 86 | 66.3% | +249.88 | 54.47 | 24.99% |
+| ETH/USDT | 77 | 76.6% | +369.30 | 35.36 | 36.93% |
+| SOL/USDT | 90 | 78.9% | +601.86 | 67.49 | 60.19% |
+| BNB/USDT | 70 | 72.9% | +207.43 | 58.48 | 20.74% |
 
-This plain backtest is 4/4 positive, but a plain backtest alone is not enough. The main decision should be made with walk-forward and live/paper testing.
+Flat backtest is 4/4 positive, average +357 USDT/symbol. Walk-forward (see [WALK_FORWARD.md](WALK_FORWARD.md)) and live/paper testing are still required for the live decision.
 
 ## Funding Model
 
-`backtest.py` now accepts an optional historical funding series:
+`backtest.py` accepts an optional historical funding series:
 
-- If funding data is available, signed funding is computed based on long/short direction.
-- If funding data is unavailable, `config.DEFAULT_FUNDING_RATE_PER_8H` is used as a fallback.
-- This fallback is conservative; real funding can sometimes be a cost and sometimes an income.
+- If funding data is available, signed funding is computed per long/short direction.
+- If funding data is not available, `config.DEFAULT_FUNDING_RATE_PER_8H` is used as a fallback.
+- The fallback is conservative; real funding is sometimes a cost, sometimes a credit.
 
 ## Monte Carlo Drawdown
 
-1000 trade-shuffle trials over the existing `backtest_results.csv`:
+5,000 trade-shuffle iterations on the current `backtest_results.csv` (BTC):
 
 | Metric | Value |
 |---|---:|
-| PnL p05 | +76.03 USDT |
-| PnL median | +76.03 USDT |
-| PnL p95 | +76.03 USDT |
-| DD median | 98.46 USDT |
-| DD p95 | 160.81 USDT |
-| DD max | 225.16 USDT |
+| PnL p05 | +249.88 USDT |
+| PnL median | +249.88 USDT |
+| PnL p95 | +249.88 USDT |
+| DD median | 78.37 USDT |
+| DD p95 | 128.69 USDT |
+| DD max | 199.37 USDT |
 
-Total PnL does not change because the same trade set is shuffled; the real signal is on the drawdown side. While the BTC backtest's historical DD is 54.25 USDT, the sequence risk rises to 160.81 USDT in the 95% scenario. For this reason, live risk should start lower than 2%, or a portfolio/position limit should be added.
+Total PnL is identical because the same trade set is shuffled; the signal sits in the drawdown distribution. BTC's historical DD is 54 USDT while the 95th-percentile sequencing risk is 129 USDT (~12.9% of capital). Live risk should start lower than 2% per trade or include portfolio/position limits.
 
 ## Reproduction
 

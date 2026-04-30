@@ -92,14 +92,15 @@ def run():
     log.info("--- Döngü başladı ---")
 
     try:
-        # 1. Bakiye + günlük kayıp limiti
+        # 1. Equity (free + margin + unrealized) — daily loss için doğru metrik
+        equity  = data.fetch_equity(exchange)
         balance = data.fetch_balance(exchange)
-        log.info(f"Bakiye: {balance:.2f} USDT")
+        log.info(f"Equity: {equity:.2f} USDT | Free: {balance:.2f} USDT")
 
         if daily_start_bal is None:
-            daily_start_bal = balance
+            daily_start_bal = equity
 
-        if r.daily_loss_exceeded(daily_start_bal, balance):
+        if r.daily_loss_exceeded(daily_start_bal, equity):
             log.warning("Günlük kayıp limiti! Tüm pozisyonlar kapatılıyor, bot duruyor.")
             for sym in config.SYMBOLS:
                 config.SYMBOL = sym
@@ -107,9 +108,18 @@ def run():
             active_positions.clear()
             return
 
+        # Global açık pozisyon sayısı (tüm semboller arası)
+        try:
+            all_open = data.fetch_all_open_positions(exchange, config.SYMBOLS)
+            global_open_count = len(all_open)
+        except Exception as e:
+            log.warning(f"Global pozisyon sorgu hatası: {e}, lokal state kullanılıyor.")
+            global_open_count = len(active_positions)
+        log.info(f"Açık pozisyon: {global_open_count}/{config.MAX_OPEN_POSITIONS}")
+
         # Bütçeyi eşit sembol sayısına böl (Örn 1000$ ve 3 sembol -> 333$)
         num_symbols = len(config.SYMBOLS)
-        allocated_balance_per_symbol = balance / num_symbols
+        allocated_balance_per_symbol = equity / num_symbols
 
         for sym in config.SYMBOLS:
             config.SYMBOL = sym  # Global değişkeni o anki sembole ayarla
@@ -163,6 +173,11 @@ def run():
                 if signal is None:
                     continue
 
+                # MAX_OPEN_POSITIONS guard (tüm semboller arası global limit)
+                if global_open_count >= config.MAX_OPEN_POSITIONS:
+                    log.info(f"[{sym}] Max pozisyon limiti ({config.MAX_OPEN_POSITIONS}) dolu, sinyal atlandı.")
+                    continue
+
                 # 5. Yeni pozisyon aç
                 price = float(df["close"].iloc[-2])   # son kapanan bar
                 atr   = float(df["atr"].iloc[-2])
@@ -170,6 +185,7 @@ def run():
                 # Atomik emir açma işlemi, riski bölünmüş bütçeye (allocated_balance) göre ayarlar
                 result = om.open_position(exchange, signal, allocated_balance_per_symbol, atr, price)
                 if result:
+                    global_open_count += 1
                     active_positions[sym] = {
                         "side":         result["side"],
                         "entry":        result["entry"],
