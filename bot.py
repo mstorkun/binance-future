@@ -93,9 +93,11 @@ def run():
             active_position = None
             return
 
-        # 2. Veri + indikatörler
-        df = data.fetch_ohlcv(exchange)
-        df = ind.add_indicators(df)
+        # 2. Veri + indikatörler (4H + 1D)
+        df    = data.fetch_ohlcv(exchange)
+        df_1d = data.fetch_daily_ohlcv(exchange, limit=200)
+        df    = ind.add_indicators(df)
+        df    = ind.add_daily_trend(df, df_1d)
         if len(df) < 3:
             log.warning("Yeterli mum yok.")
             return

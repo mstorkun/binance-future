@@ -1,14 +1,26 @@
 """
-Strateji modülü — EMA + ADX + RSI tabanlı trend takip.
+Strateji: Donchian breakout + hacim filtresi + 1D EMA trend filtresi.
 
 Kontrat (bot.py, backtest.py, optimize.py, walk_forward.py bu API'yi kullanır):
     LONG, SHORT, NONE                              — sinyal sabitleri
     get_signal(df) -> "long" | "short" | None      — yeni pozisyon sinyali
-    check_exit(df, side) -> bool                   — trend tersine döndü mü?
+    check_exit(df, side) -> bool                   — daha sıkı Donchian kanalı kırıldı mı?
     trailing_stop(entry, extreme, side) -> float   — kazancın %15'i geri, %85'i kilit
 
-İndikatörler indicators.add_indicators() tarafından df'e eklenmiş olmalıdır
-(ema_fast, ema_slow, adx, rsi, atr sütunları).
+Pre-condition: indicators.add_indicators() df'e şu sütunları eklemiş olmalı:
+    donchian_high, donchian_low,
+    donchian_exit_high, donchian_exit_low,
+    volume, volume_ma, atr, rsi, daily_trend (opsiyonel)
+
+Sinyal mantığı:
+    LONG  : 4H high son N-bar Donchian high'ı kırdı (yukarı breakout)
+            + bar hacmi >= 1.5 × ortalama
+            + RSI <= 75 (aşırı alım değil)
+            + daily_trend = 1 (varsa; yoksa filtre yok)
+    SHORT : 4H low  son N-bar Donchian low'ı kırdı (aşağı breakdown)
+            + bar hacmi >= 1.5 × ortalama
+            + RSI >= 25 (aşırı satım değil)
+            + daily_trend = -1
 """
 
 import pandas as pd
@@ -18,59 +30,73 @@ LONG  = "long"
 SHORT = "short"
 NONE  = None
 
-TRAIL_GIVEBACK = 0.15   # kazancın %15'ini geri ver, %85'ini kilitle
+TRAIL_GIVEBACK = 0.15
+
+
+def _last_closed(df: pd.DataFrame) -> pd.Series:
+    """Son kapanan bar (-2). Live botta -1 henüz kapanmamış olabilir."""
+    return df.iloc[-2]
 
 
 def get_signal(df: pd.DataFrame) -> str | None:
-    """
-    Yeni pozisyon açma sinyali. Sadece kapanan barlar üzerinden çalışır:
-    son bar (-1) henüz kapanmamış olabilir; -2 son kapanan bardır.
-
-    LONG  : EMA_fast > EMA_slow ilk kez (önceki bar -3'te <=) + ADX > eşik + RSI long aralığı
-    SHORT : EMA_fast < EMA_slow ilk kez (önceki bar -3'te >=) + ADX > eşik + RSI short aralığı
-    """
     if len(df) < 3:
         return NONE
 
-    prev  = df.iloc[-2]
-    prev2 = df.iloc[-3]
+    bar = _last_closed(df)
 
-    trend_up   = prev["ema_fast"] > prev["ema_slow"]
-    trend_down = prev["ema_fast"] < prev["ema_slow"]
-    flipped_up   = trend_up   and prev2["ema_fast"] <= prev2["ema_slow"]
-    flipped_down = trend_down and prev2["ema_fast"] >= prev2["ema_slow"]
+    # Eksik indikatör sütunu varsa sinyal yok
+    required = ("donchian_high", "donchian_low", "volume_ma", "rsi")
+    if any(pd.isna(bar.get(col)) for col in required):
+        return NONE
 
-    adx_ok    = prev["adx"] > config.ADX_THRESH
-    rsi_long  = config.RSI_LONG_MIN  <= prev["rsi"] <= config.RSI_LONG_MAX
-    rsi_short = config.RSI_SHORT_MIN <= prev["rsi"] <= config.RSI_SHORT_MAX
+    # Hacim onayı
+    vol_ok = bar["volume"] >= bar["volume_ma"] * config.VOLUME_MULT
 
-    if flipped_up and adx_ok and rsi_long:
+    # 1D trend filtresi (yoksa pas geç)
+    daily_trend = bar.get("daily_trend")
+    has_daily   = pd.notna(daily_trend)
+
+    # LONG: kapanış Donchian high'ın üstünde
+    long_break = bar["close"] > bar["donchian_high"]
+    rsi_long_ok = bar["rsi"] <= config.RSI_MAX_LONG
+    daily_long_ok = (not has_daily) or (daily_trend == 1)
+
+    if long_break and vol_ok and rsi_long_ok and daily_long_ok:
         return LONG
-    if flipped_down and adx_ok and rsi_short:
+
+    # SHORT: kapanış Donchian low'un altında
+    short_break = bar["close"] < bar["donchian_low"]
+    rsi_short_ok = bar["rsi"] >= config.RSI_MIN_SHORT
+    daily_short_ok = (not has_daily) or (daily_trend == -1)
+
+    if short_break and vol_ok and rsi_short_ok and daily_short_ok:
         return SHORT
+
     return NONE
 
 
 def check_exit(df: pd.DataFrame, side: str) -> bool:
-    """Açık pozisyon için trend tersine döndü mü? Son kapanan barı kullanır."""
+    """
+    Erken trend dönüş çıkışı: daha sıkı (10-bar) Donchian kanalı kırılırsa çık.
+    Long pozisyon → close < donchian_exit_low
+    Short pozisyon → close > donchian_exit_high
+    """
     if len(df) < 2:
         return False
-    prev = df.iloc[-2]
+    bar = _last_closed(df)
+
     if side == LONG:
-        return prev["ema_fast"] < prev["ema_slow"]
-    return prev["ema_fast"] > prev["ema_slow"]
+        ref = bar.get("donchian_exit_low")
+        return pd.notna(ref) and bar["close"] < ref
+    else:
+        ref = bar.get("donchian_exit_high")
+        return pd.notna(ref) and bar["close"] > ref
 
 
 def trailing_stop(entry: float, extreme: float, side: str) -> float:
     """
-    Trailing stop fiyatı:
-      LONG  : extreme - (extreme - entry) * TRAIL_GIVEBACK
-      SHORT : extreme + (entry - extreme) * TRAIL_GIVEBACK
-
-    extreme: pozisyon süresince görülen en uç fiyat
-             (long → en yüksek high; short → en düşük low)
-
-    Henüz kâr yoksa entry döndürür (çağıran taraf bu durumu erken filtrelemeli).
+    Long  : extreme - (extreme - entry) * TRAIL_GIVEBACK
+    Short : extreme + (entry - extreme) * TRAIL_GIVEBACK
     """
     gain = abs(extreme - entry)
     if gain <= 0:

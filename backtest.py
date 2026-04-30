@@ -1,9 +1,10 @@
 """
-Backtest — sabit TP yok.
+Backtest — Donchian breakout + hacim + 1D filtre.
 Çıkış koşulları:
-  1. Trailing stop kırıldı  (kazancın %30'u geri verildi)
-  2. Trend tersine döndü    (EMA kesişimi)
+  1. Trailing stop kırıldı  (kazancın %15'i geri verildi)
+  2. Erken trend dönüşü     (10-bar Donchian ters kırıldı)
   3. İlk SL kırıldı         (ATR tabanlı)
+Komisyon ve slippage PnL'den düşülür.
 Kullanım:
     python backtest.py
 """
@@ -16,8 +17,10 @@ import strategy as strat
 import risk as r
 
 
-def run_backtest(df: pd.DataFrame) -> pd.DataFrame:
+def run_backtest(df: pd.DataFrame, df_daily: pd.DataFrame | None = None) -> pd.DataFrame:
     df = ind.add_indicators(df)
+    if df_daily is not None and not df_daily.empty:
+        df = ind.add_daily_trend(df, df_daily)
     trades = []
     balance = config.CAPITAL_USDT
 
@@ -142,40 +145,50 @@ def print_summary(trades: pd.DataFrame):
     print(f"{'='*45}\n")
 
 
-def fetch_long_history(years: int = 3) -> pd.DataFrame:
-    """Birden fazla istek ile uzun geçmiş veri çeker."""
+def _fetch_paginated(timeframe: str, years: int) -> pd.DataFrame:
     exchange = ccxt.binance({"options": {"defaultType": "future"}})
     tf_ms = {"4h": 4 * 60 * 60 * 1000, "1h": 60 * 60 * 1000, "1d": 24 * 60 * 60 * 1000}
-    step  = tf_ms.get(config.TIMEFRAME, 4 * 60 * 60 * 1000)
+    step  = tf_ms.get(timeframe, 4 * 60 * 60 * 1000)
     total_bars = int(years * 365 * 24 * 60 * 60 * 1000 / step)
 
     since = exchange.milliseconds() - total_bars * step
     all_bars = []
-    print(f"Toplam ~{total_bars} bar çekilecek ({years} yıl)...")
+    print(f"  {timeframe}: ~{total_bars} bar...")
 
     while since < exchange.milliseconds() - step:
-        batch = exchange.fetch_ohlcv(config.SYMBOL, config.TIMEFRAME, since=since, limit=1000)
+        batch = exchange.fetch_ohlcv(config.SYMBOL, timeframe, since=since, limit=1000)
         if not batch:
             break
         all_bars.extend(batch)
         since = batch[-1][0] + step
-        print(f"  {len(all_bars)} bar çekildi...", end="\r")
 
-    print()
     df = pd.DataFrame(all_bars, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
     df.set_index("timestamp", inplace=True)
     df = df.astype(float)
-    df = df[~df.index.duplicated()]
-    return df
+    return df[~df.index.duplicated()]
+
+
+def fetch_long_history(years: int = 3) -> pd.DataFrame:
+    """4H barlarını döndürür (geriye uyumluluk için)."""
+    return _fetch_paginated(config.TIMEFRAME, years)
+
+
+def fetch_history_with_daily(years: int = 3) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Hem 4H hem 1D verisi çek (Donchian + daily_trend için)."""
+    print(f"Veri çekiliyor ({years} yıl)...")
+    df_4h  = _fetch_paginated(config.TIMEFRAME, years)
+    df_1d  = _fetch_paginated(config.DAILY_TIMEFRAME, years)
+    return df_4h, df_1d
 
 
 if __name__ == "__main__":
-    df = fetch_long_history(years=3)
-    print(f"Veri araligi: {df.index[0]} - {df.index[-1]} ({len(df)} bar)")
+    df_4h, df_1d = fetch_history_with_daily(years=3)
+    print(f"4H: {df_4h.index[0]} - {df_4h.index[-1]} ({len(df_4h)} bar)")
+    print(f"1D: {df_1d.index[0]} - {df_1d.index[-1]} ({len(df_1d)} bar)")
 
-    print("Backtest çalıştırılıyor...")
-    trades = run_backtest(df)
+    print("\nBacktest çalıştırılıyor...")
+    trades = run_backtest(df_4h, df_1d)
     print_summary(trades)
 
     if not trades.empty:
