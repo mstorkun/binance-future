@@ -10,3 +10,6 @@ Token-saving rules for this repo:
 - Output style suggestion: switch Claude Code to **Concise** or **Laser**.
 
 Repo overview: see [README.md](README.md). Strategy and architecture: [docs/](docs/).
+
+Before continuing project work, read [AI_MEMORY.md](AI_MEMORY.md) for the latest
+repo-local handoff, user priorities, validation state, and known dirty files.
