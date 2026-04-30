@@ -12,9 +12,12 @@ import bias_audit
 import exit_ladder
 import flow_data
 import order_manager
+import pair_universe
 import paper_runner
 import protections
 import risk
+import trade_executor
+import twap_execution
 import walk_forward
 
 
@@ -216,6 +219,63 @@ class SafetyTests(unittest.TestCase):
             sample_step=1,
         )
         self.assertEqual(issues, [])
+
+    def test_pair_universe_disabled_keeps_symbols(self):
+        old_enabled = getattr(config, "PAIR_UNIVERSE_ENABLED", False)
+        try:
+            config.PAIR_UNIVERSE_ENABLED = False
+            self.assertEqual(pair_universe.select_symbols(["SOL/USDT"], {}), ["SOL/USDT"])
+        finally:
+            config.PAIR_UNIVERSE_ENABLED = old_enabled
+
+    def test_pair_universe_rejects_too_few_bars(self):
+        df = pd.DataFrame(
+            {"close": [100.0, 101.0], "volume": [1.0, 1.0], "atr": [2.0, 2.0]},
+            index=pd.date_range("2026-01-01", periods=2, freq="4h"),
+        )
+        score = pair_universe.score_pair("TEST/USDT", {"df": df})
+        self.assertFalse(score.tradable)
+        self.assertIn("pair:too_few_bars", score.reasons)
+
+    def test_twap_plan_splits_large_notional_when_enabled(self):
+        plan = twap_execution.build_twap_plan(
+            notional=5_000.0,
+            price=100.0,
+            enabled=True,
+            slice_notional=1_000.0,
+            max_slices=10,
+            interval_seconds=30,
+        )
+        self.assertEqual(len(plan), 5)
+        self.assertEqual(plan[-1].delay_seconds, 120)
+        self.assertAlmostEqual(sum(item.notional for item in plan), 5_000.0)
+
+    def test_trade_executor_partial_step_is_passive_contract(self):
+        old_enabled = getattr(config, "EXIT_LADDER_ENABLED", False)
+        try:
+            config.EXIT_LADDER_ENABLED = True
+            trade = trade_executor.ManagedTrade(
+                symbol="SOL/USDT",
+                side="long",
+                entry=100.0,
+                size=1.0,
+                atr=5.0,
+                entry_time=pd.Timestamp("2026-01-01"),
+                sl=90.0,
+                hard_sl=85.0,
+            )
+            trade.activate()
+            bar = pd.Series(
+                {"open": 100.0, "high": 111.0, "low": 100.0, "close": 110.0, "atr": 5.0, "volume": 1.0},
+                name=pd.Timestamp("2026-01-01 04:00:00"),
+            )
+            events = trade.update_from_bar(bar)
+            self.assertTrue(any(event["event"] == "partial_close" for event in events))
+            self.assertEqual(trade.filled_exit_steps, 1)
+            self.assertGreaterEqual(trade.sl, 100.0)
+            self.assertEqual(trade.status, trade_executor.ExecutorStatus.ACTIVE)
+        finally:
+            config.EXIT_LADDER_ENABLED = old_enabled
 
 
 if __name__ == "__main__":

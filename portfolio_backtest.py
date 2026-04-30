@@ -19,6 +19,9 @@ import execution_guard as eg
 import flow_data
 import indicators as ind
 import liquidation
+import exit_ladder
+import pair_universe
+import protections
 import strategy as strat
 import risk as r
 from backtest import _fetch_paginated, fetch_funding_history, _funding_cost
@@ -52,6 +55,9 @@ def run_portfolio_backtest(
     risk_basis: str | None = None,
     enable_circuit_breaker: bool = True,
     enable_corr_sizing: bool = True,
+    enable_protections: bool | None = None,
+    enable_exit_ladder: bool | None = None,
+    enable_pair_universe: bool | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Returns (trades_df, equity_df).
@@ -63,6 +69,14 @@ def run_portfolio_backtest(
         leverage = config.LEVERAGE
     if risk_basis is None:
         risk_basis = getattr(config, "RISK_BASIS", "portfolio")
+    if enable_protections is None:
+        enable_protections = getattr(config, "PROTECTIONS_ENABLED", False)
+    if enable_exit_ladder is None:
+        enable_exit_ladder = getattr(config, "EXIT_LADDER_ENABLED", False)
+    if enable_pair_universe is None:
+        enable_pair_universe = getattr(config, "PAIR_UNIVERSE_ENABLED", False)
+    if enable_pair_universe:
+        symbols = pair_universe.select_symbols(symbols, data_by_symbol)
 
     # Ortak timeline
     all_timestamps = set()
@@ -115,6 +129,13 @@ def run_portfolio_backtest(
                 del open_positions[sym]
                 continue
 
+            if enable_exit_ladder:
+                pnl = _process_exit_ladder(pos, sym, bar, ts, data_by_symbol, trades)
+                wallet += pnl
+                if pos.get("size", 0.0) <= 0:
+                    del open_positions[sym]
+                    continue
+
             # Trailing güncelle
             trailing_guard = eg.should_skip_trailing_update(bar)
             if trailing_guard.ok:
@@ -135,8 +156,8 @@ def run_portfolio_backtest(
             wallet, open_positions, data_by_symbol, ts
         )
 
+        peak_equity = max(peak_equity, equity)
         if enable_circuit_breaker:
-            peak_equity = max(peak_equity, equity)
             dd_pct = (peak_equity - equity) / peak_equity
             if dd_pct >= 0.30 and not cb_locked:
                 cb_locked = True
@@ -185,6 +206,16 @@ def run_portfolio_backtest(
                 risk_decision = r.entry_risk_decision(bar, signal, ts=ts)
                 if risk_decision.block_new_entries:
                     continue
+                if enable_protections:
+                    protection = protections.protection_decision(
+                        sym,
+                        ts,
+                        trades,
+                        equity=equity,
+                        peak_equity=peak_equity,
+                    )
+                    if protection.block_new_entries:
+                        continue
                 effective_risk *= risk_decision.multiplier
 
                 if risk_basis == "portfolio":
@@ -217,6 +248,9 @@ def run_portfolio_backtest(
                     "risk_pct": effective_risk,
                     "risk_mult": risk_decision.multiplier,
                     "risk_reasons": "|".join(risk_decision.reasons),
+                    "exit_plan": exit_ladder.build_exit_plan(entry, atr, signal, enabled=enable_exit_ladder),
+                    "exit_steps_filled": 0,
+                    "initial_size": size,
                 }
                 used_margin += margin
 
@@ -258,8 +292,62 @@ def _gross_pnl(pos: dict, exit_price: float) -> float:
     return (pos["entry"] - exit_price) * pos["size"]
 
 
-def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_symbol, trades, ts, exit_reason: str):
-    notional = (pos["entry"] + exit_price) / 2 * pos["size"]
+def _process_exit_ladder(pos: dict, sym: str, bar, ts, data_by_symbol, trades) -> float:
+    plan = pos.get("exit_plan") or []
+    total_pnl = 0.0
+    while int(pos.get("exit_steps_filled", 0)) < len(plan) and float(pos.get("size", 0.0)) > 0:
+        step = plan[int(pos.get("exit_steps_filled", 0))]
+        hit = (
+            pos["side"] == strat.LONG and float(bar["high"]) >= step.target
+        ) or (
+            pos["side"] == strat.SHORT and float(bar["low"]) <= step.target
+        )
+        if not hit:
+            break
+
+        close_size = min(float(pos["size"]), float(pos.get("initial_size", pos["size"])) * step.close_fraction)
+        pnl = _close_position(
+            pos,
+            sym,
+            step.target,
+            ts,
+            data_by_symbol,
+            trades,
+            ts,
+            f"{step.name}_partial",
+            size_override=close_size,
+        )
+        total_pnl += pnl
+        old_size = float(pos["size"])
+        pos["size"] = round(max(0.0, old_size - close_size), 8)
+        if old_size > 0:
+            remaining_ratio = pos["size"] / old_size
+            pos["margin"] = float(pos.get("margin", 0.0)) * remaining_ratio
+            pos["notional"] = float(pos.get("notional", 0.0)) * remaining_ratio
+
+        pos["exit_steps_filled"] = int(pos.get("exit_steps_filled", 0)) + 1
+        new_stop = exit_ladder.stop_after_filled_steps(pos["entry"], pos["side"], plan, int(pos["exit_steps_filled"]))
+        if new_stop is not None:
+            pos["sl"] = new_stop
+            pos["hard_sl"] = eg.hard_stop_from_soft(new_stop, pos["atr"], pos["side"])
+    return total_pnl
+
+
+def _close_position(
+    pos: dict,
+    sym: str,
+    exit_price: float,
+    exit_ts,
+    data_by_symbol,
+    trades,
+    ts,
+    exit_reason: str,
+    size_override: float | None = None,
+):
+    close_size = float(pos["size"] if size_override is None else size_override)
+    close_pos = dict(pos)
+    close_pos["size"] = close_size
+    notional = (pos["entry"] + exit_price) / 2 * close_size
     commission = notional * config.ROUND_TRIP_FEE_RATE
     slippage   = notional * config.SLIPPAGE_RATE_ROUND_TRIP
     funding_rates = data_by_symbol[sym].get("funding")
@@ -272,7 +360,7 @@ def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_sym
         side=pos["side"],
         fallback_periods=bars_held / 2.0,
     )
-    gross = _gross_pnl(pos, exit_price)
+    gross = _gross_pnl(close_pos, exit_price)
     pnl = gross - commission - slippage - funding
     entry_equity = float(pos.get("entry_equity") or 0.0)
     pnl_return_pct = (pnl / entry_equity * 100.0) if entry_equity > 0 else 0.0

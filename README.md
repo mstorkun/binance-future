@@ -16,7 +16,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 | Primary signal | Donchian breakout |
 | Filters | Volume, ADX, RSI, 1D trend, calendar/news risk, volume profile, candlestick context, futures flow context |
 | Exits | ATR initial SL, dynamic trailing SL, Donchian exit |
-| Mature-bot add-ons | Protection layer, exit ladder, bias audit are present but passive by default |
+| Mature-bot add-ons | Protection layer, exit ladder, pair universe, TWAP planner, executor contract, bias audit are present but passive by default |
 
 ## Strategy
 
@@ -55,7 +55,12 @@ pattern_signals.py           Rule-based candlestick/price-action context
 flow_data.py                 Futures flow context for live/testnet risk decisions
 protections.py               Passive mature-bot protection checks
 exit_ladder.py               Passive partial-TP/breakeven plan helper
+pair_universe.py             Passive dynamic pairlist/liquidity/volatility scoring
+twap_execution.py            Passive TWAP slice planner
+trade_executor.py            Passive lifecycle contract for future execution refactor
 bias_audit.py                Lookahead/recursive indicator stability audit
+ops_status.py                Local paper/testnet status report
+mature_bot_compare.py        Side-by-side add-on validation
 paper_runner.py              No-order paper telemetry and virtual portfolio runner
 testnet_fill_probe.py        Explicitly approved testnet fill/slippage probe
 order_manager.py             Order placement, SL update, position close
@@ -80,6 +85,8 @@ python multi_symbol_backtest.py
 python multi_symbol_walk_forward.py
 python monte_carlo.py --trades backtest_results.csv
 python bias_audit.py --symbol SOL/USDT --years 1 --sample-step 96
+python mature_bot_compare.py --years 3
+python ops_status.py --json
 python paper_runner.py --once --reset
 python -m unittest discover -s tests -v
 ```

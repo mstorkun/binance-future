@@ -29,6 +29,34 @@ and backtest profitability stay unchanged until each layer is proven useful.
 python bias_audit.py --symbol SOL/USDT --years 1 --sample-step 96
 ```
 
+- `pair_universe.py`
+  - Scores candidate pairs by available bars, quote volume, ATR percentage, and
+    recent funding cost.
+  - Default: `config.PAIR_UNIVERSE_ENABLED = False`.
+
+- `twap_execution.py`
+  - Builds deterministic TWAP slice plans for larger orders.
+  - Does not place orders.
+  - Default: `config.TWAP_ENABLED = False`.
+
+- `trade_executor.py`
+  - Passive lifecycle contract for future Hummingbot-style executor refactor.
+  - Models activation, partial exits, breakeven, trailing, and final close.
+  - Not wired into live/paper order flow.
+
+- `ops_status.py`
+  - Terminal status report for heartbeat, paper equity, recent decisions,
+    recent skips, trades, and errors.
+
+- `mature_bot_compare.py`
+  - Side-by-side backtest-only comparison:
+    baseline, protections, exit ladder, pair universe, and all add-ons.
+  - CLI example:
+
+```bash
+python mature_bot_compare.py --years 3
+```
+
 ## Activation Rule
 
 Do not wire these modules into live/testnet order flow until all three gates
@@ -38,6 +66,32 @@ pass:
 2. Walk-forward remains positive in the same or better number of windows.
 3. Monte Carlo bootstrap/block drawdown is not worse.
 
-The first integration target should be backtest-only. Paper/testnet and live
+The first integration target is `mature_bot_compare.py`. Paper/testnet and live
 wiring should come only after a side-by-side report proves the layer is
 net-positive.
+
+## Latest Side-by-side Result
+
+Command:
+
+```bash
+python mature_bot_compare.py --years 3
+```
+
+Result:
+
+| Variant | Trades | Win rate | Final equity | CAGR | Peak DD |
+|---|---:|---:|---:|---:|---:|
+| baseline | 244 | 81.97% | 5786.96 | 79.54% | 7.67% |
+| protections | 235 | 82.13% | 5535.17 | 76.89% | 7.67% |
+| exit_ladder | 258 | 82.95% | 5513.67 | 76.66% | 7.67% |
+| pair_universe | 244 | 81.97% | 5786.96 | 79.54% | 7.67% |
+| all_addons | 249 | 83.13% | 5273.78 | 74.06% | 7.67% |
+
+Verdict:
+
+- Keep `protections.py` passive with the current parameters.
+- Keep `exit_ladder.py` passive with the current parameters.
+- `pair_universe.py` did not change the selected symbols; all current symbols
+  passed the filter.
+- Do not enable `all_addons` in paper/testnet/live because it reduced CAGR.

@@ -53,6 +53,8 @@ strategy, risk, backtest, paper, testnet, or live-trading changes.
 - `config.WEEKLY_TREND_RISK_ENABLED = False`.
 - `config.PROTECTIONS_ENABLED = False`.
 - `config.EXIT_LADDER_ENABLED = False`.
+- `config.PAIR_UNIVERSE_ENABLED = False`.
+- `config.TWAP_ENABLED = False`.
 
 The mature-bot add-ons are intentionally passive. Do not wire them into live or
 paper order behavior until a side-by-side backtest/walk-forward/Monte Carlo
@@ -78,11 +80,17 @@ Other previous validation context:
 - Portfolio walk-forward fixed growth profile was positive in `7/7` windows.
 - Monte Carlo remained acceptable on the current trade set, but bootstrap/block
   drawdown is still a required live gate.
+- Mature bot side-by-side compare:
+  `python mature_bot_compare.py --years 3`
+  showed baseline still best on CAGR. Current results:
+  baseline `79.54%`, protections `76.89%`, exit_ladder `76.66%`,
+  pair_universe `79.54%`, all_addons `74.06%`.
+  Do not enable protections/exit ladder/all_addons with current parameters.
 - Bias audit on SOL 1-year data passed:
   `python bias_audit.py --symbol SOL/USDT --years 1 --sample-step 96`
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m unittest discover -s tests -v` -> `12` tests OK.
+  `python -m unittest discover -s tests -v` -> `16` tests OK.
 
 ## Recent Commits
 
@@ -116,6 +124,11 @@ Other previous validation context:
 - `flow_data.py`: Binance public futures flow data with TTL/freshness handling.
 - `protections.py`: passive mature-bot protections.
 - `exit_ladder.py`: passive partial-TP/breakeven helper.
+- `pair_universe.py`: passive dynamic pairlist scoring.
+- `twap_execution.py`: passive TWAP slice planner.
+- `trade_executor.py`: passive lifecycle contract for future execution refactor.
+- `ops_status.py`: local paper/testnet status report.
+- `mature_bot_compare.py`: side-by-side add-on validation.
 - `bias_audit.py`: lookahead/recursive indicator stability audit.
 - `docs/MATURE_BOT_ADDONS.md`: activation rules for new add-ons.
 
@@ -132,8 +145,10 @@ Other previous validation context:
 
 ## Safe Next Steps
 
-1. Build a side-by-side backtest-only comparison for `protections.py`.
-2. Separately test `exit_ladder.py` in backtest-only mode.
+1. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
+   mode; current parameters reduce CAGR.
+2. Add a real executor-backed paper implementation only after a net-positive
+   side-by-side report.
 3. Run portfolio walk-forward for any active change.
 4. Run Monte Carlo bootstrap/block for any active change.
 5. Only after net-positive evidence, consider paper/testnet wiring.
