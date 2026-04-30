@@ -52,6 +52,8 @@ strategy.py                  Signal and exit rules
 risk.py                      Position size and SL/TP calculation
 pattern_signals.py           Rule-based candlestick/price-action context
 flow_data.py                 Futures flow context for live/testnet risk decisions
+paper_runner.py              No-order paper telemetry and virtual portfolio runner
+testnet_fill_probe.py        Explicitly approved testnet fill/slippage probe
 order_manager.py             Order placement, SL update, position close
 bot.py                       Multi-symbol portfolio bot loop (testnet/live)
 backtest.py                  Single-symbol backtest
@@ -73,6 +75,7 @@ python walk_forward.py
 python multi_symbol_backtest.py
 python multi_symbol_walk_forward.py
 python monte_carlo.py --trades backtest_results.csv
+python paper_runner.py --once --reset
 ```
 
 For the live/testnet bot, place your API keys in `.env` or environment variables. **Do not switch off `config.TESTNET = True` without going through the gating criteria.**

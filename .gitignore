@@ -1,5 +1,10 @@
 .env
 *.log
 backtest_results.csv
+paper_state.json
+paper_decisions.csv
+paper_trades.csv
+paper_equity.csv
+testnet_fill_probe.csv
 __pycache__/
 *.pyc

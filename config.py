@@ -129,6 +129,16 @@ TAKER_FEE_RATE = 0.0004
 ROUND_TRIP_FEE_RATE = TAKER_FEE_RATE * 2
 SLIPPAGE_RATE_ROUND_TRIP = 0.0015
 
+# --- Paper/testnet telemetry ---
+PAPER_STATE_FILE = "paper_state.json"
+PAPER_DECISIONS_CSV = "paper_decisions.csv"
+PAPER_TRADES_CSV = "paper_trades.csv"
+PAPER_EQUITY_CSV = "paper_equity.csv"
+PAPER_START_BALANCE = CAPITAL_USDT
+PAPER_ENTRY_SLIPPAGE_RATE = SLIPPAGE_RATE_ROUND_TRIP / 2
+PAPER_EXIT_SLIPPAGE_RATE = SLIPPAGE_RATE_ROUND_TRIP / 2
+TESTNET_FILL_PROBE_NOTIONAL_USDT = 110.0
+
 # --- Trend takip indikatörleri (eski mantık, bazı yardımcılar hala kullanılıyor) ---
 EMA_FAST   = 21
 EMA_SLOW   = 50
