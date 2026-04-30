@@ -3,13 +3,14 @@ import config
 
 def position_size(balance: float, atr: float, price: float) -> float:
     """
-    Risk tutarı = bakiye × risk_pct
-    Stop mesafesi = ATR × çarpan
-    Kontrat adedi = risk tutarı / (stop_mesafesi × kaldıraç)
+    Risk tutarı (USDT) = bakiye × risk_pct
+    Stop mesafesi (USDT/BTC) = ATR × çarpan
+    Kontrat (BTC) = risk_usdt / stop_dist
+    Kaldıraç margin'i etkiler, kontrat sayısını değil.
     """
-    risk_usdt   = balance * config.RISK_PER_TRADE_PCT
-    stop_dist   = atr * config.SL_ATR_MULT
-    contracts   = (risk_usdt * config.LEVERAGE) / (stop_dist * price)
+    risk_usdt = balance * config.RISK_PER_TRADE_PCT
+    stop_dist = atr * config.SL_ATR_MULT
+    contracts = risk_usdt / stop_dist
     return round(contracts, 4)
 
 
