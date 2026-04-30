@@ -14,6 +14,7 @@ import flow_data
 import order_manager
 import pair_universe
 import paper_runner
+import portfolio_candidate_sweep
 import protections
 import risk
 import trade_executor
@@ -276,6 +277,32 @@ class SafetyTests(unittest.TestCase):
             self.assertEqual(trade.status, trade_executor.ExecutorStatus.ACTIVE)
         finally:
             config.EXIT_LADDER_ENABLED = old_enabled
+
+    def test_candidate_sweep_generates_current_combo_once(self):
+        combos = portfolio_candidate_sweep.generate_combos(
+            ["SOL/USDT", "ETH/USDT", "BNB/USDT"],
+            min_size=2,
+            max_size=3,
+            include_current=True,
+        )
+        self.assertEqual(combos.count(("SOL/USDT", "ETH/USDT", "BNB/USDT")), 1)
+        self.assertIn(("SOL/USDT", "ETH/USDT"), combos)
+
+    def test_candidate_sweep_summary_orders_metrics(self):
+        equity = pd.DataFrame({"equity": [1000.0, 1200.0, 1100.0, 1500.0]})
+        trades = pd.DataFrame(
+            {
+                "pnl": [100.0, -25.0, 50.0],
+                "commission": [1.0, 1.0, 1.0],
+                "slippage": [2.0, 2.0, 2.0],
+                "funding": [0.5, -0.2, 0.1],
+            }
+        )
+        row = portfolio_candidate_sweep.summarize_combo(("SOL/USDT", "ETH/USDT"), trades, equity, years=1)
+        self.assertEqual(row["symbols"], "SOL/USDT,ETH/USDT")
+        self.assertEqual(row["trades"], 3)
+        self.assertEqual(row["final_equity"], 1500.0)
+        self.assertGreater(row["cagr_pct"], 0)
 
 
 if __name__ == "__main__":

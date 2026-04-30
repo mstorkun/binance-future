@@ -61,6 +61,7 @@ trade_executor.py            Passive lifecycle contract for future execution ref
 bias_audit.py                Lookahead/recursive indicator stability audit
 ops_status.py                Local paper/testnet status report
 mature_bot_compare.py        Side-by-side add-on validation
+portfolio_candidate_sweep.py Search better symbol combinations
 paper_runner.py              No-order paper telemetry and virtual portfolio runner
 testnet_fill_probe.py        Explicitly approved testnet fill/slippage probe
 order_manager.py             Order placement, SL update, position close
@@ -86,6 +87,7 @@ python multi_symbol_walk_forward.py
 python monte_carlo.py --trades backtest_results.csv
 python bias_audit.py --symbol SOL/USDT --years 1 --sample-step 96
 python mature_bot_compare.py --years 3
+python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 5 --top 20
 python ops_status.py --json
 python paper_runner.py --once --reset
 python -m unittest discover -s tests -v

@@ -10,5 +10,7 @@ paper_heartbeat.json
 paper_runner.lock
 testnet_fill_probe.csv
 mature_bot_compare_results.csv
+portfolio_candidate_sweep_results.csv
+portfolio_candidate_universe.csv
 __pycache__/
 *.pyc

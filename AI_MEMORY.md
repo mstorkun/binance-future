@@ -129,8 +129,12 @@ Other previous validation context:
 - `trade_executor.py`: passive lifecycle contract for future execution refactor.
 - `ops_status.py`: local paper/testnet status report.
 - `mature_bot_compare.py`: side-by-side add-on validation.
+- `portfolio_candidate_sweep.py`: searches better symbol combinations without
+  changing the strategy.
 - `bias_audit.py`: lookahead/recursive indicator stability audit.
 - `docs/MATURE_BOT_ADDONS.md`: activation rules for new add-ons.
+- `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for
+  symbol portfolio search.
 
 ## Runtime / Worktree Notes
 
@@ -147,11 +151,16 @@ Other previous validation context:
 
 1. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
    mode; current parameters reduce CAGR.
-2. Add a real executor-backed paper implementation only after a net-positive
+2. Run `portfolio_candidate_sweep.py` to search for a better symbol portfolio
+   before changing strategy logic.
+   Latest smoke:
+   `python portfolio_candidate_sweep.py --years 1 --symbols SOL/USDT ETH/USDT BNB/USDT --min-size 3 --max-size 3 --max-combos 1 --top 5`
+   gave `86` trades, `56.23%` CAGR, `7.67%` peak DD.
+3. Add a real executor-backed paper implementation only after a net-positive
    side-by-side report.
-3. Run portfolio walk-forward for any active change.
-4. Run Monte Carlo bootstrap/block for any active change.
-5. Only after net-positive evidence, consider paper/testnet wiring.
+4. Run portfolio walk-forward for any active change.
+5. Run Monte Carlo bootstrap/block for any active change.
+6. Only after net-positive evidence, consider paper/testnet wiring.
 
 ## Do Not Do Without Explicit Approval
 
