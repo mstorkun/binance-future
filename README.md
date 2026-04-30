@@ -16,6 +16,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 | Primary signal | Donchian breakout |
 | Filters | Volume, ADX, RSI, 1D trend, calendar/news risk, volume profile, candlestick context, futures flow context |
 | Exits | ATR initial SL, dynamic trailing SL, Donchian exit |
+| Mature-bot add-ons | Protection layer, exit ladder, bias audit are present but passive by default |
 
 ## Strategy
 
@@ -52,6 +53,9 @@ strategy.py                  Signal and exit rules
 risk.py                      Position size and SL/TP calculation
 pattern_signals.py           Rule-based candlestick/price-action context
 flow_data.py                 Futures flow context for live/testnet risk decisions
+protections.py               Passive mature-bot protection checks
+exit_ladder.py               Passive partial-TP/breakeven plan helper
+bias_audit.py                Lookahead/recursive indicator stability audit
 paper_runner.py              No-order paper telemetry and virtual portfolio runner
 testnet_fill_probe.py        Explicitly approved testnet fill/slippage probe
 order_manager.py             Order placement, SL update, position close
@@ -75,6 +79,7 @@ python walk_forward.py
 python multi_symbol_backtest.py
 python multi_symbol_walk_forward.py
 python monte_carlo.py --trades backtest_results.csv
+python bias_audit.py --symbol SOL/USDT --years 1 --sample-step 96
 python paper_runner.py --once --reset
 python -m unittest discover -s tests -v
 ```

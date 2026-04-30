@@ -8,9 +8,12 @@ import ccxt
 import pandas as pd
 
 import config
+import bias_audit
+import exit_ladder
 import flow_data
 import order_manager
 import paper_runner
+import protections
 import risk
 import walk_forward
 
@@ -122,6 +125,97 @@ class SafetyTests(unittest.TestCase):
                 warmup_bars=1,
             )
         self.assertTrue(result.empty)
+
+    def test_protections_disabled_are_neutral(self):
+        old_enabled = getattr(config, "PROTECTIONS_ENABLED", False)
+        try:
+            config.PROTECTIONS_ENABLED = False
+            decision = protections.protection_decision(
+                "SOL/USDT",
+                pd.Timestamp("2026-01-02 00:00:00"),
+                [{"symbol": "SOL/USDT", "exit_time": "2026-01-01 23:00:00", "result": "soft_sl", "pnl": -10}],
+                equity=800,
+                peak_equity=1000,
+            )
+            self.assertFalse(decision.block_new_entries)
+            self.assertEqual(decision.multiplier, 1.0)
+            self.assertEqual(decision.reasons, ())
+        finally:
+            config.PROTECTIONS_ENABLED = old_enabled
+
+    def test_protections_stoploss_guard_blocks_when_enabled(self):
+        old_enabled = getattr(config, "PROTECTIONS_ENABLED", False)
+        old_limit = getattr(config, "PROTECTION_STOPLOSS_TRADE_LIMIT", 3)
+        try:
+            config.PROTECTIONS_ENABLED = True
+            config.PROTECTION_STOPLOSS_TRADE_LIMIT = 2
+            trades = [
+                {"symbol": "SOL/USDT", "exit_time": "2026-01-01 04:00:00", "result": "soft_sl", "pnl": -5},
+                {"symbol": "ETH/USDT", "exit_time": "2026-01-01 08:00:00", "result": "hard_sl", "pnl": -7},
+            ]
+            decision = protections.protection_decision("BNB/USDT", pd.Timestamp("2026-01-01 09:00:00"), trades)
+            self.assertTrue(decision.block_new_entries)
+            self.assertIn("protection:stoploss_guard", decision.reasons)
+        finally:
+            config.PROTECTIONS_ENABLED = old_enabled
+            config.PROTECTION_STOPLOSS_TRADE_LIMIT = old_limit
+
+    def test_exit_ladder_disabled_does_not_create_plan(self):
+        old_enabled = getattr(config, "EXIT_LADDER_ENABLED", False)
+        try:
+            config.EXIT_LADDER_ENABLED = False
+            self.assertEqual(exit_ladder.build_exit_plan(100.0, 5.0, "long"), [])
+        finally:
+            config.EXIT_LADDER_ENABLED = old_enabled
+
+    def test_exit_ladder_breakeven_after_tp1(self):
+        plan = exit_ladder.build_exit_plan(100.0, 5.0, "long", enabled=True)
+        self.assertEqual(len(plan), 2)
+        self.assertGreater(plan[0].target, 100.0)
+        self.assertLessEqual(sum(step.close_fraction for step in plan), 1.0)
+        self.assertEqual(exit_ladder.stop_after_filled_steps(100.0, "long", plan, 1), 100.0)
+
+    def test_bias_audit_detects_future_dependent_feature(self):
+        idx = pd.date_range("2026-01-01", periods=12, freq="4h")
+        raw = pd.DataFrame(
+            {"open": range(12), "high": range(1, 13), "low": range(12), "close": range(12), "volume": 1.0},
+            index=idx,
+        )
+
+        def add_future(df):
+            df = df.copy()
+            df["future_close"] = df["close"].shift(-1)
+            return df
+
+        issues = bias_audit.audit_indicator_stability(
+            raw,
+            add_features=add_future,
+            columns=("future_close",),
+            min_prefix=5,
+            sample_step=1,
+        )
+        self.assertTrue(issues)
+
+    def test_bias_audit_accepts_past_only_feature(self):
+        idx = pd.date_range("2026-01-01", periods=12, freq="4h")
+        raw = pd.DataFrame(
+            {"open": range(12), "high": range(1, 13), "low": range(12), "close": range(12), "volume": 1.0},
+            index=idx,
+        )
+
+        def add_past(df):
+            df = df.copy()
+            df["past_mean"] = df["close"].rolling(3).mean()
+            return df
+
+        issues = bias_audit.audit_indicator_stability(
+            raw,
+            add_features=add_past,
+            columns=("past_mean",),
+            min_prefix=5,
+            sample_step=1,
+        )
+        self.assertEqual(issues, [])
 
 
 if __name__ == "__main__":
