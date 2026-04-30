@@ -15,6 +15,7 @@ Post-condition: df'e şu sütunlar eklenir:
 
 import pandas as pd
 import config
+import pattern_signals as ps
 import volume_profile as vp
 
 
@@ -93,6 +94,9 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     # Uses prior bars only, so signal-bar profile levels do not peek forward.
     df = vp.add_volume_profile(df)
 
+    # --- Candlestick / price-action context ---
+    df = ps.add_pattern_signals(df)
+
     return df.dropna()
 
 
@@ -112,4 +116,24 @@ def add_daily_trend(df_4h: pd.DataFrame, df_1d: pd.DataFrame) -> pd.DataFrame:
 
     df_out = df_4h.copy()
     df_out["daily_trend"] = daily_lookup["daily_trend"].reindex(df_out.index, method="ffill")
+    return df_out
+
+
+def add_weekly_trend(df_base: pd.DataFrame, df_1w: pd.DataFrame) -> pd.DataFrame:
+    """
+    Weekly EMA trend context.
+
+    weekly_trend = 1 means weekly close is above weekly EMA.
+    weekly_trend = -1 means weekly close is below weekly EMA.
+    Weekly bars are shifted by one week so only closed weekly candles are used.
+    """
+    weekly = df_1w.copy()
+    weekly["weekly_ema"] = weekly["close"].ewm(span=config.WEEKLY_EMA_PERIOD, adjust=False).mean()
+    weekly["weekly_trend"] = (weekly["close"] > weekly["weekly_ema"]).map({True: 1, False: -1})
+
+    weekly_lookup = weekly[["weekly_trend"]].copy()
+    weekly_lookup.index = weekly_lookup.index + pd.Timedelta(days=7)
+
+    df_out = df_base.copy()
+    df_out["weekly_trend"] = weekly_lookup["weekly_trend"].reindex(df_out.index, method="ffill")
     return df_out

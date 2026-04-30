@@ -68,12 +68,12 @@ Source files:
 
 After enabling volume profile:
 
-- `growth_70_compound` CAGR: `80.37%`
+- `growth_70_compound` CAGR: `79.54%`
 - `growth_70_compound` peak DD: `7.67%`
 - Walk-forward fixed growth periods positive: `7/7`
-- Walk-forward fixed average test return: `14.63%`
-- Monte Carlo bootstrap p95 peak DD: `21.41%`
-- Monte Carlo bootstrap max peak DD: `70.73%`
+- Walk-forward fixed average test return: `14.34%`
+- Monte Carlo bootstrap p95 peak DD: `8.69%`
+- Monte Carlo bootstrap max peak DD: `20.81%`
 
 Verdict: keep enabled for testnet, but treat it as a risk-quality layer rather
 than proof that live profitability is solved.

@@ -1,9 +1,13 @@
 import ccxt
 import pandas as pd
 import config
+import flow_data
 
 
 def make_exchange() -> ccxt.Exchange:
+    if not config.TESTNET and not getattr(config, "LIVE_TRADING_APPROVED", False):
+        raise RuntimeError("Live trading is blocked. Set LIVE_TRADING_APPROVED=True only after all gates pass.")
+
     params = {
         "apiKey": config.API_KEY,
         "secret": config.API_SECRET,
@@ -31,6 +35,20 @@ def fetch_daily_ohlcv(exchange: ccxt.Exchange, limit: int = 200) -> pd.DataFrame
     """1D mum verisi — daily trend filtresi için."""
     raw = exchange.fetch_ohlcv(config.SYMBOL, config.DAILY_TIMEFRAME, limit=limit)
     return _ohlcv_to_df(raw)
+
+
+def fetch_weekly_ohlcv(exchange: ccxt.Exchange, limit: int = 200) -> pd.DataFrame:
+    raw = exchange.fetch_ohlcv(config.SYMBOL, config.WEEKLY_TIMEFRAME, limit=limit)
+    return _ohlcv_to_df(raw)
+
+
+def fetch_recent_flow(exchange: ccxt.Exchange, limit: int | None = None) -> flow_data.FlowFetchResult:
+    return flow_data.fetch_recent_flow(
+        exchange,
+        config.SYMBOL,
+        period=getattr(config, "FLOW_PERIOD", config.TIMEFRAME),
+        limit=limit or getattr(config, "FLOW_HISTORY_LIMIT", 500),
+    )
 
 
 def fetch_balance(exchange: ccxt.Exchange) -> float:

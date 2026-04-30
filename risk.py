@@ -67,8 +67,10 @@ def _market_risk_assessment(bar, side: str) -> RiskDecision:
     close = _num(bar.get("close"))
     rsi = _num(bar.get("rsi"))
     daily_trend = _num(bar.get("daily_trend"))
+    weekly_trend = _num(bar.get("weekly_trend"))
     obv = _num(bar.get("obv"))
     obv_ema = _num(bar.get("obv_ema"))
+    open_ = _num(bar.get("open"))
 
     if regime == "trend":
         mult *= 1.10
@@ -96,6 +98,11 @@ def _market_risk_assessment(bar, side: str) -> RiskDecision:
         mult *= 1.08 if aligned else 0.60
         reasons.append("daily:aligned" if aligned else "daily:against")
 
+    if getattr(config, "WEEKLY_TREND_RISK_ENABLED", False) and weekly_trend in (1.0, -1.0):
+        aligned = (side == "long" and weekly_trend == 1.0) or (side == "short" and weekly_trend == -1.0)
+        mult *= 1.05 if aligned else 0.85
+        reasons.append("weekly:aligned" if aligned else "weekly:against")
+
     if obv is not None and obv_ema is not None:
         obv_aligned = (side == "long" and obv > obv_ema) or (side == "short" and obv < obv_ema)
         mult *= 1.05 if obv_aligned else 0.90
@@ -121,6 +128,18 @@ def _market_risk_assessment(bar, side: str) -> RiskDecision:
             mult *= 0.85
             reasons.append("rsi:cold_short")
 
+    pattern = _pattern_risk_decision(bar, side)
+    if pattern.block_new_entries:
+        return RiskDecision(0.0, True, tuple(reasons) + pattern.reasons)
+    mult *= pattern.multiplier
+    reasons.extend(pattern.reasons)
+
+    flow = _flow_risk_decision(bar, side, close=close, open_=open_)
+    if flow.block_new_entries:
+        return RiskDecision(0.0, True, tuple(reasons) + flow.reasons)
+    mult *= flow.multiplier
+    reasons.extend(flow.reasons)
+
     profile = vp.profile_risk_decision(bar, side)
     if profile.block_new_entries:
         return RiskDecision(0.0, True, tuple(reasons) + profile.reasons)
@@ -129,6 +148,113 @@ def _market_risk_assessment(bar, side: str) -> RiskDecision:
 
     min_mult = getattr(config, "DYNAMIC_RISK_MIN_MULT", 0.5)
     max_mult = getattr(config, "DYNAMIC_RISK_MAX_MULT", 1.25)
+    return RiskDecision(max(min_mult, min(max_mult, mult)), False, tuple(reasons))
+
+
+def _pattern_risk_decision(bar, side: str) -> RiskDecision:
+    """Small, testable risk overlay from closed-candle pattern scores."""
+    if not getattr(config, "PATTERN_RISK_ENABLED", False):
+        return RiskDecision(1.0, False, ())
+
+    long_score = _num(bar.get("pattern_score_long"), 0.0) or 0.0
+    short_score = _num(bar.get("pattern_score_short"), 0.0) or 0.0
+    bias = _num(bar.get("pattern_bias"), 0.0) or 0.0
+    if bias == 0.0:
+        return RiskDecision(1.0, False, ())
+
+    side_bias = 1.0 if side == "long" else -1.0
+    aligned = bias == side_bias
+    score = long_score if bias == 1.0 else short_score
+    strong = score >= getattr(config, "PATTERN_STRONG_THRESHOLD", 1.40)
+
+    if aligned:
+        mult = (
+            getattr(config, "PATTERN_STRONG_CONFIRM_MULT", 1.08)
+            if strong else getattr(config, "PATTERN_CONFIRM_MULT", 1.04)
+        )
+        reason = "pattern:strong_aligned" if strong else "pattern:aligned"
+        return RiskDecision(mult, False, (reason,))
+
+    if strong and getattr(config, "PATTERN_BLOCK_STRONG_CONTRA", False):
+        return RiskDecision(0.0, True, ("pattern:strong_contra_block",))
+    mult = (
+        getattr(config, "PATTERN_STRONG_CONTRA_MULT", 1.0)
+        if strong else getattr(config, "PATTERN_CONTRA_MULT", 1.0)
+    )
+    reason = "pattern:strong_contra" if strong else "pattern:contra"
+    return RiskDecision(mult, False, (reason,))
+
+
+def _flow_risk_decision(bar, side: str, close: float | None = None, open_: float | None = None) -> RiskDecision:
+    """Optional futures-flow overlay: taker pressure, top-trader bias, OI, funding."""
+    if not getattr(config, "FLOW_RISK_ENABLED", False):
+        return RiskDecision(1.0, False, ())
+
+    mult = 1.0
+    reasons: list[str] = []
+    taker_buy_ratio = _num(bar.get("flow_taker_buy_ratio"))
+    top_ratio = _num(bar.get("flow_top_long_short_ratio"))
+    oi_change = _num(bar.get("flow_oi_change"))
+    funding = _num(bar.get("flow_funding_rate"))
+
+    if taker_buy_ratio is not None:
+        buy_aligned = side == "long" and taker_buy_ratio >= getattr(config, "FLOW_TAKER_BUY_ALIGNED", 0.56)
+        sell_aligned = side == "short" and taker_buy_ratio <= getattr(config, "FLOW_TAKER_BUY_CONTRA", 0.44)
+        buy_contra = side == "long" and taker_buy_ratio <= getattr(config, "FLOW_TAKER_BUY_CONTRA", 0.44)
+        sell_contra = side == "short" and taker_buy_ratio >= getattr(config, "FLOW_TAKER_BUY_ALIGNED", 0.56)
+        if buy_aligned or sell_aligned:
+            mult *= 1.03
+            reasons.append("flow:taker_aligned")
+        elif buy_contra or sell_contra:
+            mult *= 0.92
+            reasons.append("flow:taker_contra")
+
+    if top_ratio is not None and top_ratio > 0:
+        crowded_long = top_ratio >= getattr(config, "FLOW_TOP_RATIO_CROWDED_LONG", 2.20)
+        crowded_short = top_ratio <= getattr(config, "FLOW_TOP_RATIO_CROWDED_SHORT", 0.45)
+        if crowded_long or crowded_short:
+            mult *= 0.90
+            reasons.append("flow:crowded")
+        elif side == "long" and top_ratio >= getattr(config, "FLOW_TOP_RATIO_LONG", 1.15):
+            mult *= 1.02
+            reasons.append("flow:top_aligned")
+        elif side == "short" and top_ratio <= getattr(config, "FLOW_TOP_RATIO_SHORT", 0.85):
+            mult *= 1.02
+            reasons.append("flow:top_aligned")
+        elif side == "long" and top_ratio <= getattr(config, "FLOW_TOP_RATIO_SHORT", 0.85):
+            mult *= 0.94
+            reasons.append("flow:top_contra")
+        elif side == "short" and top_ratio >= getattr(config, "FLOW_TOP_RATIO_LONG", 1.15):
+            mult *= 0.94
+            reasons.append("flow:top_contra")
+
+    if oi_change is not None:
+        price_ret = ((close - open_) / open_) if close is not None and open_ and open_ > 0 else None
+        if abs(oi_change) >= getattr(config, "FLOW_OI_CHANGE_EXTREME", 0.12):
+            mult *= 0.90
+            reasons.append("flow:oi_extreme")
+        elif price_ret is not None and oi_change >= getattr(config, "FLOW_OI_CHANGE_CONFIRM", 0.03):
+            aligned = (side == "long" and price_ret > 0) or (side == "short" and price_ret < 0)
+            mult *= 1.03 if aligned else 0.94
+            reasons.append("flow:oi_aligned" if aligned else "flow:oi_contra")
+
+    if funding is not None:
+        high = getattr(config, "FLOW_FUNDING_HIGH", 0.0005)
+        extreme = getattr(config, "FLOW_FUNDING_EXTREME", 0.0010)
+        expensive_long = side == "long" and funding >= high
+        expensive_short = side == "short" and funding <= -high
+        if abs(funding) >= extreme and (expensive_long or expensive_short):
+            mult *= 0.90
+            reasons.append("flow:funding_extreme")
+        elif expensive_long or expensive_short:
+            mult *= 0.95
+            reasons.append("flow:funding_expensive")
+
+    if not reasons:
+        return RiskDecision(1.0, False, ())
+
+    min_mult = getattr(config, "FLOW_MIN_MULT", 0.85)
+    max_mult = getattr(config, "FLOW_MAX_MULT", 1.08)
     return RiskDecision(max(min_mult, min(max_mult, mult)), False, tuple(reasons))
 
 

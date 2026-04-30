@@ -30,9 +30,6 @@ LONG  = "long"
 SHORT = "short"
 NONE  = None
 
-TRAIL_GIVEBACK = 0.15
-
-
 def _last_closed(df: pd.DataFrame) -> pd.Series:
     """Son kapanan bar (-2). Live botta -1 henüz kapanmamış olabilir."""
     return df.iloc[-2]
@@ -43,17 +40,22 @@ def _trend_signal(bar) -> str | None:
     vol_ok      = bar["volume"] >= bar["volume_ma"] * config.VOLUME_MULT
     daily_trend = bar.get("daily_trend")
     has_daily   = pd.notna(daily_trend)
+    weekly_trend = bar.get("weekly_trend")
+    has_weekly = pd.notna(weekly_trend)
+    require_weekly = getattr(config, "REQUIRE_WEEKLY_TREND_ALIGNMENT", True)
 
     long_break    = bar["close"] > bar["donchian_high"]
     rsi_long_ok   = bar["rsi"] <= config.RSI_MAX_LONG
     daily_long_ok = (not has_daily) or (daily_trend == 1)
-    if long_break and vol_ok and rsi_long_ok and daily_long_ok:
+    weekly_long_ok = (not require_weekly) or (not has_weekly) or (weekly_trend == 1)
+    if long_break and vol_ok and rsi_long_ok and daily_long_ok and weekly_long_ok:
         return LONG
 
     short_break    = bar["close"] < bar["donchian_low"]
     rsi_short_ok   = bar["rsi"] >= config.RSI_MIN_SHORT
     daily_short_ok = (not has_daily) or (daily_trend == -1)
-    if short_break and vol_ok and rsi_short_ok and daily_short_ok:
+    weekly_short_ok = (not require_weekly) or (not has_weekly) or (weekly_trend == -1)
+    if short_break and vol_ok and rsi_short_ok and daily_short_ok and weekly_short_ok:
         return SHORT
     return NONE
 
@@ -66,12 +68,23 @@ def _mean_reversion_signal(bar) -> str | None:
     rsi = bar["rsi"]
     daily_trend = bar.get("daily_trend")
     has_daily   = pd.notna(daily_trend)
+    weekly_trend = bar.get("weekly_trend")
+    has_weekly = pd.notna(weekly_trend)
+    require_weekly = getattr(config, "REQUIRE_WEEKLY_TREND_ALIGNMENT", True)
 
     # Aşırı satım → LONG (sadece daily long veya nötr ortamda)
-    if rsi <= 25 and ((not has_daily) or daily_trend == 1):
+    if (
+        rsi <= 25
+        and ((not has_daily) or daily_trend == 1)
+        and ((not require_weekly) or (not has_weekly) or weekly_trend == 1)
+    ):
         return LONG
     # Aşırı alım → SHORT (sadece daily short veya nötr ortamda)
-    if rsi >= 75 and ((not has_daily) or daily_trend == -1):
+    if (
+        rsi >= 75
+        and ((not has_daily) or daily_trend == -1)
+        and ((not require_weekly) or (not has_weekly) or weekly_trend == -1)
+    ):
         return SHORT
     return NONE
 
@@ -122,7 +135,16 @@ def check_exit(df: pd.DataFrame, side: str) -> bool:
         return pd.notna(ref) and bar["close"] > ref
 
 
-def trailing_stop(entry: float, extreme: float, side: str) -> float:
+def _trail_giveback(gain: float, atr: float | None = None) -> float:
+    giveback = config.TRAIL_GIVEBACK
+    if atr is not None and atr > 0:
+        risk_dist = atr * config.SL_ATR_MULT
+        if risk_dist > 0 and gain >= risk_dist * getattr(config, "TRAIL_WIDE_AFTER_R", 2.5):
+            giveback = max(giveback, getattr(config, "TRAIL_GIVEBACK_STRONG", giveback))
+    return giveback
+
+
+def trailing_stop(entry: float, extreme: float, side: str, atr: float | None = None) -> float:
     """
     Long  : extreme - (extreme - entry) * TRAIL_GIVEBACK
     Short : extreme + (entry - extreme) * TRAIL_GIVEBACK
@@ -130,6 +152,7 @@ def trailing_stop(entry: float, extreme: float, side: str) -> float:
     gain = abs(extreme - entry)
     if gain <= 0:
         return entry
+    giveback = _trail_giveback(gain, atr)
     if side == LONG:
-        return extreme - gain * TRAIL_GIVEBACK
-    return extreme + gain * TRAIL_GIVEBACK
+        return extreme - gain * giveback
+    return extreme + gain * giveback

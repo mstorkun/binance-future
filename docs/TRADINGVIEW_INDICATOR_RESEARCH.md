@@ -45,6 +45,11 @@ Candidate module:
 
 - `market_structure.py`
 
+Implemented first-pass module:
+
+- `pattern_signals.py` covers liquidity sweep, wick rejection, impulse candle,
+  engulfing, and inside-bar breakout as an align-only risk layer.
+
 ### 2. Volume Profile / POC / VAH / VAL
 
 Several scripts emphasize volume profile:
@@ -161,7 +166,12 @@ data from Binance or another API. Otherwise backtest/live mismatch appears.
    - sweep detection
 3. Extend `execution_guard.py`:
    - use liquidity sweep and VSA-style effort/result to avoid fake SL/trailing moves
-4. Add Supertrend only as an A/B test against current trend filter.
+4. Add futures-flow context:
+   - open interest
+   - taker buy/sell
+   - top trader long/short
+   - funding skew
+5. Add Supertrend only as an A/B test against current trend filter.
 
 ## Validation Rule
 

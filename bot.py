@@ -24,11 +24,13 @@ import schedule
 
 import config
 import data
+import flow_data
 import indicators as ind
 import strategy as strat
 import risk as r
 import execution_guard as eg
 import order_manager as om
+import liquidation
 
 
 logging.basicConfig(
@@ -45,12 +47,17 @@ log = logging.getLogger(__name__)
 # Bot durumu (borsa durumu otorite — bunu cache olarak kullan)
 exchange         = data.make_exchange()
 daily_start_bal  = None
+daily_stop_active = False
 active_positions = {}    # symbol -> {"side", "entry", "sl", "size", "extreme"}
 
 
 def _has_open_position() -> dict | None:
     """Sembolde gerçek açık pozisyon var mı? Borsa state'i otorite."""
     try:
+        if daily_stop_active:
+            log.warning("Gunluk stop aktif; yeni islem acilmiyor. Reset 00:01'de yapilacak.")
+            return
+
         positions = data.fetch_open_positions(exchange)
         return positions[0] if positions else None
     except Exception as e:
@@ -79,6 +86,7 @@ def _recover_position(live_pos: dict, df) -> dict:
         hard_sl = eg.hard_stop_from_soft(sl, atr, side)
         sl_order_id = None
         log.warning(f"State recovery: borsada SL bulunamadi, soft/hard tahmin = {sl:.2f}/{hard_sl:.2f}")
+    liq_price = liquidation.approximate_liquidation_price(entry, side, leverage=config.LEVERAGE)
 
     log.info(f"State recovery: {side.upper()} entry={entry:.2f} size={abs(contracts)}")
     return {
@@ -86,6 +94,7 @@ def _recover_position(live_pos: dict, df) -> dict:
         "entry":        entry,
         "sl":           sl,
         "hard_sl":      hard_sl,
+        "liquidation_price": liq_price,
         "atr":          atr,
         "size":         abs(contracts),
         "extreme":      entry,
@@ -94,7 +103,7 @@ def _recover_position(live_pos: dict, df) -> dict:
 
 
 def run():
-    global daily_start_bal, active_positions
+    global daily_start_bal, daily_stop_active, active_positions
     log.info("--- Döngü başladı ---")
 
     try:
@@ -112,6 +121,7 @@ def run():
                 config.SYMBOL = sym
                 om.close_all(exchange)
             active_positions.clear()
+            daily_stop_active = True
             return
 
         # Global açık pozisyon sayısı (tüm semboller arası)
@@ -135,8 +145,14 @@ def run():
                 # 2. Veri + indikatörler (4H + 1D)
                 df    = data.fetch_ohlcv(exchange)
                 df_1d = data.fetch_daily_ohlcv(exchange, limit=200)
+                df_1w = data.fetch_weekly_ohlcv(exchange, limit=200)
                 df    = ind.add_indicators(df)
                 df    = ind.add_daily_trend(df, df_1d)
+                df    = ind.add_weekly_trend(df, df_1w)
+                if getattr(config, "FLOW_DATA_ENABLED", True):
+                    flow_result = data.fetch_recent_flow(exchange)
+                    flow_data.warn_once_for_flow(flow_result, sym)
+                    df = flow_data.add_flow_indicators(df, flow_result.data)
                 if len(df) < 3:
                     log.warning(f"[{sym}] Yeterli mum yok.")
                     continue
@@ -227,6 +243,7 @@ def run():
                         "entry":        result["entry"],
                         "sl":           result["sl"],
                         "hard_sl":      result.get("hard_sl"),
+                        "liquidation_price": result.get("liquidation_price"),
                         "atr":          result.get("atr"),
                         "size":         result["size"],
                         "extreme":      result["entry"],
@@ -242,8 +259,9 @@ def run():
 
 
 def reset_daily():
-    global daily_start_bal
+    global daily_start_bal, daily_stop_active
     daily_start_bal = None
+    daily_stop_active = False
     log.info("Günlük bakiye sıfırlandı.")
 
 

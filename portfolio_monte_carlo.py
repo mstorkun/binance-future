@@ -23,14 +23,14 @@ def _profile_by_name(name: str) -> dict:
     raise ValueError(f"Unknown profile: {name}")
 
 
-def _equity_stats(pnls: list[float], start_balance: float) -> dict:
+def _equity_stats(returns: list[float], start_balance: float) -> dict:
     balance = start_balance
     peak = start_balance
     max_dd = 0.0
     max_dd_peak_pct = 0.0
     min_balance = start_balance
-    for pnl in pnls:
-        balance += pnl
+    for ret in returns:
+        balance *= (1.0 + ret)
         peak = max(peak, balance)
         min_balance = min(min_balance, balance)
         max_dd = max(max_dd, peak - balance)
@@ -46,22 +46,22 @@ def _equity_stats(pnls: list[float], start_balance: float) -> dict:
     }
 
 
-def _simulate(pnls: list[float], method: str, iterations: int, block_size: int, seed: int) -> pd.DataFrame:
+def _simulate(returns: list[float], method: str, iterations: int, block_size: int, seed: int) -> pd.DataFrame:
     rng = random.Random(seed)
-    n = len(pnls)
+    n = len(returns)
     rows = []
     for _ in range(iterations):
         if method == "shuffle":
-            sample = pnls[:]
+            sample = returns[:]
             rng.shuffle(sample)
         elif method == "bootstrap":
-            sample = [rng.choice(pnls) for _ in range(n)]
+            sample = [rng.choice(returns) for _ in range(n)]
         elif method == "block":
             sample = []
             blocks = max(1, (n + block_size - 1) // block_size)
             for _ in range(blocks):
                 start = rng.randrange(0, max(1, n - block_size + 1))
-                sample.extend(pnls[start:start + block_size])
+                sample.extend(returns[start:start + block_size])
             sample = sample[:n]
         else:
             raise ValueError(method)
@@ -110,10 +110,13 @@ def run_profile(profile_name: str, years: int, iterations: int, block_size: int,
     trades.to_csv(trade_out, index=False)
     equity.to_csv(equity_out, index=False)
 
-    pnls = [float(x) for x in trades["pnl"].dropna().tolist()]
+    if "pnl_return_pct" in trades.columns:
+        returns = [float(x) / 100.0 for x in trades["pnl_return_pct"].dropna().tolist()]
+    else:
+        returns = [float(x) / config.CAPITAL_USDT for x in trades["pnl"].dropna().tolist()]
     summaries = []
     for method in ("shuffle", "bootstrap", "block"):
-        sims = _simulate(pnls, method, iterations, block_size, seed)
+        sims = _simulate(returns, method, iterations, block_size, seed)
         sims.to_csv(f"portfolio_monte_carlo_{profile_name}_{method}.csv", index=False)
         summaries.append(_summary(method if method != "block" else f"block(b={block_size})", sims))
 

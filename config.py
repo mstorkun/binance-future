@@ -1,8 +1,17 @@
 import os
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # --- API ---
 API_KEY    = os.getenv("BINANCE_API_KEY", "")
 API_SECRET = os.getenv("BINANCE_API_SECRET", "")
+LIVE_TRADING_APPROVED = False
+REQUIRE_ONE_WAY_MODE = True
+MARKET_ORDER_RESP_TYPE = "RESULT"
 TESTNET    = True   # False = canlı işlem
 
 # --- Piyasa ---
@@ -10,7 +19,9 @@ SYMBOLS         = ["SOL/USDT", "ETH/USDT", "BNB/USDT"]
 SYMBOL          = "BTC/USDT"
 TIMEFRAME       = "4h"
 DAILY_TIMEFRAME = "1d"          # Yüksek TF trend filtresi
+WEEKLY_TIMEFRAME = "1w"
 LEVERAGE        = 10            # Growth 70 compound candidate
+MARGIN_MODE     = "cross"       # Backtest currently models cross-style shared wallet
 
 # --- Sermaye & Risk ---
 CAPITAL_USDT         = 1000.0
@@ -36,6 +47,9 @@ DAILY_CLOSE_WINDOW_MINUTES = 60
 # --- SL / TP (ATR çarpanı) ---
 SL_ATR_MULT = 2.0
 TP_ATR_MULT = 4.0
+TRAIL_GIVEBACK = 0.15
+TRAIL_GIVEBACK_STRONG = 0.25
+TRAIL_WIDE_AFTER_R = 2.5
 
 # --- Whale/wick protection ---
 WICK_GUARD_ENABLED = True
@@ -52,6 +66,11 @@ MAX_SPREAD_PCT = 0.0015
 MIN_DEPTH_TO_NOTIONAL_MULT = 3.0
 ORDER_BOOK_DEPTH_BAND_PCT = 0.0020
 
+# --- Liquidation / hard-stop guard ---
+LIQUIDATION_GUARD_ENABLED = False
+MAINTENANCE_MARGIN_RATE = 0.005
+LIQUIDATION_BUFFER_PCT = 0.015
+
 # --- Rolling volume profile context ---
 VOLUME_PROFILE_ENABLED = True
 VOLUME_PROFILE_RISK_ENABLED = True
@@ -65,9 +84,50 @@ VOLUME_PROFILE_MIN_MULT = 0.80
 VOLUME_PROFILE_MAX_MULT = 1.08
 VOLUME_PROFILE_BLOCK_CONTRA_VALUE = False
 
+# --- Candlestick / price-action pattern context ---
+PATTERN_SIGNALS_ENABLED = True
+PATTERN_RISK_ENABLED = True
+PATTERN_SWEEP_LOOKBACK = 20
+PATTERN_WICK_BODY_RATIO = 2.0
+PATTERN_MIN_WICK_RANGE_PCT = 0.45
+PATTERN_IMPULSE_BODY_PCT = 0.65
+PATTERN_IMPULSE_ATR_MULT = 1.15
+PATTERN_VOLUME_MULT = 1.20
+PATTERN_CONFIRM_THRESHOLD = 0.80
+PATTERN_STRONG_THRESHOLD = 1.40
+PATTERN_CONFIRM_MULT = 1.06
+PATTERN_STRONG_CONFIRM_MULT = 1.12
+PATTERN_CONTRA_MULT = 1.00
+PATTERN_STRONG_CONTRA_MULT = 1.00
+PATTERN_BLOCK_STRONG_CONTRA = False
+
+# --- Futures flow context ---
+# Public Binance futures flow data is mostly recent-window data. It is wired
+# into live/testnet decisions and kept optional for long historical backtests.
+FLOW_DATA_ENABLED = True
+FLOW_RISK_ENABLED = True
+FLOW_BACKTEST_ENABLED = False
+FLOW_HISTORY_LIMIT = 500
+FLOW_PERIOD = TIMEFRAME
+FLOW_MIN_MULT = 0.85
+FLOW_MAX_MULT = 1.08
+FLOW_TAKER_BUY_ALIGNED = 0.56
+FLOW_TAKER_BUY_CONTRA = 0.44
+FLOW_TOP_RATIO_LONG = 1.15
+FLOW_TOP_RATIO_SHORT = 0.85
+FLOW_TOP_RATIO_CROWDED_LONG = 2.20
+FLOW_TOP_RATIO_CROWDED_SHORT = 0.45
+FLOW_OI_CHANGE_CONFIRM = 0.03
+FLOW_OI_CHANGE_EXTREME = 0.12
+FLOW_FUNDING_HIGH = 0.0005
+FLOW_FUNDING_EXTREME = 0.0010
+
 # --- Backtest maliyet varsayımları ---
 # Tarihsel funding verisi çekilemezse fallback olarak kullanılır.
 DEFAULT_FUNDING_RATE_PER_8H = 0.0001
+TAKER_FEE_RATE = 0.0004
+ROUND_TRIP_FEE_RATE = TAKER_FEE_RATE * 2
+SLIPPAGE_RATE_ROUND_TRIP = 0.0015
 
 # --- Trend takip indikatörleri (eski mantık, bazı yardımcılar hala kullanılıyor) ---
 EMA_FAST   = 21
@@ -87,6 +147,9 @@ VOLUME_MULT      = 1.5          # Kırılım barı hacmi >= 1.5 × ortalama
 
 # --- 1D trend filtresi ---
 DAILY_EMA_PERIOD = 50           # Günlük EMA50 — fiyat üstü ise long-only
+WEEKLY_EMA_PERIOD = 30
+REQUIRE_WEEKLY_TREND_ALIGNMENT = False
+WEEKLY_TREND_RISK_ENABLED = False
 
 # --- RSI aşırı bölge filtresi (kırılım sırasında pump/dump'ı engelle) ---
 RSI_MAX_LONG  = 75              # Long sinyali için RSI <= 75

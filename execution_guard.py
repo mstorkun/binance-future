@@ -84,13 +84,17 @@ def stop_decision(position: dict, bar) -> StopDecision:
     side = position["side"]
     soft_sl = float(position["sl"])
     hard_sl = float(position.get("hard_sl", soft_sl))
+    liquidation_price = _num(position.get("liquidation_price"))
     close = float(_get(bar, "close"))
     high = float(_get(bar, "high"))
     low = float(_get(bar, "low"))
     spike = is_spike_bar(bar)
+    close_confirm = getattr(config, "SOFT_STOP_CLOSE_CONFIRM", True)
 
     if side == "long":
-        if spike and getattr(config, "SOFT_STOP_CLOSE_CONFIRM", True):
+        if liquidation_price is not None and low <= liquidation_price:
+            return StopDecision(True, "liquidation", liquidation_price)
+        if spike and close_confirm:
             if close <= hard_sl:
                 return StopDecision(True, "hard_sl", hard_sl)
             if close <= soft_sl:
@@ -101,7 +105,9 @@ def stop_decision(position: dict, bar) -> StopDecision:
         if low <= hard_sl:
             return StopDecision(True, "hard_sl", hard_sl)
     else:
-        if spike and getattr(config, "SOFT_STOP_CLOSE_CONFIRM", True):
+        if liquidation_price is not None and high >= liquidation_price:
+            return StopDecision(True, "liquidation", liquidation_price)
+        if spike and close_confirm:
             if close >= hard_sl:
                 return StopDecision(True, "hard_sl", hard_sl)
             if close >= soft_sl:

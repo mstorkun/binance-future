@@ -10,12 +10,12 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 |---|---|
 | Target capital | 1,000 USDT |
 | Primary timeframe | 4 hours |
-| Higher timeframe filter | 1D EMA50 |
-| Leverage | 3x |
-| Risk per trade | 2% |
+| Higher timeframe filter | 1D EMA50; weekly trend context calculated but not enforced |
+| Leverage | 10x testnet candidate |
+| Risk per trade | 4% base on first open position, correlation-aware after that |
 | Primary signal | Donchian breakout |
-| Filters | Volume, ADX, RSI, 1D trend |
-| Exits | ATR initial SL, trailing SL, Donchian exit |
+| Filters | Volume, ADX, RSI, 1D trend, calendar/news risk, volume profile, candlestick context, futures flow context |
+| Exits | ATR initial SL, dynamic trailing SL, Donchian exit |
 
 ## Strategy
 
@@ -26,6 +26,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 3. ADX is above the trend-strength threshold.
 4. RSI is not in extreme overbought/oversold territory.
 5. The 1D trend filter confirms the same direction.
+6. Candlestick/price-action patterns and futures-flow context can adjust risk sizing; they do not create standalone trades.
 
 **Exit logic:**
 
@@ -35,10 +36,11 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 
 ## Current Findings
 
-- The single-BTC backtest is weak and walk-forward is borderline negative.
-- Multi-symbol testing on ETH, SOL, and BNB looks better than BTC.
-- 4-symbol walk-forward summary: 3/4 symbols have a positive test average, but the train-vs-test gap is still large.
-- Verdict: the strategy may be promising, but overfitting risk remains. Additional robustness testing is required before any testnet/paper-trading stage.
+- The current candidate is the SOL/ETH/BNB `growth_70_compound` portfolio profile.
+- Latest corrected 3-year portfolio backtest: about `+79.54% CAGR` with `7.67%` peak drawdown.
+- Portfolio walk-forward: fixed growth profile is positive in `7/7` test periods.
+- Monte Carlo remains the live gate: bootstrap/block paths still show meaningful drawdown risk even when ending-equity loss probability is zero in this trade set.
+- Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files
 
@@ -48,6 +50,8 @@ data.py                      Live data and exchange queries
 indicators.py                ATR, RSI, ADX, Donchian, daily trend
 strategy.py                  Signal and exit rules
 risk.py                      Position size and SL/TP calculation
+pattern_signals.py           Rule-based candlestick/price-action context
+flow_data.py                 Futures flow context for live/testnet risk decisions
 order_manager.py             Order placement, SL update, position close
 bot.py                       Multi-symbol portfolio bot loop (testnet/live)
 backtest.py                  Single-symbol backtest

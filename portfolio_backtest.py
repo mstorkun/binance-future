@@ -13,19 +13,32 @@ Bu motor:
 from __future__ import annotations
 
 import pandas as pd
+import ccxt
 import config
 import execution_guard as eg
+import flow_data
 import indicators as ind
+import liquidation
 import strategy as strat
 import risk as r
 from backtest import _fetch_paginated, fetch_funding_history, _funding_cost
 
 
-def _prepare_symbol_df(symbol: str, df_4h: pd.DataFrame, df_1d: pd.DataFrame) -> pd.DataFrame:
+def _prepare_symbol_df(
+    symbol: str,
+    df_4h: pd.DataFrame,
+    df_1d: pd.DataFrame,
+    df_1w: pd.DataFrame | None = None,
+    flow_df: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Sembol için tüm indikatörleri ekle, daily trend merge et."""
     df = ind.add_indicators(df_4h)
     if df_1d is not None and not df_1d.empty:
         df = ind.add_daily_trend(df, df_1d)
+    if df_1w is not None and not df_1w.empty:
+        df = ind.add_weekly_trend(df, df_1w)
+    if flow_df is not None and not flow_df.empty:
+        df = flow_data.add_flow_indicators(df, flow_df)
     return df
 
 
@@ -109,7 +122,7 @@ def run_portfolio_backtest(
                     pos["extreme"] = max(pos["extreme"], bar["high"])
                 else:
                     pos["extreme"] = min(pos["extreme"], bar["low"])
-                new_sl = strat.trailing_stop(pos["entry"], pos["extreme"], pos["side"])
+                new_sl = strat.trailing_stop(pos["entry"], pos["extreme"], pos["side"], pos.get("atr"))
                 if pos["side"] == strat.LONG and new_sl > pos["sl"]:
                     pos["sl"] = new_sl
                     pos["hard_sl"] = eg.hard_stop_from_soft(new_sl, pos["atr"], pos["side"])
@@ -191,11 +204,16 @@ def run_portfolio_backtest(
 
                 sl, _ = r.sl_tp_prices(entry, atr, signal)
                 hard_sl = eg.hard_stop_from_soft(sl, atr, signal)
+                liq_guard = liquidation.liquidation_guard_decision(entry, signal, hard_sl, leverage=leverage)
+                if not liq_guard.ok:
+                    continue
                 open_positions[sym] = {
                     "side": signal, "entry": entry, "size": size,
                     "sl": sl, "hard_sl": hard_sl, "extreme": entry,
                     "entry_time": next_bar.name, "atr": atr,
                     "margin": margin, "notional": notional,
+                    "entry_equity": equity,
+                    "liquidation_price": liq_guard.liquidation_price,
                     "risk_pct": effective_risk,
                     "risk_mult": risk_decision.multiplier,
                     "risk_reasons": "|".join(risk_decision.reasons),
@@ -242,8 +260,8 @@ def _gross_pnl(pos: dict, exit_price: float) -> float:
 
 def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_symbol, trades, ts, exit_reason: str):
     notional = (pos["entry"] + exit_price) / 2 * pos["size"]
-    commission = notional * 0.0008
-    slippage   = notional * 0.0015
+    commission = notional * config.ROUND_TRIP_FEE_RATE
+    slippage   = notional * config.SLIPPAGE_RATE_ROUND_TRIP
     funding_rates = data_by_symbol[sym].get("funding")
     bars_held = max(1, _bars_between(data_by_symbol[sym]["df"], pos["entry_time"], exit_ts))
     funding = _funding_cost(
@@ -256,6 +274,8 @@ def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_sym
     )
     gross = _gross_pnl(pos, exit_price)
     pnl = gross - commission - slippage - funding
+    entry_equity = float(pos.get("entry_equity") or 0.0)
+    pnl_return_pct = (pnl / entry_equity * 100.0) if entry_equity > 0 else 0.0
     trades.append({
         "symbol":      sym,
         "entry_time":  pos["entry_time"],
@@ -272,6 +292,9 @@ def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_sym
         "exit_reason":  exit_reason,
         "soft_sl":      round(pos.get("sl", 0.0), 4),
         "hard_sl":      round(pos.get("hard_sl", 0.0), 4),
+        "liquidation_price": round(pos["liquidation_price"], 4) if pos.get("liquidation_price") else None,
+        "entry_equity": round(entry_equity, 4) if entry_equity else None,
+        "pnl_return_pct": round(pnl_return_pct, 6),
         "risk_pct":    round(pos.get("risk_pct", 0.0), 5),
         "risk_mult":   round(pos.get("risk_mult", 1.0), 3),
         "risk_reasons": pos.get("risk_reasons", ""),
@@ -290,13 +313,21 @@ def _bars_between(df: pd.DataFrame, start_ts, end_ts) -> int:
 def fetch_all_data(symbols: list[str], years: int = 3) -> dict:
     saved = config.SYMBOL
     out = {}
+    flow_exchange = ccxt.binance({"options": {"defaultType": "future"}}) if getattr(config, "FLOW_BACKTEST_ENABLED", False) else None
     try:
         for sym in symbols:
             config.SYMBOL = sym
             df_4h    = _fetch_paginated(config.TIMEFRAME, years)
             df_1d    = _fetch_paginated(config.DAILY_TIMEFRAME, years)
+            df_1w    = _fetch_paginated(config.WEEKLY_TIMEFRAME, years)
             funding  = fetch_funding_history(years)
-            df_with  = _prepare_symbol_df(sym, df_4h, df_1d)
+            flow_df = None
+            if flow_exchange is not None:
+                flow_result = flow_data.fetch_recent_flow(flow_exchange, sym)
+                if flow_result.warnings:
+                    print(f"  {sym}: flow partial ({'; '.join(flow_result.warnings[:2])})")
+                flow_df = flow_result.data
+            df_with  = _prepare_symbol_df(sym, df_4h, df_1d, df_1w, flow_df)
             out[sym] = {"df": df_with, "funding": funding}
             print(f"  {sym}: {len(df_with)} bar (with indicators), funding {len(funding)}")
     finally:

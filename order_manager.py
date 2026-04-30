@@ -2,11 +2,29 @@ import logging
 import ccxt
 import config
 import execution_guard as eg
+import liquidation
 import risk as r
 
 log = logging.getLogger(__name__)
 
 MIN_NOTIONAL_USDT = 100  # Binance Futures BTC min notional ~100 USDT
+
+
+def ensure_one_way_mode(exchange: ccxt.Exchange) -> bool:
+    """Bot reduceOnly stop logic assumes Binance one-way position mode."""
+    if not getattr(config, "REQUIRE_ONE_WAY_MODE", True):
+        return True
+    try:
+        response = exchange.fapiPrivateGetPositionSideDual()
+    except Exception as e:
+        log.error(f"Pozisyon modu dogrulanamadi, pozisyon acma iptal: {e}")
+        return False
+
+    dual = str(response.get("dualSidePosition", "")).lower() == "true"
+    if dual:
+        log.error("Hedge Mode aktif gorunuyor. Bot one-way mode gerektirir; pozisyon acma iptal.")
+        return False
+    return True
 
 
 def set_leverage(exchange: ccxt.Exchange) -> bool:
@@ -62,6 +80,55 @@ def _create_sl_order(exchange: ccxt.Exchange, sl_side: str, size: float, sl_pric
         return None
 
 
+def _num(value):
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if out > 0 else None
+
+
+def _order_avg_price(order: dict | None, fallback: float) -> float:
+    if not order:
+        return fallback
+    info = order.get("info") or {}
+    for key in ("average", "avgPrice", "price"):
+        value = _num(order.get(key))
+        if value:
+            return value
+    for key in ("avgPrice", "price"):
+        value = _num(info.get(key))
+        if value:
+            return value
+
+    filled = _num(order.get("filled")) or _num(info.get("executedQty"))
+    cost = _num(order.get("cost")) or _num(info.get("cumQuote"))
+    if filled and cost:
+        return cost / filled
+    return fallback
+
+
+def _order_filled_amount(order: dict | None, fallback: float) -> float:
+    if not order:
+        return fallback
+    info = order.get("info") or {}
+    return _num(order.get("filled")) or _num(info.get("executedQty")) or fallback
+
+
+def _resolve_market_fill(exchange: ccxt.Exchange, order: dict | None, fallback_price: float, fallback_size: float) -> tuple[float, float]:
+    price = _order_avg_price(order, fallback_price)
+    size = _order_filled_amount(order, fallback_size)
+    order_id = order.get("id") if order else None
+    if order_id and (price == fallback_price or size == fallback_size):
+        try:
+            fetched = exchange.fetch_order(order_id, config.SYMBOL)
+            price = _order_avg_price(fetched, price)
+            size = _order_filled_amount(fetched, size)
+        except Exception as e:
+            log.warning(f"Market fill detayi cekilemedi, ilk order cevabi kullaniliyor: {e}")
+    return price, size
+
+
 def _cancel_order_safe(exchange: ccxt.Exchange, order_id: str):
     try:
         exchange.cancel_order(order_id, config.SYMBOL)
@@ -78,6 +145,9 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
     3. Market emir
     4. Initial SL kur — başarısız olursa pozisyonu hemen kapat
     """
+    if not ensure_one_way_mode(exchange):
+        return None
+
     if not set_leverage(exchange):
         log.error("Kaldıraç ayarsız, pozisyon açma iptal edildi.")
         return None
@@ -92,6 +162,11 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
 
     initial_sl, _ = r.sl_tp_prices(price, atr, side)
     hard_sl = eg.hard_stop_from_soft(initial_sl, atr, side)
+    liq_guard = liquidation.liquidation_guard_decision(price, side, hard_sl, leverage=config.LEVERAGE)
+    if not liq_guard.ok:
+        log.warning(f"Likidasyon guard pozisyonu blokladi: {liq_guard.reason}")
+        return None
+
     order_side = "buy" if side == "long" else "sell"
     sl_side    = "sell" if side == "long" else "buy"
 
@@ -106,27 +181,42 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
             type="market",
             side=order_side,
             amount=size,
-            params={"reduceOnly": False},
+            params={
+                "reduceOnly": False,
+                "newOrderRespType": getattr(config, "MARKET_ORDER_RESP_TYPE", "RESULT"),
+            },
         )
         log.info(f"Pozisyon açıldı: {side.upper()} | miktar={size} | fiyat≈{price:.2f}")
     except ccxt.BaseError as e:
         log.error(f"Pozisyon açma hatası: {e}")
         return None
 
-    sl_order = _create_sl_order(exchange, sl_side, size, hard_sl)
+    fill_price, filled_size = _resolve_market_fill(exchange, order, price, size)
+    initial_sl, _ = r.sl_tp_prices(fill_price, atr, side)
+    hard_sl = eg.hard_stop_from_soft(initial_sl, atr, side)
+    liq_guard = liquidation.liquidation_guard_decision(fill_price, side, hard_sl, leverage=config.LEVERAGE)
+    if not liq_guard.ok:
+        log.error(f"Fill sonrasi likidasyon guard bozuldu, pozisyon kapatiliyor: {liq_guard.reason}")
+        _safe_close_market(exchange, side, filled_size)
+        return None
+
+    log.info(f"Pozisyon acildi: {side.upper()} | miktar={filled_size} | fill={fill_price:.4f}")
+
+    sl_order = _create_sl_order(exchange, sl_side, filled_size, hard_sl)
     if sl_order is None:
         log.error("SL kurulamadı, pozisyon ACIL KAPATILIYOR.")
-        _safe_close_market(exchange, side, size)
+        _safe_close_market(exchange, side, filled_size)
         return None
     log.info(f"Hard SL koyuldu: {hard_sl:.2f} | Soft SL: {initial_sl:.2f}")
 
     return {
         "order":     order,
-        "size":      size,
+        "size":      filled_size,
         "side":      side,
-        "entry":     price,
+        "entry":     fill_price,
         "sl":        initial_sl,
         "hard_sl":   hard_sl,
+        "liquidation_price": liq_guard.liquidation_price,
         "atr":       atr,
         "sl_order_id": sl_order.get("id"),
     }
@@ -156,14 +246,22 @@ def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: f
         gain = extreme - entry
         if gain <= 0:
             return
-        new_sl = extreme - gain * 0.15
+        giveback = config.TRAIL_GIVEBACK
+        risk_dist = atr * config.SL_ATR_MULT if atr > 0 else 0
+        if risk_dist > 0 and gain >= risk_dist * getattr(config, "TRAIL_WIDE_AFTER_R", 2.5):
+            giveback = max(giveback, getattr(config, "TRAIL_GIVEBACK_STRONG", giveback))
+        new_sl = extreme - gain * giveback
         if new_sl <= cur_sl:
             return
     else:
         gain = entry - extreme
         if gain <= 0:
             return
-        new_sl = extreme + gain * 0.15
+        giveback = config.TRAIL_GIVEBACK
+        risk_dist = atr * config.SL_ATR_MULT if atr > 0 else 0
+        if risk_dist > 0 and gain >= risk_dist * getattr(config, "TRAIL_WIDE_AFTER_R", 2.5):
+            giveback = max(giveback, getattr(config, "TRAIL_GIVEBACK_STRONG", giveback))
+        new_sl = extreme + gain * giveback
         if new_sl >= cur_sl:
             return
 

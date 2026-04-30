@@ -13,7 +13,9 @@ import ccxt
 import pandas as pd
 import config
 import execution_guard as eg
+import flow_data
 import indicators as ind
+import liquidation
 import strategy as strat
 import risk as r
 
@@ -50,12 +52,27 @@ def _funding_cost(
 def run_backtest(
     df: pd.DataFrame,
     df_daily: pd.DataFrame | None = None,
+    df_weekly: pd.DataFrame | None = None,
     funding_rates: pd.DataFrame | None = None,
+    flow_df: pd.DataFrame | None = None,
     start_balance: float | None = None,
 ) -> pd.DataFrame:
+    if (
+        funding_rates is None
+        and df_weekly is not None
+        and "funding_rate" in df_weekly.columns
+        and "open" not in df_weekly.columns
+    ):
+        funding_rates = df_weekly
+        df_weekly = None
+
     df = ind.add_indicators(df)
     if df_daily is not None and not df_daily.empty:
         df = ind.add_daily_trend(df, df_daily)
+    if df_weekly is not None and not df_weekly.empty:
+        df = ind.add_weekly_trend(df, df_weekly)
+    if flow_df is not None and not flow_df.empty:
+        df = flow_data.add_flow_indicators(df, flow_df)
     trades = []
     balance = start_balance if start_balance is not None else config.CAPITAL_USDT
 
@@ -73,6 +90,10 @@ def run_backtest(
         atr        = df.iloc[i]["atr"]
         initial_sl, _ = r.sl_tp_prices(entry, atr, signal)
         hard_sl    = eg.hard_stop_from_soft(initial_sl, atr, signal)
+        liq_guard  = liquidation.liquidation_guard_decision(entry, signal, hard_sl, leverage=config.LEVERAGE)
+        if not liq_guard.ok:
+            i += 1
+            continue
         size       = r.position_size(balance, atr, entry)
 
         current_sl = initial_sl
@@ -84,7 +105,12 @@ def run_backtest(
         for j in range(i + 2, len(df)):
             bar    = df.iloc[j]
             window_j = df.iloc[: j + 1]
-            pos = {"side": signal, "sl": current_sl, "hard_sl": hard_sl}
+            pos = {
+                "side": signal,
+                "sl": current_sl,
+                "hard_sl": hard_sl,
+                "liquidation_price": liq_guard.liquidation_price,
+            }
 
             stop_decision = eg.stop_decision(pos, bar)
             if stop_decision.hit:
@@ -107,7 +133,7 @@ def run_backtest(
                 if bar["high"] > extreme:
                     extreme = bar["high"]
                 if extreme > entry:
-                    trail = strat.trailing_stop(entry, extreme, signal)
+                    trail = strat.trailing_stop(entry, extreme, signal, atr)
                     if trail > current_sl:
                         current_sl = trail
                         hard_sl = eg.hard_stop_from_soft(current_sl, atr, signal)
@@ -115,7 +141,7 @@ def run_backtest(
                 if bar["low"] < extreme:
                     extreme = bar["low"]
                 if extreme < entry:
-                    trail = strat.trailing_stop(entry, extreme, signal)
+                    trail = strat.trailing_stop(entry, extreme, signal, atr)
                     if trail < current_sl:
                         current_sl = trail
                         hard_sl = eg.hard_stop_from_soft(current_sl, atr, signal)
@@ -133,9 +159,9 @@ def run_backtest(
         # Çift sayım hatası: (entry + exit) * size = 2 × ortalama nominal.
         notional   = (entry + exit_price) / 2 * size
         # Komisyon: Binance Futures taker fee %0.04 × 2 = %0.08 round-trip
-        commission = notional * 0.0008
+        commission = notional * config.ROUND_TRIP_FEE_RATE
         # Slippage: kırılım anlarında orderbook ince — 15 bps round-trip
-        slippage   = notional * 0.0015
+        slippage   = notional * config.SLIPPAGE_RATE_ROUND_TRIP
         bars_held       = max(exit_bar - (i + 1), 1)
         funding_periods = bars_held / 2.0
         funding         = _funding_cost(
@@ -203,7 +229,12 @@ def print_summary(trades: pd.DataFrame):
 
 def _fetch_paginated(timeframe: str, years: int) -> pd.DataFrame:
     exchange = ccxt.binance({"options": {"defaultType": "future"}})
-    tf_ms = {"4h": 4 * 60 * 60 * 1000, "1h": 60 * 60 * 1000, "1d": 24 * 60 * 60 * 1000}
+    tf_ms = {
+        "1h": 60 * 60 * 1000,
+        "4h": 4 * 60 * 60 * 1000,
+        "1d": 24 * 60 * 60 * 1000,
+        "1w": 7 * 24 * 60 * 60 * 1000,
+    }
     step  = tf_ms.get(timeframe, 4 * 60 * 60 * 1000)
     total_bars = int(years * 365 * 24 * 60 * 60 * 1000 / step)
 
@@ -273,23 +304,32 @@ def fetch_long_history(years: int = 3) -> pd.DataFrame:
     return _fetch_paginated(config.TIMEFRAME, years)
 
 
-def fetch_history_with_daily(years: int = 3) -> tuple[pd.DataFrame, pd.DataFrame]:
+def fetch_history_with_daily(years: int = 3) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Hem 4H hem 1D verisi çek (Donchian + daily_trend için)."""
     print(f"Veri çekiliyor ({years} yıl)...")
     df_4h  = _fetch_paginated(config.TIMEFRAME, years)
     df_1d  = _fetch_paginated(config.DAILY_TIMEFRAME, years)
-    return df_4h, df_1d
+    df_1w  = _fetch_paginated(config.WEEKLY_TIMEFRAME, years)
+    return df_4h, df_1d, df_1w
 
 
 if __name__ == "__main__":
-    df_4h, df_1d = fetch_history_with_daily(years=3)
+    df_4h, df_1d, df_1w = fetch_history_with_daily(years=3)
     funding = fetch_funding_history(years=3)
+    flow_df = pd.DataFrame()
+    if getattr(config, "FLOW_BACKTEST_ENABLED", False):
+        exchange = ccxt.binance({"options": {"defaultType": "future"}})
+        flow_result = flow_data.fetch_recent_flow(exchange, config.SYMBOL)
+        flow_df = flow_result.data
+        if flow_result.warnings:
+            print(f"Flow partial: {'; '.join(flow_result.warnings[:2])}")
     print(f"4H: {df_4h.index[0]} - {df_4h.index[-1]} ({len(df_4h)} bar)")
     print(f"1D: {df_1d.index[0]} - {df_1d.index[-1]} ({len(df_1d)} bar)")
+    print(f"1W: {df_1w.index[0]} - {df_1w.index[-1]} ({len(df_1w)} bar)")
     print(f"Funding: {len(funding)} kayit")
 
     print("\nBacktest çalıştırılıyor...")
-    trades = run_backtest(df_4h, df_1d, funding)
+    trades = run_backtest(df_4h, df_1d, df_1w, funding, flow_df)
     print_summary(trades)
 
     if not trades.empty:
