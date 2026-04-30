@@ -6,6 +6,7 @@ API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 TESTNET    = True   # False = canlı işlem
 
 # --- Piyasa ---
+SYMBOLS         = ["SOL/USDT", "ETH/USDT", "BNB/USDT"]
 SYMBOL          = "BTC/USDT"
 TIMEFRAME       = "4h"
 DAILY_TIMEFRAME = "1d"          # Yüksek TF trend filtresi

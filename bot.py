@@ -1,5 +1,5 @@
 """
-Canlı bot ana döngüsü.
+Canlı bot ana döngüsü (Çoklu Sembol Portföy Modu).
 
 Mimari sözleşme:
     data           : exchange + ohlcv + bakiye + pozisyon sorgusu
@@ -10,10 +10,12 @@ Mimari sözleşme:
 
 Akış:
   1. Bakiye + günlük kayıp kontrolü
-  2. OHLCV + indikatör hesabı
-  3. Borsa pozisyon state'ini sorgula (otorite kaynak)
-  4. Açık pozisyon var → check_exit (trend tersine döndü mü?) veya trailing SL update
-  5. Açık pozisyon yok → get_signal → varsa open_position (atomik)
+  2. config.SYMBOLS içindeki her bir sembol için döngüye gir:
+     a. config.SYMBOL değişkenini çalışma zamanında ez (diğer modüllerin çalışması için)
+     b. OHLCV + indikatör hesabı
+     c. Açık pozisyon var mı kontrol et
+     d. Varsa check_exit (trend dönüşü) veya trailing SL update
+     e. Yoksa get_signal → varsa open_position (atomik, bütçe/3 kullanılarak)
 """
 
 import time
@@ -42,7 +44,7 @@ log = logging.getLogger(__name__)
 # Bot durumu (borsa durumu otorite — bunu cache olarak kullan)
 exchange         = data.make_exchange()
 daily_start_bal  = None
-active_position  = None    # {"side", "entry", "sl", "size", "extreme"}
+active_positions = {}    # symbol -> {"side", "entry", "sl", "size", "extreme"}
 
 
 def _has_open_position() -> dict | None:
@@ -86,7 +88,7 @@ def _recover_position(live_pos: dict, df) -> dict:
 
 
 def run():
-    global daily_start_bal, active_position
+    global daily_start_bal, active_positions
     log.info("--- Döngü başladı ---")
 
     try:
@@ -99,71 +101,87 @@ def run():
 
         if r.daily_loss_exceeded(daily_start_bal, balance):
             log.warning("Günlük kayıp limiti! Tüm pozisyonlar kapatılıyor, bot duruyor.")
-            om.close_all(exchange)
-            active_position = None
+            for sym in config.SYMBOLS:
+                config.SYMBOL = sym
+                om.close_all(exchange)
+            active_positions.clear()
             return
 
-        # 2. Veri + indikatörler (4H + 1D)
-        df    = data.fetch_ohlcv(exchange)
-        df_1d = data.fetch_daily_ohlcv(exchange, limit=200)
-        df    = ind.add_indicators(df)
-        df    = ind.add_daily_trend(df, df_1d)
-        if len(df) < 3:
-            log.warning("Yeterli mum yok.")
-            return
+        # Bütçeyi eşit sembol sayısına böl (Örn 1000$ ve 3 sembol -> 333$)
+        num_symbols = len(config.SYMBOLS)
+        allocated_balance_per_symbol = balance / num_symbols
 
-        # 3. Borsa pozisyon state'i
-        live_pos = _has_open_position()
+        for sym in config.SYMBOLS:
+            config.SYMBOL = sym  # Global değişkeni o anki sembole ayarla
+            log.info(f"--- Sembol inceleniyor: {sym} ---")
+            
+            try:
+                # 2. Veri + indikatörler (4H + 1D)
+                df    = data.fetch_ohlcv(exchange)
+                df_1d = data.fetch_daily_ohlcv(exchange, limit=200)
+                df    = ind.add_indicators(df)
+                df    = ind.add_daily_trend(df, df_1d)
+                if len(df) < 3:
+                    log.warning(f"[{sym}] Yeterli mum yok.")
+                    continue
 
-        # 4a. Açık pozisyon var
-        if live_pos:
-            if active_position is None:
-                active_position = _recover_position(live_pos, df)
+                # 3. Borsa pozisyon state'i
+                live_pos = _has_open_position()
 
-            cur_price = float(df["close"].iloc[-1])
+                # 4a. Açık pozisyon var
+                if live_pos:
+                    if sym not in active_positions:
+                        active_positions[sym] = _recover_position(live_pos, df)
 
-            # Trend tersine döndü mü?
-            if strat.check_exit(df, active_position["side"]):
-                log.info(f"Trend tersine döndü → {active_position['side'].upper()} kapatılıyor.")
-                om.close_position_market(exchange, active_position["side"], active_position["size"])
-                active_position = None
-                return
+                    pos = active_positions[sym]
+                    cur_price = float(df["close"].iloc[-1])
 
-            # Extreme güncelle
-            if active_position["side"] == strat.LONG:
-                active_position["extreme"] = max(active_position["extreme"], cur_price)
-            else:
-                active_position["extreme"] = min(active_position["extreme"], cur_price)
+                    # Trend tersine döndü mü?
+                    if strat.check_exit(df, pos["side"]):
+                        log.info(f"[{sym}] Trend tersine döndü → {pos['side'].upper()} kapatılıyor.")
+                        om.close_position_market(exchange, pos["side"], pos["size"])
+                        active_positions.pop(sym, None)
+                        continue
 
-            # Trailing SL hesapla ve gerekirse borsada güncelle
-            om.update_trailing_sl(exchange, active_position, cur_price, active_position["extreme"])
-            return
+                    # Extreme güncelle
+                    if pos["side"] == strat.LONG:
+                        pos["extreme"] = max(pos["extreme"], cur_price)
+                    else:
+                        pos["extreme"] = min(pos["extreme"], cur_price)
 
-        # 4b. Açık pozisyon yok — bot state'i temizle, yeni sinyal ara
-        if active_position is not None:
-            log.info("Pozisyon dışarıda kapanmış (SL veya manuel).")
-            active_position = None
+                    # Trailing SL hesapla ve gerekirse borsada güncelle
+                    om.update_trailing_sl(exchange, pos, cur_price, pos["extreme"])
+                    continue
 
-        signal = strat.get_signal(df)
-        log.info(f"Sinyal: {signal or 'YOK'}")
-        if signal is None:
-            return
+                # 4b. Açık pozisyon yok — bot state'i temizle, yeni sinyal ara
+                if sym in active_positions:
+                    log.info(f"[{sym}] Pozisyon dışarıda kapanmış (SL veya manuel).")
+                    active_positions.pop(sym, None)
 
-        # 5. Yeni pozisyon aç
-        price = float(df["close"].iloc[-2])   # son kapanan bar
-        atr   = float(df["atr"].iloc[-2])
+                signal = strat.get_signal(df)
+                log.info(f"[{sym}] Sinyal: {signal or 'YOK'}")
+                if signal is None:
+                    continue
 
-        # set_leverage open_position içinde yapılıyor, başarısızsa pozisyon açılmaz
-        result = om.open_position(exchange, signal, balance, atr, price)
-        if result:
-            active_position = {
-                "side":         result["side"],
-                "entry":        result["entry"],
-                "sl":           result["sl"],
-                "size":         result["size"],
-                "extreme":      result["entry"],
-                "sl_order_id":  result.get("sl_order_id"),
-            }
+                # 5. Yeni pozisyon aç
+                price = float(df["close"].iloc[-2])   # son kapanan bar
+                atr   = float(df["atr"].iloc[-2])
+
+                # Atomik emir açma işlemi, riski bölünmüş bütçeye (allocated_balance) göre ayarlar
+                result = om.open_position(exchange, signal, allocated_balance_per_symbol, atr, price)
+                if result:
+                    active_positions[sym] = {
+                        "side":         result["side"],
+                        "entry":        result["entry"],
+                        "sl":           result["sl"],
+                        "size":         result["size"],
+                        "extreme":      result["entry"],
+                        "sl_order_id":  result.get("sl_order_id"),
+                    }
+                    log.info(f"[{sym}] {signal.upper()} pozisyon başarıyla açıldı. Giriş: {result['entry']} SL: {result['sl']:.2f}")
+
+            except Exception as e:
+                log.error(f"[{sym}] Sembol islenirken hata: {e}", exc_info=True)
 
     except Exception as e:
         log.error(f"Beklenmedik hata: {e}", exc_info=True)
@@ -176,9 +194,9 @@ def reset_daily():
 
 
 if __name__ == "__main__":
-    log.info("Bot başlatılıyor...")
+    log.info("Portföy Botu başlatılıyor...")
     log.info(f"Mod: {'TESTNET' if config.TESTNET else 'CANLI'}")
-    log.info(f"Sembol: {config.SYMBOL} | TF: {config.TIMEFRAME} | Kaldıraç: {config.LEVERAGE}x")
+    log.info(f"İzlenen Semboller: {config.SYMBOLS} | TF: {config.TIMEFRAME} | Kaldıraç: {config.LEVERAGE}x")
 
     # 4H mum kapanışını kaçırmamak için saatlik kontrol
     schedule.every(1).hours.do(run)

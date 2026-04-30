@@ -122,8 +122,10 @@ def run_backtest(
         else:
             pnl = (entry - exit_price) * size
 
+        # Notional = ortalama fiyat × büyüklük (giriş + çıkış'ın ortalaması).
+        # Çift sayım hatası: (entry + exit) * size = 2 × ortalama nominal.
+        notional   = (entry + exit_price) / 2 * size
         # Komisyon: Binance Futures taker fee %0.04 × 2 = %0.08 round-trip
-        notional   = (entry + exit_price) * size
         commission = notional * 0.0008
         # Slippage: kırılım anlarında orderbook ince — 15 bps round-trip
         slippage   = notional * 0.0015
