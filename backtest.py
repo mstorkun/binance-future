@@ -87,9 +87,16 @@ def run_backtest(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
         if signal == "long":
-            pnl = (exit_price - entry) * size * config.LEVERAGE
+            pnl = (exit_price - entry) * size
         else:
-            pnl = (entry - exit_price) * size * config.LEVERAGE
+            pnl = (entry - exit_price) * size
+
+        # Komisyon: Binance Futures taker fee %0.04 (giriş + çıkış = %0.08)
+        notional = (entry + exit_price) * size
+        commission = notional * 0.0004
+        # Slippage: 5 bps her tarafta = 10 bps round-trip
+        slippage = notional * 0.0005
+        pnl -= (commission + slippage)
 
         balance += pnl
         trades.append({
