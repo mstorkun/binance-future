@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 import calendar_risk
 import config
+import volume_profile as vp
 
 
 def _num(value, default: float | None = None) -> float | None:
@@ -119,6 +120,12 @@ def _market_risk_assessment(bar, side: str) -> RiskDecision:
         elif side == "short" and rsi <= 28:
             mult *= 0.85
             reasons.append("rsi:cold_short")
+
+    profile = vp.profile_risk_decision(bar, side)
+    if profile.block_new_entries:
+        return RiskDecision(0.0, True, tuple(reasons) + profile.reasons)
+    mult *= profile.multiplier
+    reasons.extend(profile.reasons)
 
     min_mult = getattr(config, "DYNAMIC_RISK_MIN_MULT", 0.5)
     max_mult = getattr(config, "DYNAMIC_RISK_MAX_MULT", 1.25)

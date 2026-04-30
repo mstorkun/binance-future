@@ -15,6 +15,7 @@ Post-condition: df'e şu sütunlar eklenir:
 
 import pandas as pd
 import config
+import volume_profile as vp
 
 
 def _wilder(series: pd.Series, period: int) -> pd.Series:
@@ -87,6 +88,10 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["regime"] = "mixed"
     df.loc[cond_trend, "regime"] = "trend"
     df.loc[cond_range, "regime"] = "range"
+
+    # --- Rolling Volume Profile ---
+    # Uses prior bars only, so signal-bar profile levels do not peek forward.
+    df = vp.add_volume_profile(df)
 
     return df.dropna()
 

@@ -1,6 +1,6 @@
 # TradingView Indicator Research
 
-Date: 2026-04-30
+Date: 2026-05-01
 
 Source pages:
 
@@ -69,9 +69,15 @@ Implementation rule:
 - Later improve with lower-timeframe or trade data.
 - Use POC/VAH/VAL as context/risk multiplier before using as signal.
 
-Candidate module:
+Implemented module:
 
 - `volume_profile.py`
+
+Implementation status:
+
+- Rolling POC / VAH / VAL is now generated from Binance OHLCV.
+- The profile uses prior bars only and affects risk sizing, not signal direction.
+- Validation stayed positive after enabling it; see `docs/VOLUME_PROFILE.md`.
 
 ### 3. Multi-Timeframe Supertrend
 

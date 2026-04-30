@@ -15,6 +15,7 @@
 
 ### Phase 2 — Strategy Enhancement (path A)
 - [ ] New indicators: regime detector (vol cluster + ADX state machine)
+- [x] Rolling volume profile: POC / VAH / VAL risk context
 - [ ] OBV / volume divergence
 - [ ] Funding skew (extreme funding = reversion signal)
 - [ ] Hybrid signal: trend-follow when ADX>25, mean-revert when ADX<15
@@ -42,11 +43,11 @@
 
 | Configuration | Realistic CAGR | Max DD | Honest Verdict |
 |---|---|---|---|
-| Conservative | 34.40% | 3.86% peak DD | Safe but below target |
-| Balanced | 55.46% | 5.77% peak DD | Strong risk-adjusted |
-| **growth_70_compound** | **79.56%** | **7.67% peak DD** | Current testnet candidate |
-| growth_100_compound | 107.12% | 9.54% peak DD | Higher return, weaker risk quality |
-| extreme_10pct+ | 301%+ | 16%+ peak DD | Too aggressive for default |
+| Conservative | 34.71% | 3.87% peak DD | Safe but below target |
+| Balanced | 55.99% | 5.77% peak DD | Strong risk-adjusted |
+| **growth_70_compound** | **80.37%** | **7.67% peak DD** | Current testnet candidate |
+| growth_100_compound | 108.27% | 9.55% peak DD | Higher return, weaker risk quality |
+| extreme_10pct+ | 309%+ | 16%+ peak DD | Too aggressive for default |
 
 The selected profile does not cap upside. If a strong trend year produces
 100-200%+, trailing exits can allow it. The cap is on risk, not on profit.
@@ -68,17 +69,19 @@ Current validation state:
 - Calendar/news-risk gate exists for new entries.
 - News impact scoring exists, including post-news market reaction measurement.
 - Live bot and backtest now share correlation-aware sizing.
+- Rolling volume profile exists as a risk-quality layer.
 - Default candidate is **growth_70_compound**:
   `10x`, `4%` portfolio risk, `2` max open positions, `6%` daily loss stop.
 
 Latest corrected 3-year portfolio backtest:
-`+478.95% total`, `+79.56% CAGR`, `7.67% peak DD`.
+`+486.81% total`, `+80.37% CAGR`, `7.67% peak DD`.
 
-Latest walk-forward: 7/7 positive periods for the fixed growth candidate, 14.30%
+Latest walk-forward: 7/7 positive periods for the fixed growth candidate, 14.63%
 average test-period return, 7.67% worst test-period peak DD.
 
-Latest Monte Carlo: 5th percentile ending equity is about 4705 USDT from 1000
-USDT; peak-DD p95 is about 19.6-21.2% depending on method.
+Latest Monte Carlo: 5th percentile ending equity is about 4766-4770 USDT from
+1000 USDT; peak-DD p95 is about 19.7-21.4% depending on method.
 
-Next gate: testnet/paper with real fills, order-book guard logs, and news watcher
-in reduce/block mode only.
+Next gate: add confirmed market-structure/liquidity-sweep context, then run
+testnet/paper with real fills, order-book guard logs, and news watcher in
+reduce/block mode only.

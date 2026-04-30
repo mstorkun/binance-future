@@ -1,6 +1,6 @@
 # Growth 70 Validation
 
-Date: 2026-04-30
+Date: 2026-05-01
 
 The target is not a profit cap. `70%/yr` is a validation gate. If a strong
 trend year produces more, the bot should let winners run through trailing exits.
@@ -13,6 +13,7 @@ trend year produces more, the bot should let winners run through trailing exits.
 - `RISK_BASIS = "portfolio"`
 - `RISK_PER_TRADE_PCT = 0.04`
 - `MAX_OPEN_POSITIONS = 2`
+- Rolling volume-profile risk context enabled.
 - Correlation-aware second-entry sizing enabled:
   - first open position: 4.00% base risk
   - second open position: 2.68% base risk
@@ -28,12 +29,12 @@ Source: `risk_profile_results.csv`, corrected portfolio engine.
 
 | Profile | Risk basis | Risk | Leverage | CAGR | Peak DD | Comment |
 |---|---|---:|---:|---:|---:|---|
-| conservative | portfolio | 2% | 3x | 34.40% | 3.86% | Safer, below target |
-| balanced | portfolio | 3% | 5x | 55.46% | 5.77% | Strong, below target |
-| growth_70_compound | portfolio | 4% | 10x | 79.56% | 7.67% | Selected candidate |
-| growth_100_compound | portfolio | 5% | 10x | 107.12% | 9.54% | Higher return, weaker risk quality |
-| extreme_10pct | portfolio | 10% | 10x | 301.46% | 16.41% | Too aggressive for default |
-| extreme_11pct | portfolio | 11% | 10x | 352.91% | 18.01% | Too aggressive for default |
+| conservative | portfolio | 2% | 3x | 34.71% | 3.87% | Safer, below target |
+| balanced | portfolio | 3% | 5x | 55.99% | 5.77% | Strong, below target |
+| growth_70_compound | portfolio | 4% | 10x | 80.37% | 7.67% | Selected candidate |
+| growth_100_compound | portfolio | 5% | 10x | 108.27% | 9.55% | Higher return, weaker risk quality |
+| extreme_10pct | portfolio | 10% | 10x | 309.04% | 16.42% | Too aggressive for default |
+| extreme_11pct | portfolio | 11% | 10x | 356.29% | 18.02% | Too aggressive for default |
 
 ## Portfolio Walk-Forward
 
@@ -42,7 +43,7 @@ Source: `portfolio_walk_forward_results.csv`.
 Fixed `growth_70_compound` profile:
 
 - Positive test periods: 7/7
-- Average test-period return: 14.30%
+- Average test-period return: 14.63%
 - Worst test-period peak DD: 7.67%
 
 This supports the candidate better than the previous sleeve-based sizing, but it
@@ -54,9 +55,9 @@ Source: `portfolio_monte_carlo_growth_70_compound_summary.csv`.
 
 | Method | Ending p05 | Ending p50 | Peak DD p95 | Peak DD max | Loss probability |
 |---|---:|---:|---:|---:|---:|
-| shuffle | 5789.51 | 5789.51 | 19.79% | 38.30% | 0.0% |
-| bootstrap | 4705.17 | 5765.08 | 21.22% | 69.37% | 0.0% |
-| block bootstrap | 4707.07 | 5792.70 | 19.62% | 42.37% | 0.0% |
+| shuffle | 5868.04 | 5868.04 | 19.94% | 38.76% | 0.0% |
+| bootstrap | 4765.86 | 5838.31 | 21.41% | 70.73% | 0.0% |
+| block bootstrap | 4769.52 | 5872.94 | 19.71% | 42.57% | 0.0% |
 
 Interpretation:
 
