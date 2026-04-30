@@ -117,7 +117,8 @@ if __name__ == "__main__":
     df_4h, df_1d = fetch_history_with_daily(years=3)
     print(f"\n4H bar: {len(df_4h)} | 1D bar: {len(df_1d)}\n")
 
-    results = walk_forward(df_4h, df_1d, train_bars=3000, test_bars=1000, roll_bars=1000)
+    # 18 ay train, 3 ay test, 3 ay roll → 8+ dönem (3 yıl veride)
+    results = walk_forward(df_4h, df_1d, train_bars=3000, test_bars=500, roll_bars=500)
 
     if results.empty:
         print("Hicbir periyot tamamlanamadi.")
