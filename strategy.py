@@ -45,8 +45,12 @@ def get_signal(df: pd.DataFrame) -> str | None:
     bar = _last_closed(df)
 
     # Eksik indikatör sütunu varsa sinyal yok
-    required = ("donchian_high", "donchian_low", "volume_ma", "rsi")
+    required = ("donchian_high", "donchian_low", "volume_ma", "rsi", "adx")
     if any(pd.isna(bar.get(col)) for col in required):
+        return NONE
+
+    # Yatay piyasada işlem yapma — ADX trend gücü filtresi
+    if bar["adx"] < config.ADX_THRESH:
         return NONE
 
     # Hacim onayı

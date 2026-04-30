@@ -56,22 +56,32 @@ def _has_open_position() -> dict | None:
 
 
 def _recover_position(live_pos: dict, df) -> dict:
-    """Bot restart sonrası borsada bulunan pozisyondan state yeniden inşa et."""
+    """
+    Bot restart sonrası borsadaki pozisyondan state yeniden inşa et.
+    SL fiyatı borsadan çekilir (fetch_open_orders), bulunamazsa ATR ile tahmin edilir.
+    """
     contracts = float(live_pos.get("contracts") or 0)
     side      = live_pos.get("side") or (strat.LONG if contracts > 0 else strat.SHORT)
     entry     = float(live_pos.get("entryPrice") or df["close"].iloc[-1])
 
-    # SL'i en kötü ihtimalde mevcut fiyattan ATR uzakta varsay
-    atr = float(df["atr"].iloc[-2])
-    initial_sl, _ = r.sl_tp_prices(entry, atr, side)
+    real_sl, sl_order_id = om.fetch_active_sl(exchange)
+    if real_sl is not None:
+        sl = real_sl
+        log.info(f"State recovery: borsadaki SL bulundu = {sl:.2f}")
+    else:
+        atr = float(df["atr"].iloc[-2])
+        sl, _ = r.sl_tp_prices(entry, atr, side)
+        sl_order_id = None
+        log.warning(f"State recovery: borsada SL bulunamadı, ATR ile tahmin = {sl:.2f}")
 
     log.info(f"State recovery: {side.upper()} entry={entry:.2f} size={abs(contracts)}")
     return {
-        "side":    side,
-        "entry":   entry,
-        "sl":      initial_sl,
-        "size":    abs(contracts),
-        "extreme": entry,
+        "side":         side,
+        "entry":        entry,
+        "sl":           sl,
+        "size":         abs(contracts),
+        "extreme":      entry,
+        "sl_order_id":  sl_order_id,
     }
 
 
@@ -143,15 +153,16 @@ def run():
         price = float(df["close"].iloc[-2])   # son kapanan bar
         atr   = float(df["atr"].iloc[-2])
 
-        om.set_leverage(exchange)
+        # set_leverage open_position içinde yapılıyor, başarısızsa pozisyon açılmaz
         result = om.open_position(exchange, signal, balance, atr, price)
         if result:
             active_position = {
-                "side":    result["side"],
-                "entry":   result["entry"],
-                "sl":      result["sl"],
-                "size":    result["size"],
-                "extreme": result["entry"],
+                "side":         result["side"],
+                "entry":        result["entry"],
+                "sl":           result["sl"],
+                "size":         result["size"],
+                "extreme":      result["entry"],
+                "sl_order_id":  result.get("sl_order_id"),
             }
 
     except Exception as e:

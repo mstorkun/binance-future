@@ -5,14 +5,21 @@ import risk as r
 
 log = logging.getLogger(__name__)
 
-TRAIL_CALLBACK_RATE = 1.5  # Binance trailing stop callback %1.5
+MIN_NOTIONAL_USDT = 100  # Binance Futures BTC min notional ~100 USDT
 
 
-def set_leverage(exchange: ccxt.Exchange):
+def set_leverage(exchange: ccxt.Exchange) -> bool:
+    """Kaldıracı ayarla. Başarısızsa False döner — pozisyon açma iptal edilmeli."""
     try:
         exchange.set_leverage(config.LEVERAGE, config.SYMBOL)
+        return True
     except ccxt.BaseError as e:
-        log.warning(f"Kaldıraç ayarlanamadı (zaten ayarlı olabilir): {e}")
+        msg = str(e).lower()
+        # "no need to change" gibi hatalar zaten ayarlı demektir, başarı say
+        if "no need" in msg or "not modified" in msg:
+            return True
+        log.error(f"Kaldıraç ayarlanamadı: {e}")
+        return False
 
 
 def _safe_close_market(exchange: ccxt.Exchange, side: str, size: float):
@@ -30,19 +37,55 @@ def _safe_close_market(exchange: ccxt.Exchange, side: str, size: float):
         log.error(f"ACIL KAPATMA BAŞARISIZ: {e}")
 
 
+def _amount_to_precision(exchange: ccxt.Exchange, size: float) -> float:
+    """Binance lot size'a uydur."""
+    try:
+        return float(exchange.amount_to_precision(config.SYMBOL, size))
+    except Exception:
+        return round(size, 4)
+
+
+def _create_sl_order(exchange: ccxt.Exchange, sl_side: str, size: float, sl_price: float) -> dict | None:
+    """SL emri oluştur — emrin id'sini döndürür."""
+    try:
+        order = exchange.create_order(
+            symbol=config.SYMBOL,
+            type="stop_market",
+            side=sl_side,
+            amount=size,
+            params={"stopPrice": sl_price, "reduceOnly": True},
+        )
+        return order
+    except ccxt.BaseError as e:
+        log.error(f"SL emir hatası: {e}")
+        return None
+
+
+def _cancel_order_safe(exchange: ccxt.Exchange, order_id: str):
+    try:
+        exchange.cancel_order(order_id, config.SYMBOL)
+    except Exception as e:
+        log.warning(f"SL iptal hatası (zaten iptal/dolu olabilir): {e}")
+
+
 def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float, price: float):
     """
     Atomik pozisyon açma:
-    1. Market emir
-    2. Initial SL kur — başarısız olursa pozisyonu hemen kapat
-    Not: Trailing stop kullanılmıyor, çıkış check_exit ile bot tarafından kontrol ediliyor.
+    1. Kaldıracı ayarla (başarısızsa abort)
+    2. Min notional kontrol
+    3. Market emir
+    4. Initial SL kur — başarısız olursa pozisyonu hemen kapat
     """
-    size = r.position_size(balance, atr, price)
+    if not set_leverage(exchange):
+        log.error("Kaldıraç ayarsız, pozisyon açma iptal edildi.")
+        return None
 
-    # Min notional kontrolü (Binance Futures BTC için ~100 USDT)
+    size = r.position_size(balance, atr, price)
+    size = _amount_to_precision(exchange, size)
+
     notional = size * price
-    if notional < 100:
-        log.warning(f"Pozisyon çok küçük (notional={notional:.2f}<100), açılmadı.")
+    if notional < MIN_NOTIONAL_USDT:
+        log.warning(f"Pozisyon çok küçük (notional={notional:.2f}<{MIN_NOTIONAL_USDT}), açılmadı.")
         return None
 
     initial_sl, _ = r.sl_tp_prices(price, atr, side)
@@ -62,36 +105,41 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
         log.error(f"Pozisyon açma hatası: {e}")
         return None
 
-    # SL kur — başarısız olursa pozisyonu kapat (atomik)
-    try:
-        exchange.create_order(
-            symbol=config.SYMBOL,
-            type="stop_market",
-            side=sl_side,
-            amount=size,
-            params={"stopPrice": initial_sl, "reduceOnly": True},
-        )
-        log.info(f"Initial SL koyuldu: {initial_sl:.2f}")
-    except ccxt.BaseError as e:
-        log.error(f"SL kurulamadı, pozisyon ACIL KAPATILIYOR: {e}")
+    sl_order = _create_sl_order(exchange, sl_side, size, initial_sl)
+    if sl_order is None:
+        log.error("SL kurulamadı, pozisyon ACIL KAPATILIYOR.")
         _safe_close_market(exchange, side, size)
         return None
+    log.info(f"Initial SL koyuldu: {initial_sl:.2f}")
 
-    return {"order": order, "size": size, "side": side, "entry": price, "sl": initial_sl}
+    return {
+        "order":     order,
+        "size":      size,
+        "side":      side,
+        "entry":     price,
+        "sl":        initial_sl,
+        "sl_order_id": sl_order.get("id"),
+    }
 
 
 def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: float, extreme: float):
-    """Bot her döngüde trailing SL'i manuel günceller — Binance trailing emirine güvenmeyiz."""
+    """
+    Trailing SL güncellemesi — race condition önleyici sıra:
+    1. Yeni SL emrini OLUŞTUR (her iki SL kısa süre birlikte yaşar — pozisyon korumasız KALMAZ)
+    2. Eski SL emrini İPTAL ET
+    3. State'te yeni emir id'sini sakla
+    """
     side  = position["side"]
     entry = position["entry"]
     size  = position["size"]
     cur_sl = position["sl"]
+    old_sl_id = position.get("sl_order_id")
 
     if side == "long":
         gain = extreme - entry
         if gain <= 0:
             return
-        new_sl = extreme - gain * 0.15  # %15 giveback
+        new_sl = extreme - gain * 0.15
         if new_sl <= cur_sl:
             return
     else:
@@ -102,21 +150,21 @@ def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: f
         if new_sl >= cur_sl:
             return
 
-    # Eski SL'i iptal et, yenisini koy
-    try:
-        exchange.cancel_all_orders(config.SYMBOL)
-        sl_side = "sell" if side == "long" else "buy"
-        exchange.create_order(
-            symbol=config.SYMBOL,
-            type="stop_market",
-            side=sl_side,
-            amount=size,
-            params={"stopPrice": new_sl, "reduceOnly": True},
-        )
-        position["sl"] = new_sl
-        log.info(f"Trailing SL güncellendi: {cur_sl:.2f} → {new_sl:.2f}")
-    except ccxt.BaseError as e:
-        log.error(f"Trailing SL güncelleme hatası: {e}")
+    sl_side = "sell" if side == "long" else "buy"
+
+    # Önce yeni emri oluştur — pozisyon her an korunsun
+    new_sl_order = _create_sl_order(exchange, sl_side, size, new_sl)
+    if new_sl_order is None:
+        log.error("Yeni trailing SL oluşturulamadı, eski SL korunuyor.")
+        return
+
+    # Sonra eski emri iptal et
+    if old_sl_id:
+        _cancel_order_safe(exchange, old_sl_id)
+
+    position["sl"] = new_sl
+    position["sl_order_id"] = new_sl_order.get("id")
+    log.info(f"Trailing SL güncellendi: {cur_sl:.2f} → {new_sl:.2f}")
 
 
 def close_position_market(exchange: ccxt.Exchange, side: str, size: float):
@@ -148,3 +196,20 @@ def close_all(exchange: ccxt.Exchange):
             continue
         side = pos.get("side") or ("long" if contracts > 0 else "short")
         close_position_market(exchange, side, abs(contracts))
+
+
+def fetch_active_sl(exchange: ccxt.Exchange) -> tuple[float | None, str | None]:
+    """Borsada aktif SL emrini çek — state recovery için."""
+    try:
+        orders = exchange.fetch_open_orders(config.SYMBOL)
+    except Exception as e:
+        log.warning(f"Açık emir sorgusu başarısız: {e}")
+        return None, None
+
+    for o in orders:
+        otype = (o.get("type") or "").lower()
+        if "stop" in otype and o.get("reduceOnly"):
+            stop_price = o.get("stopPrice") or o.get("triggerPrice")
+            if stop_price:
+                return float(stop_price), o.get("id")
+    return None, None

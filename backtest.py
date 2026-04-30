@@ -56,34 +56,29 @@ def run_backtest(df: pd.DataFrame, df_daily: pd.DataFrame | None = None) -> pd.D
                 exit_bar   = j
                 break
 
+            # KÖTÜMSER VARSAYIM: SL kontrolünü ESKİ current_sl ile yap (intra-bar
+            # sırası bilinmiyor; iyimser değil, daha tutucu sonuç)
             if signal == "long":
+                if bar["low"] <= current_sl:
+                    result, exit_price, exit_bar = "sl", current_sl, j
+                    break
+                # Sonra extreme + trailing güncelle (bir sonraki bar için)
                 if bar["high"] > extreme:
                     extreme = bar["high"]
-                # Trailing stop sadece kârda aktif olur
                 if extreme > entry:
                     trail = strat.trailing_stop(entry, extreme, signal)
                     if trail > current_sl:
                         current_sl = trail
-
-                if bar["low"] <= current_sl:
-                    result     = "sl"
-                    exit_price = current_sl
-                    exit_bar   = j
+            else:
+                if bar["high"] >= current_sl:
+                    result, exit_price, exit_bar = "sl", current_sl, j
                     break
-
-            else:  # short
                 if bar["low"] < extreme:
                     extreme = bar["low"]
                 if extreme < entry:
                     trail = strat.trailing_stop(entry, extreme, signal)
                     if trail < current_sl:
                         current_sl = trail
-
-                if bar["high"] >= current_sl:
-                    result     = "sl"
-                    exit_price = current_sl
-                    exit_bar   = j
-                    break
 
         if result is None:
             i += 1
@@ -94,12 +89,19 @@ def run_backtest(df: pd.DataFrame, df_daily: pd.DataFrame | None = None) -> pd.D
         else:
             pnl = (entry - exit_price) * size
 
-        # Komisyon: Binance Futures taker fee %0.04 (giriş + çıkış = %0.08)
-        notional = (entry + exit_price) * size
-        commission = notional * 0.0004
-        # Slippage: 5 bps her tarafta = 10 bps round-trip
-        slippage = notional * 0.0005
-        pnl -= (commission + slippage)
+        # Komisyon: Binance Futures taker fee %0.04 × 2 = %0.08 round-trip
+        notional   = (entry + exit_price) * size
+        commission = notional * 0.0008
+        # Slippage: kırılım anlarında orderbook ince — 15 bps round-trip
+        slippage   = notional * 0.0015
+        # Funding rate: BTC perp ortalama %0.01/8h. 4H bar süresinde ortalama
+        # 1 funding ödemesi varsayalım (trade süresi ortalama ~3-6 gün = 9-18 funding).
+        # Her exit_bar - i+1 = bar sayısı / 2 ≈ funding sayısı (8h aralık = 2 × 4H bar).
+        bars_held       = max(exit_bar - (i + 1), 1)
+        funding_periods = bars_held / 2.0
+        funding         = abs(notional) * 0.0001 * funding_periods  # long-bias varsayım
+
+        pnl -= (commission + slippage + funding)
 
         balance += pnl
         trades.append({
