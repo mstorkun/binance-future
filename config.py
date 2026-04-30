@@ -10,13 +10,13 @@ SYMBOLS         = ["SOL/USDT", "ETH/USDT", "BNB/USDT"]
 SYMBOL          = "BTC/USDT"
 TIMEFRAME       = "4h"
 DAILY_TIMEFRAME = "1d"          # Yüksek TF trend filtresi
-LEVERAGE        = 3
+LEVERAGE        = 10            # User chose aggressive: 7-10x
 
 # --- Sermaye & Risk ---
 CAPITAL_USDT         = 1000.0
-RISK_PER_TRADE_PCT   = 0.02     # %2 per trade
+RISK_PER_TRADE_PCT   = 0.05     # %5 per trade (corr-aware sizing 1 açık -> %3.35, 2 açık -> %2.5)
 MAX_OPEN_POSITIONS   = 2
-DAILY_LOSS_LIMIT_PCT = 0.03     # %3 günlük kayıp → bot durur
+DAILY_LOSS_LIMIT_PCT = 0.05     # %5 günlük kayıp → bot durur (agresif modla uyumlu)
 
 # --- SL / TP (ATR çarpanı) ---
 SL_ATR_MULT = 2.0

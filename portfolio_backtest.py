@@ -28,12 +28,25 @@ def _prepare_symbol_df(symbol: str, df_4h: pd.DataFrame, df_1d: pd.DataFrame) ->
     return df
 
 
+def _correlation_aware_risk(open_count: int, base_risk: float) -> float:
+    """3-2-1.5 corr-aware: aynı anda açık pozisyon sayısı arttıkça risk azalır."""
+    if open_count == 0:
+        return base_risk
+    if open_count == 1:
+        return base_risk * 0.67   # 3% -> 2%
+    if open_count == 2:
+        return base_risk * 0.50   # 3% -> 1.5%
+    return base_risk * 0.33       # 3% -> 1%
+
+
 def run_portfolio_backtest(
     symbols: list[str],
-    data_by_symbol: dict[str, dict],   # {sym: {"df": df_4h_with_ind, "funding": df_fund}}
+    data_by_symbol: dict[str, dict],
     start_balance: float,
     max_concurrent: int = 2,
     risk_per_trade: float | None = None,
+    enable_circuit_breaker: bool = True,
+    enable_corr_sizing: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Returns (trades_df, equity_df).
@@ -48,10 +61,16 @@ def run_portfolio_backtest(
         all_timestamps.update(data_by_symbol[sym]["df"].index)
     timeline = sorted(all_timestamps)
 
-    cash = float(start_balance)            # nakit (margin için)
-    open_positions: dict[str, dict] = {}   # sym -> {entry, side, size, sl, extreme, entry_idx, entry_time}
+    cash = float(start_balance)
+    open_positions: dict[str, dict] = {}
     trades = []
     equity_history = []
+
+    # Circuit breaker durumu
+    peak_equity        = float(start_balance)
+    cb_paused_until    = None   # ts; bu zamana kadar yeni trade yok
+    cb_risk_multiplier = 1.0    # -10% DD'de 0.5'e düşer
+    cb_locked          = False  # -30% DD'de manuel onay gerekli
 
     for ts in timeline:
         # Mevcut equity = cash + her açık pozisyonun unrealized PnL'i
@@ -112,8 +131,24 @@ def run_portfolio_backtest(
             elif pos["side"] == strat.SHORT and new_sl < pos["sl"]:
                 pos["sl"] = new_sl
 
-        # 2) Yeni sinyaller (sadece kapasite varsa)
-        if len(open_positions) < max_concurrent:
+        # Circuit breaker: equity peak'e göre drawdown
+        if enable_circuit_breaker:
+            peak_equity = max(peak_equity, equity)
+            dd_pct = (peak_equity - equity) / peak_equity
+            if dd_pct >= 0.30 and not cb_locked:
+                cb_locked = True
+            if dd_pct >= 0.20:
+                cb_paused_until = ts + pd.Timedelta(days=7)
+                cb_risk_multiplier = 0.5
+            elif dd_pct >= 0.10:
+                cb_risk_multiplier = 0.5
+            else:
+                cb_risk_multiplier = 1.0
+
+        cb_blocking = cb_locked or (cb_paused_until is not None and ts < cb_paused_until)
+
+        # 2) Yeni sinyaller (sadece kapasite varsa ve CB açık değilse)
+        if not cb_blocking and len(open_positions) < max_concurrent:
             for sym in symbols:
                 if sym in open_positions:
                     continue
@@ -138,9 +173,15 @@ def run_portfolio_backtest(
                 entry = next_bar["open"]
                 atr   = bar["atr"]
 
-                # Pozisyon boyutu (sermaye paylaşımına göre)
+                # Pozisyon boyutu — corr-aware + circuit breaker risk multiplier
+                effective_risk = risk_per_trade
+                if enable_corr_sizing:
+                    effective_risk = _correlation_aware_risk(len(open_positions), risk_per_trade)
+                if enable_circuit_breaker:
+                    effective_risk *= cb_risk_multiplier
+
                 allocated = equity / max_concurrent
-                size = (allocated * risk_per_trade) / (atr * config.SL_ATR_MULT)
+                size = (allocated * effective_risk) / (atr * config.SL_ATR_MULT)
                 size = round(size, 6)
 
                 notional = size * entry

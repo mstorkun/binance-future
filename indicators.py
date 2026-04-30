@@ -65,8 +65,28 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df["donchian_exit_high"] = df["high"].rolling(config.DONCHIAN_EXIT).max().shift(1)
     df["donchian_exit_low"]  = df["low"].rolling(config.DONCHIAN_EXIT).min().shift(1)
 
-    # --- Volume MA ---
+    # --- Volume MA + OBV (volume direction) ---
     df["volume_ma"] = df["volume"].rolling(config.VOLUME_MA_PERIOD).mean()
+    sign  = df["close"].diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+    df["obv"] = (sign * df["volume"]).cumsum()
+    df["obv_ema"] = df["obv"].ewm(span=20, adjust=False).mean()
+
+    # --- Bollinger Bandwidth (volatility regime) ---
+    bb_period = 20
+    sma  = df["close"].rolling(bb_period).mean()
+    std  = df["close"].rolling(bb_period).std()
+    df["bb_bw"] = (2 * 2 * std) / sma  # bandwidth ratio (~%)
+    df["bb_bw_ma"] = df["bb_bw"].rolling(50).mean()
+
+    # --- Regime Detection ---
+    # 'trend'   : ADX > 25 ve BB bandwidth genişliyor
+    # 'range'   : ADX < 18 ve bandwidth daralıyor
+    # 'mixed'   : diğer
+    cond_trend = (df["adx"] > 25) & (df["bb_bw"] > df["bb_bw_ma"])
+    cond_range = (df["adx"] < 18) & (df["bb_bw"] < df["bb_bw_ma"])
+    df["regime"] = "mixed"
+    df.loc[cond_trend, "regime"] = "trend"
+    df.loc[cond_range, "regime"] = "range"
 
     return df.dropna()
 

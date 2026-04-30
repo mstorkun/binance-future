@@ -38,45 +38,70 @@ def _last_closed(df: pd.DataFrame) -> pd.Series:
     return df.iloc[-2]
 
 
+def _trend_signal(bar) -> str | None:
+    """Klasik Donchian breakout (trend rejiminde)."""
+    vol_ok      = bar["volume"] >= bar["volume_ma"] * config.VOLUME_MULT
+    daily_trend = bar.get("daily_trend")
+    has_daily   = pd.notna(daily_trend)
+
+    long_break    = bar["close"] > bar["donchian_high"]
+    rsi_long_ok   = bar["rsi"] <= config.RSI_MAX_LONG
+    daily_long_ok = (not has_daily) or (daily_trend == 1)
+    if long_break and vol_ok and rsi_long_ok and daily_long_ok:
+        return LONG
+
+    short_break    = bar["close"] < bar["donchian_low"]
+    rsi_short_ok   = bar["rsi"] >= config.RSI_MIN_SHORT
+    daily_short_ok = (not has_daily) or (daily_trend == -1)
+    if short_break and vol_ok and rsi_short_ok and daily_short_ok:
+        return SHORT
+    return NONE
+
+
+def _mean_reversion_signal(bar) -> str | None:
+    """
+    Range rejiminde mean reversion: aşırı RSI seviyelerinden ters yön.
+    Sadece daily_trend ile uyumluysa al (daily long ise long sinyal, vb.)
+    """
+    rsi = bar["rsi"]
+    daily_trend = bar.get("daily_trend")
+    has_daily   = pd.notna(daily_trend)
+
+    # Aşırı satım → LONG (sadece daily long veya nötr ortamda)
+    if rsi <= 25 and ((not has_daily) or daily_trend == 1):
+        return LONG
+    # Aşırı alım → SHORT (sadece daily short veya nötr ortamda)
+    if rsi >= 75 and ((not has_daily) or daily_trend == -1):
+        return SHORT
+    return NONE
+
+
 def get_signal(df: pd.DataFrame) -> str | None:
+    """
+    Hibrit sinyal — rejime göre farklı strateji:
+    - regime == "trend"  → Donchian breakout
+    - regime == "range"  → Mean reversion (RSI extremes)
+    - regime == "mixed"  → Trend sinyali (daha temkinli)
+    """
     if len(df) < 3:
         return NONE
 
     bar = _last_closed(df)
 
-    # Eksik indikatör sütunu varsa sinyal yok
-    required = ("donchian_high", "donchian_low", "volume_ma", "rsi", "adx")
-    if any(pd.isna(bar.get(col)) for col in required):
+    required = ("donchian_high", "donchian_low", "volume_ma", "rsi", "adx", "regime")
+    if any(pd.isna(bar.get(col)) if col != "regime" else not isinstance(bar.get(col), str)
+           for col in required):
         return NONE
 
-    # Yatay piyasada işlem yapma — ADX trend gücü filtresi
+    regime = bar["regime"]
+
+    if regime == "range":
+        return _mean_reversion_signal(bar)
+
+    # trend veya mixed
     if bar["adx"] < config.ADX_THRESH:
         return NONE
-
-    # Hacim onayı
-    vol_ok = bar["volume"] >= bar["volume_ma"] * config.VOLUME_MULT
-
-    # 1D trend filtresi (yoksa pas geç)
-    daily_trend = bar.get("daily_trend")
-    has_daily   = pd.notna(daily_trend)
-
-    # LONG: kapanış Donchian high'ın üstünde
-    long_break = bar["close"] > bar["donchian_high"]
-    rsi_long_ok = bar["rsi"] <= config.RSI_MAX_LONG
-    daily_long_ok = (not has_daily) or (daily_trend == 1)
-
-    if long_break and vol_ok and rsi_long_ok and daily_long_ok:
-        return LONG
-
-    # SHORT: kapanış Donchian low'un altında
-    short_break = bar["close"] < bar["donchian_low"]
-    rsi_short_ok = bar["rsi"] >= config.RSI_MIN_SHORT
-    daily_short_ok = (not has_daily) or (daily_trend == -1)
-
-    if short_break and vol_ok and rsi_short_ok and daily_short_ok:
-        return SHORT
-
-    return NONE
+    return _trend_signal(bar)
 
 
 def check_exit(df: pd.DataFrame, side: str) -> bool:
