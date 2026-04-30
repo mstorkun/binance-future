@@ -5,17 +5,16 @@ LONG  = "long"
 SHORT = "short"
 NONE  = None
 
-# Aynı trend yönünde tekrar giriş engellemek için son sinyal takibi
-_last_signal = None
+TRAIL_GIVEBACK = 0.30  # kazancın %30'unu geri ver, %70'ini kilitle
 
 
 def get_signal(df: pd.DataFrame) -> str | None:
-    global _last_signal
-
+    """Yeni pozisyon açma sinyali."""
     if len(df) < 3:
         return NONE
 
-    prev = df.iloc[-2]  # son kapanan mum
+    prev  = df.iloc[-2]
+    prev2 = df.iloc[-3]
 
     trend_up   = prev["ema_fast"] > prev["ema_slow"]
     trend_down = prev["ema_fast"] < prev["ema_slow"]
@@ -23,23 +22,39 @@ def get_signal(df: pd.DataFrame) -> str | None:
     rsi_long   = config.RSI_LONG_MIN  <= prev["rsi"] <= config.RSI_LONG_MAX
     rsi_short  = config.RSI_SHORT_MIN <= prev["rsi"] <= config.RSI_SHORT_MAX
 
-    # Trend değişimi tespiti (bir önceki barda zıt trend vardı mı?)
-    prev2 = df.iloc[-3]
-    trend_flipped_up   = trend_up   and prev2["ema_fast"] <= prev2["ema_slow"]
-    trend_flipped_down = trend_down and prev2["ema_fast"] >= prev2["ema_slow"]
+    # Sadece trend ilk oluştuğunda gir (kesişim anı)
+    flipped_up   = trend_up   and prev2["ema_fast"] <= prev2["ema_slow"]
+    flipped_down = trend_down and prev2["ema_fast"] >= prev2["ema_slow"]
 
-    signal = NONE
+    if flipped_up and adx_ok and rsi_long:
+        return LONG
+    if flipped_down and adx_ok and rsi_short:
+        return SHORT
+    return NONE
 
-    if trend_up and adx_ok and rsi_long:
-        # Kesişim anında veya güçlü trend devamında giriş
-        if trend_flipped_up or _last_signal != LONG:
-            signal = LONG
 
-    elif trend_down and adx_ok and rsi_short:
-        if trend_flipped_down or _last_signal != SHORT:
-            signal = SHORT
+def check_exit(df: pd.DataFrame, side: str) -> bool:
+    """Açık pozisyon için trend tersine döndü mü?"""
+    if len(df) < 2:
+        return False
+    prev = df.iloc[-2]
+    if side == LONG:
+        return prev["ema_fast"] < prev["ema_slow"]
+    else:
+        return prev["ema_fast"] > prev["ema_slow"]
 
-    if signal:
-        _last_signal = signal
 
-    return signal
+def trailing_stop(entry: float, highest: float, side: str) -> float:
+    """
+    Kazancın %30'unu geri ver, %70'ini kilitle.
+    Long : trailing_sl = highest - (highest - entry) * 0.30
+    Short: trailing_sl = lowest  + (entry - lowest) * 0.30
+    """
+    gain = abs(highest - entry)
+    if gain <= 0:
+        return entry  # henüz kârda değil, entry'yi koru
+
+    if side == LONG:
+        return highest - gain * TRAIL_GIVEBACK
+    else:
+        return highest + gain * TRAIL_GIVEBACK
