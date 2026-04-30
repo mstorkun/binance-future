@@ -1,119 +1,178 @@
-import ccxt
+"""
+Canlı bot ana döngüsü.
+
+Mimari sözleşme:
+    data           : exchange + ohlcv + bakiye + pozisyon sorgusu
+    indicators     : EMA / ADX / RSI / ATR (Wilder)
+    strategy       : get_signal, check_exit, trailing_stop
+    risk           : pozisyon boyutu, SL/TP fiyatları, günlük kayıp limiti
+    order_manager  : atomik pozisyon açma, trailing SL update, market kapama
+
+Akış:
+  1. Bakiye + günlük kayıp kontrolü
+  2. OHLCV + indikatör hesabı
+  3. Borsa pozisyon state'ini sorgula (otorite kaynak)
+  4. Açık pozisyon var → check_exit (trend tersine döndü mü?) veya trailing SL update
+  5. Açık pozisyon yok → get_signal → varsa open_position (atomik)
+"""
+
 import time
-import pandas as pd
+import logging
+import schedule
+
 import config
-from risk_management import calculate_position_size
-from strategy import simple_moving_average_strategy
+import data
+import indicators as ind
+import strategy as strat
+import risk as r
+import order_manager as om
 
-def init_exchange():
-    """Binance Futures bağlantısını başlatır."""
-    exchange = ccxt.binance({
-        'apiKey': config.API_KEY,
-        'secret': config.API_SECRET,
-        'enableRateLimit': True,
-        'options': {
-            'defaultType': 'future' # Spot yerine Vadeli İşlemler pazarını seçer
-        }
-    })
-    
-    # Testnet açıksa sanal borsaya bağlanır
-    if config.TESTNET:
-        exchange.set_sandbox_mode(True)
-        print("Bot TESTNET (Sanal Para) modunda başlatıldı.")
-    else:
-        print("DİKKAT: Bot GERÇEK PARA modunda çalışıyor!")
-        
-    return exchange
 
-def fetch_ohlcv(exchange, symbol, timeframe='1h', limit=100):
-    """Borsadan geçmiş fiyat mumlarını çeker."""
-    bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
-    df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-    return df
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler("bot.log", encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
+log = logging.getLogger(__name__)
 
-def set_leverage(exchange, symbol, leverage):
-    """Binance üzerinde işlem çiftinin kaldıraç oranını günceller."""
+
+# Bot durumu (borsa durumu otorite — bunu cache olarak kullan)
+exchange         = data.make_exchange()
+daily_start_bal  = None
+active_position  = None    # {"side", "entry", "sl", "size", "extreme"}
+
+
+def _has_open_position() -> dict | None:
+    """Sembolde gerçek açık pozisyon var mı? Borsa state'i otorite."""
     try:
-        # ccxt formatındaki sembolü binance formatına çevir (BTC/USDT:USDT -> BTCUSDT)
-        market = exchange.market(symbol)
-        exchange.fapiPrivate_post_leverage({
-            'symbol': market['id'],
-            'leverage': leverage
-        })
-        print(f"Kaldıraç başarıyla {leverage}x olarak ayarlandı.")
+        positions = data.fetch_open_positions(exchange)
+        return positions[0] if positions else None
     except Exception as e:
-        print(f"Kaldıraç ayarlanırken uyarı/hata (Zaten ayarlı olabilir): {e}")
+        log.error(f"Pozisyon sorgu hatası: {e}")
+        return None
 
-def main():
-    print("Bot başlatılıyor...")
-    
-    # Exchange bağlantısı ve piyasa verilerinin yüklenmesi
-    exchange = init_exchange()
-    exchange.load_markets()
-    
-    symbol = config.SYMBOL
-    leverage = config.LEVERAGE
-    capital = config.TOTAL_CAPITAL
-    risk_percentage = config.RISK_PERCENTAGE
-    
-    # Borsa tarafında kaldıracı ayarla
-    set_leverage(exchange, symbol, leverage)
-    
-    current_position = None # "LONG" veya "SHORT" durumunu tutar
-    
-    print(f"İzlenen Çift: {symbol} | Ana Para: {capital}$ | Risk: %{int(risk_percentage*100)} | Kaldıraç: {leverage}x")
 
-    # Sonsuz Döngü - Bot sürekli çalışır
-    while True:
-        try:
-            print(f"\n[{pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}] Piyasa analiz ediliyor...")
-            
-            # Fiyatları çek (1 saatlik periyot)
-            df = fetch_ohlcv(exchange, symbol, timeframe='1h')
-            current_price = float(df['close'].iloc[-1])
-            
-            # Strateji modülünden al-sat sinyalini hesapla
-            signal = simple_moving_average_strategy(df)
-            print(f"Güncel {symbol} Fiyatı: {current_price}$ | Sinyal: {signal}")
-            
-            # 1) EĞER POZİSYONDA DEĞİLSEK VE SİNYAL GELDİYSE İŞLEME GİR
-            if current_position is None and signal in ["LONG", "SHORT"]:
-                # Ne kadar alınacağını hesapla
-                amount, margin = calculate_position_size(capital, risk_percentage, leverage, current_price)
-                
-                print(f"!!! YENİ İŞLEM FIRSATI BULUNDU !!!")
-                print(f"Yön: {signal} | Kullanılan Teminat: {margin}$ | Pozisyon Büyüklüğü: {amount} Adet")
-                
-                # Emir Gönderimi
-                side = "buy" if signal == "LONG" else "sell"
-                
-                # Binance borsasına market emri gönderiliyor
-                # order = exchange.create_market_order(symbol, side, amount)
-                # print(f"Emir başarıyla gerçekleşti: {order['id']}")
-                
-                print(f"--- BİLGİ: Sistem testi için emir simüle edildi. Gerçekte borsa api'sine '{side.upper()}' emri gönderilecekti. ---")
-                current_position = signal
-                
-            # 2) EĞER POZİSYONDAYSAK VE TERS SİNYAL GELDİYSE İŞLEMDEN ÇIK
-            elif current_position is not None:
-                if (current_position == "LONG" and signal == "SHORT") or \
-                   (current_position == "SHORT" and signal == "LONG"):
-                    print("Ters sinyal tespit edildi. Mevcut pozisyon kapatılıyor...")
-                    
-                    # Ters emir vererek pozisyonu kapat
-                    # side = "sell" if current_position == "LONG" else "buy"
-                    # exchange.create_market_order(symbol, side, amount)
-                    
-                    current_position = None
-                    print("Pozisyon başarıyla kapatıldı. Yeni fırsatlar bekleniyor.")
-            
-            # Her kontrol arası 5 dakika bekle
-            time.sleep(300)
-            
-        except Exception as e:
-            print(f"Bot çalışırken bir hata oluştu: {e}")
-            time.sleep(60) # Hata durumunda 1 dakika bekleyip tekrar dener
+def _recover_position(live_pos: dict, df) -> dict:
+    """Bot restart sonrası borsada bulunan pozisyondan state yeniden inşa et."""
+    contracts = float(live_pos.get("contracts") or 0)
+    side      = live_pos.get("side") or (strat.LONG if contracts > 0 else strat.SHORT)
+    entry     = float(live_pos.get("entryPrice") or df["close"].iloc[-1])
+
+    # SL'i en kötü ihtimalde mevcut fiyattan ATR uzakta varsay
+    atr = float(df["atr"].iloc[-2])
+    initial_sl, _ = r.sl_tp_prices(entry, atr, side)
+
+    log.info(f"State recovery: {side.upper()} entry={entry:.2f} size={abs(contracts)}")
+    return {
+        "side":    side,
+        "entry":   entry,
+        "sl":      initial_sl,
+        "size":    abs(contracts),
+        "extreme": entry,
+    }
+
+
+def run():
+    global daily_start_bal, active_position
+    log.info("--- Döngü başladı ---")
+
+    try:
+        # 1. Bakiye + günlük kayıp limiti
+        balance = data.fetch_balance(exchange)
+        log.info(f"Bakiye: {balance:.2f} USDT")
+
+        if daily_start_bal is None:
+            daily_start_bal = balance
+
+        if r.daily_loss_exceeded(daily_start_bal, balance):
+            log.warning("Günlük kayıp limiti! Tüm pozisyonlar kapatılıyor, bot duruyor.")
+            om.close_all(exchange)
+            active_position = None
+            return
+
+        # 2. Veri + indikatörler
+        df = data.fetch_ohlcv(exchange)
+        df = ind.add_indicators(df)
+        if len(df) < 3:
+            log.warning("Yeterli mum yok.")
+            return
+
+        # 3. Borsa pozisyon state'i
+        live_pos = _has_open_position()
+
+        # 4a. Açık pozisyon var
+        if live_pos:
+            if active_position is None:
+                active_position = _recover_position(live_pos, df)
+
+            cur_price = float(df["close"].iloc[-1])
+
+            # Trend tersine döndü mü?
+            if strat.check_exit(df, active_position["side"]):
+                log.info(f"Trend tersine döndü → {active_position['side'].upper()} kapatılıyor.")
+                om.close_position_market(exchange, active_position["side"], active_position["size"])
+                active_position = None
+                return
+
+            # Extreme güncelle
+            if active_position["side"] == strat.LONG:
+                active_position["extreme"] = max(active_position["extreme"], cur_price)
+            else:
+                active_position["extreme"] = min(active_position["extreme"], cur_price)
+
+            # Trailing SL hesapla ve gerekirse borsada güncelle
+            om.update_trailing_sl(exchange, active_position, cur_price, active_position["extreme"])
+            return
+
+        # 4b. Açık pozisyon yok — bot state'i temizle, yeni sinyal ara
+        if active_position is not None:
+            log.info("Pozisyon dışarıda kapanmış (SL veya manuel).")
+            active_position = None
+
+        signal = strat.get_signal(df)
+        log.info(f"Sinyal: {signal or 'YOK'}")
+        if signal is None:
+            return
+
+        # 5. Yeni pozisyon aç
+        price = float(df["close"].iloc[-2])   # son kapanan bar
+        atr   = float(df["atr"].iloc[-2])
+
+        om.set_leverage(exchange)
+        result = om.open_position(exchange, signal, balance, atr, price)
+        if result:
+            active_position = {
+                "side":    result["side"],
+                "entry":   result["entry"],
+                "sl":      result["sl"],
+                "size":    result["size"],
+                "extreme": result["entry"],
+            }
+
+    except Exception as e:
+        log.error(f"Beklenmedik hata: {e}", exc_info=True)
+
+
+def reset_daily():
+    global daily_start_bal
+    daily_start_bal = None
+    log.info("Günlük bakiye sıfırlandı.")
+
 
 if __name__ == "__main__":
-    main()
+    log.info("Bot başlatılıyor...")
+    log.info(f"Mod: {'TESTNET' if config.TESTNET else 'CANLI'}")
+    log.info(f"Sembol: {config.SYMBOL} | TF: {config.TIMEFRAME} | Kaldıraç: {config.LEVERAGE}x")
+
+    # 4H mum kapanışını kaçırmamak için saatlik kontrol
+    schedule.every(1).hours.do(run)
+    schedule.every().day.at("00:01").do(reset_daily)
+
+    run()  # ilk koşu
+
+    while True:
+        schedule.run_pending()
+        time.sleep(30)
