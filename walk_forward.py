@@ -27,8 +27,12 @@ def _restore(saved):
     config.DONCHIAN_PERIOD, config.VOLUME_MULT, config.SL_ATR_MULT = saved
 
 
-def run_segment(df_4h, df_1d, donchian, vol_mult, sl_mult, funding_rates=None):
-    """Bir segmentte verilen parametrelerle backtest."""
+def run_segment(df_4h, df_1d, donchian, vol_mult, sl_mult, funding_rates=None,
+                warmup_skip_ts=None):
+    """
+    Bir segmentte verilen parametrelerle backtest.
+    `warmup_skip_ts` verilirse, o timestamp'ten ÖNCE açılan trade'ler sayılmaz.
+    """
     saved = _override(donchian, vol_mult, sl_mult)
     try:
         trades = run_backtest(df_4h, df_1d, funding_rates)
@@ -37,11 +41,17 @@ def run_segment(df_4h, df_1d, donchian, vol_mult, sl_mult, funding_rates=None):
 
     if trades.empty:
         return None
+
+    if warmup_skip_ts is not None and "entry_time" in trades.columns:
+        trades = trades[trades["entry_time"] >= warmup_skip_ts].reset_index(drop=True)
+        if trades.empty:
+            return None
+
     return {
         "trades":    len(trades),
         "win_rate":  (trades["pnl"] > 0).sum() / len(trades) * 100,
         "total_pnl": trades["pnl"].sum(),
-        "max_dd":    (trades["balance"].cummax() - trades["balance"]).max(),
+        "max_dd":    (trades["balance"].cummax() - trades["balance"]).max() if "balance" in trades.columns else 0.0,
     }
 
 
@@ -69,7 +79,13 @@ def _slice_daily(df_1d, start_ts, end_ts):
     return df_1d.loc[(df_1d.index >= start_ts) & (df_1d.index <= end_ts)]
 
 
-def walk_forward(df_4h, df_1d, funding_rates=None, train_bars=3000, test_bars=1000, roll_bars=1000):
+def walk_forward(df_4h, df_1d, funding_rates=None, train_bars=3000, test_bars=1000,
+                 roll_bars=1000, warmup_bars=200):
+    """
+    Test penceresinden önce `warmup_bars` kadar bar prepend edilir, böylece
+    indikatörler test'e girmeden önce ısınmış olur. Warmup bar'larında işlem
+    sayılmaz; sadece test bölümündeki PnL ölçülür.
+    """
     results = []
     start = 0
     period = 1
@@ -77,8 +93,13 @@ def walk_forward(df_4h, df_1d, funding_rates=None, train_bars=3000, test_bars=10
         train_end = start + train_bars
         test_end  = train_end + test_bars
 
-        df_train_4h = df_4h.iloc[start:train_end]
-        df_test_4h  = df_4h.iloc[train_end:test_end]
+        # Warmup buffer: test öncesi train'in son `warmup_bars` barını prepend et
+        warmup_start = max(train_end - warmup_bars, start)
+        df_test_4h_full = df_4h.iloc[warmup_start:test_end]   # warmup + test
+        df_train_4h     = df_4h.iloc[start:train_end]
+        df_test_4h      = df_test_4h_full                      # backtest motoru warmup'ı kullanır
+        # Test PnL'sini sadece "warmup sonrası" kısımdan ölçeceğiz
+        warmup_count    = train_end - warmup_start
 
         df_train_1d = _slice_daily(df_1d, df_train_4h.index[0], df_train_4h.index[-1])
         df_test_1d  = _slice_daily(df_1d, df_test_4h.index[0],  df_test_4h.index[-1])
@@ -95,7 +116,8 @@ def walk_forward(df_4h, df_1d, funding_rates=None, train_bars=3000, test_bars=10
             continue
 
         test_res = run_segment(df_test_4h, df_test_1d,
-                               best["donchian"], best["vol_mult"], best["sl_mult"], funding_rates)
+                               best["donchian"], best["vol_mult"], best["sl_mult"], funding_rates,
+                               warmup_skip_ts=df_4h.index[train_end] if warmup_count > 0 else None)
 
         print(f"  Best train: donchian={best['donchian']} vol_mult={best['vol_mult']} sl_mult={best['sl_mult']}")
         print(f"  Train: {best['trades']} trade, %{best['win_rate']:.1f} WR, PnL={best['total_pnl']:.1f}, DD={best['max_dd']:.1f}")

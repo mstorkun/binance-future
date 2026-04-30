@@ -152,6 +152,12 @@ def run_backtest(
             "exit":        round(exit_price, 2),
             "extreme":     round(extreme, 2),
             "result":      result,
+            "size":        round(size, 6),
+            "notional":    round(notional, 2),
+            "commission":  round(commission, 4),
+            "slippage":    round(slippage, 4),
+            "funding":     round(funding, 4),
+            "bars_held":   bars_held,
             "pnl":         round(pnl, 2),
             "balance":     round(balance, 2),
         })

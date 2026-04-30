@@ -1,0 +1,282 @@
+"""
+Gerçek portföy backtest — tek sermaye, çoklu sembol, eşzamanlı pozisyonlar.
+
+Önceki `multi_symbol_backtest.py` her sembolü ayrı koşturup PnL'leri topluyor;
+bu, sermaye paylaşımı ve eşzamanlı pozisyon kilitlemesini modellemez.
+
+Bu motor:
+- Tek sermaye havuzu (CAPITAL_USDT)
+- MAX_OPEN_POSITIONS global limit
+- Pozisyon margin kullanımı sermayeden düşülür (yeni trade için yetersizse pas)
+- Bar-bazlı ortak zaman çizelgesi
+"""
+from __future__ import annotations
+
+import pandas as pd
+import config
+import indicators as ind
+import strategy as strat
+import risk as r
+from backtest import _fetch_paginated, fetch_funding_history, _funding_cost
+
+
+def _prepare_symbol_df(symbol: str, df_4h: pd.DataFrame, df_1d: pd.DataFrame) -> pd.DataFrame:
+    """Sembol için tüm indikatörleri ekle, daily trend merge et."""
+    df = ind.add_indicators(df_4h)
+    if df_1d is not None and not df_1d.empty:
+        df = ind.add_daily_trend(df, df_1d)
+    return df
+
+
+def run_portfolio_backtest(
+    symbols: list[str],
+    data_by_symbol: dict[str, dict],   # {sym: {"df": df_4h_with_ind, "funding": df_fund}}
+    start_balance: float,
+    max_concurrent: int = 2,
+    risk_per_trade: float | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Returns (trades_df, equity_df).
+    Eşzamanlı timeline: tüm sembollerin 4H bar'ları birleştirilip kronolojik dolaşılır.
+    """
+    if risk_per_trade is None:
+        risk_per_trade = config.RISK_PER_TRADE_PCT
+
+    # Ortak timeline
+    all_timestamps = set()
+    for sym in symbols:
+        all_timestamps.update(data_by_symbol[sym]["df"].index)
+    timeline = sorted(all_timestamps)
+
+    cash = float(start_balance)            # nakit (margin için)
+    open_positions: dict[str, dict] = {}   # sym -> {entry, side, size, sl, extreme, entry_idx, entry_time}
+    trades = []
+    equity_history = []
+
+    for ts in timeline:
+        # Mevcut equity = cash + her açık pozisyonun unrealized PnL'i
+        unrealized = 0.0
+        for sym, pos in open_positions.items():
+            df = data_by_symbol[sym]["df"]
+            if ts not in df.index:
+                continue
+            cur_price = df.loc[ts, "close"]
+            if pos["side"] == strat.LONG:
+                unrealized += (cur_price - pos["entry"]) * pos["size"]
+            else:
+                unrealized += (pos["entry"] - cur_price) * pos["size"]
+        equity = cash + unrealized
+
+        # 1) Açık pozisyonları kontrol et: SL hit, trailing güncelle, trend exit
+        for sym in list(open_positions.keys()):
+            df = data_by_symbol[sym]["df"]
+            if ts not in df.index:
+                continue
+            pos = open_positions[sym]
+            bar = df.loc[ts]
+            window = df.loc[:ts]
+
+            # Önce SL kontrolü (kötümser intra-bar varsayım)
+            sl_hit = False
+            exit_price = None
+            if pos["side"] == strat.LONG and bar["low"] <= pos["sl"]:
+                sl_hit, exit_price = True, pos["sl"]
+            elif pos["side"] == strat.SHORT and bar["high"] >= pos["sl"]:
+                sl_hit, exit_price = True, pos["sl"]
+
+            # Trend exit?
+            trend_exit = strat.check_exit(window, pos["side"]) if not sl_hit else False
+            exit_reason = None
+            if sl_hit:
+                exit_reason = "sl"
+            elif trend_exit:
+                exit_reason = "trend_exit"
+                exit_price = bar["close"]    # bar kapanış
+
+            if exit_reason:
+                _close_position(pos, sym, exit_price, ts, data_by_symbol, trades, ts)
+                # Sermayeyi geri ver
+                cash += _position_margin(pos)
+                cash += _realized_pnl(pos, exit_price)
+                del open_positions[sym]
+                continue
+
+            # Trailing güncelle
+            if pos["side"] == strat.LONG:
+                pos["extreme"] = max(pos["extreme"], bar["high"])
+            else:
+                pos["extreme"] = min(pos["extreme"], bar["low"])
+            new_sl = strat.trailing_stop(pos["entry"], pos["extreme"], pos["side"])
+            if pos["side"] == strat.LONG and new_sl > pos["sl"]:
+                pos["sl"] = new_sl
+            elif pos["side"] == strat.SHORT and new_sl < pos["sl"]:
+                pos["sl"] = new_sl
+
+        # 2) Yeni sinyaller (sadece kapasite varsa)
+        if len(open_positions) < max_concurrent:
+            for sym in symbols:
+                if sym in open_positions:
+                    continue
+                if len(open_positions) >= max_concurrent:
+                    break
+                df = data_by_symbol[sym]["df"]
+                if ts not in df.index:
+                    continue
+                window = df.loc[:ts]
+                if len(window) < 3:
+                    continue
+                signal = strat.get_signal(window)
+                if signal is None:
+                    continue
+
+                bar = df.loc[ts]
+                # Bir sonraki bar'ın open'ı ile gir (slippage/realism)
+                idx_pos = df.index.get_loc(ts)
+                if idx_pos + 1 >= len(df):
+                    continue
+                next_bar = df.iloc[idx_pos + 1]
+                entry = next_bar["open"]
+                atr   = bar["atr"]
+
+                # Pozisyon boyutu (sermaye paylaşımına göre)
+                allocated = equity / max_concurrent
+                size = (allocated * risk_per_trade) / (atr * config.SL_ATR_MULT)
+                size = round(size, 6)
+
+                notional = size * entry
+                if notional < 100:    # min notional
+                    continue
+                margin = notional / config.LEVERAGE
+                if margin > cash:
+                    continue
+
+                sl, _ = r.sl_tp_prices(entry, atr, signal)
+                cash -= margin    # margin lock
+                open_positions[sym] = {
+                    "side": signal, "entry": entry, "size": size,
+                    "sl": sl, "extreme": entry,
+                    "entry_time": next_bar.name, "atr": atr,
+                    "margin": margin, "notional": notional,
+                }
+
+        equity_history.append({"timestamp": ts, "equity": equity, "cash": cash,
+                                "open_positions": len(open_positions)})
+
+    return pd.DataFrame(trades), pd.DataFrame(equity_history)
+
+
+def _position_margin(pos: dict) -> float:
+    return pos["margin"]
+
+
+def _realized_pnl(pos: dict, exit_price: float) -> float:
+    if pos["side"] == strat.LONG:
+        gross = (exit_price - pos["entry"]) * pos["size"]
+    else:
+        gross = (pos["entry"] - exit_price) * pos["size"]
+    notional = (pos["entry"] + exit_price) / 2 * pos["size"]
+    commission = notional * 0.0008
+    slippage   = notional * 0.0015
+    return gross - commission - slippage
+
+
+def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_symbol, trades, ts):
+    notional = (pos["entry"] + exit_price) / 2 * pos["size"]
+    commission = notional * 0.0008
+    slippage   = notional * 0.0015
+    funding_rates = data_by_symbol[sym].get("funding")
+    bars_held = max(1, _bars_between(data_by_symbol[sym]["df"], pos["entry_time"], exit_ts))
+    funding = _funding_cost(
+        funding_rates=funding_rates,
+        entry_time=pos["entry_time"],
+        exit_time=exit_ts,
+        notional=abs(notional),
+        side=pos["side"],
+        fallback_periods=bars_held / 2.0,
+    )
+    if pos["side"] == strat.LONG:
+        gross = (exit_price - pos["entry"]) * pos["size"]
+    else:
+        gross = (pos["entry"] - exit_price) * pos["size"]
+    pnl = gross - commission - slippage - funding
+    trades.append({
+        "symbol":      sym,
+        "entry_time":  pos["entry_time"],
+        "exit_time":   exit_ts,
+        "side":        pos["side"],
+        "entry":       round(pos["entry"], 2),
+        "exit":        round(exit_price, 2),
+        "size":        round(pos["size"], 6),
+        "notional":    round(notional, 2),
+        "commission":  round(commission, 4),
+        "slippage":    round(slippage, 4),
+        "funding":     round(funding, 4),
+        "bars_held":   bars_held,
+        "pnl":         round(pnl, 2),
+    })
+
+
+def _bars_between(df: pd.DataFrame, start_ts, end_ts) -> int:
+    try:
+        return df.index.get_loc(end_ts) - df.index.get_loc(start_ts)
+    except Exception:
+        return 1
+
+
+def fetch_all_data(symbols: list[str], years: int = 3) -> dict:
+    saved = config.SYMBOL
+    out = {}
+    try:
+        for sym in symbols:
+            config.SYMBOL = sym
+            df_4h    = _fetch_paginated(config.TIMEFRAME, years)
+            df_1d    = _fetch_paginated(config.DAILY_TIMEFRAME, years)
+            funding  = fetch_funding_history(years)
+            df_with  = _prepare_symbol_df(sym, df_4h, df_1d)
+            out[sym] = {"df": df_with, "funding": funding}
+            print(f"  {sym}: {len(df_with)} bar (with indicators), funding {len(funding)}")
+    finally:
+        config.SYMBOL = saved
+    return out
+
+
+if __name__ == "__main__":
+    SYMBOLS = ["SOL/USDT", "ETH/USDT", "BNB/USDT"]
+    print("Veri yukleniyor...")
+    data = fetch_all_data(SYMBOLS, years=3)
+
+    trades, equity = run_portfolio_backtest(
+        SYMBOLS, data,
+        start_balance=config.CAPITAL_USDT,
+        max_concurrent=config.MAX_OPEN_POSITIONS,
+    )
+
+    if trades.empty:
+        print("Trade yok.")
+        exit(0)
+
+    total_pnl   = trades["pnl"].sum()
+    win_rate    = (trades["pnl"] > 0).sum() / len(trades) * 100
+    final_eq    = equity["equity"].iloc[-1]
+    peak        = equity["equity"].cummax()
+    dd_series   = peak - equity["equity"]
+    max_dd      = dd_series.max()
+    pct_return  = (final_eq - config.CAPITAL_USDT) / config.CAPITAL_USDT * 100
+    cagr        = ((final_eq / config.CAPITAL_USDT) ** (1/3) - 1) * 100
+
+    print(f"\n=== PORTFOY BACKTEST (gercek esansli) ===")
+    print(f"Sembol sayisi    : {len(SYMBOLS)}")
+    print(f"Toplam trade     : {len(trades)}")
+    print(f"Win rate         : {win_rate:.1f}%")
+    print(f"Baslangic        : {config.CAPITAL_USDT:.2f} USDT")
+    print(f"Son equity       : {final_eq:.2f} USDT")
+    print(f"Toplam getiri    : {pct_return:+.2f}% / 3 yil")
+    print(f"CAGR             : {cagr:+.2f}%/yil")
+    print(f"Max drawdown     : {max_dd:.2f} USDT ({max_dd/config.CAPITAL_USDT*100:.1f}%)")
+    print(f"Toplam komisyon  : {trades['commission'].sum():.2f}")
+    print(f"Toplam slippage  : {trades['slippage'].sum():.2f}")
+    print(f"Toplam funding   : {trades['funding'].sum():+.2f}")
+
+    trades.to_csv("portfolio_trades.csv", index=False)
+    equity.to_csv("portfolio_equity.csv", index=False)
+    print(f"\nDetaylar: portfolio_trades.csv, portfolio_equity.csv")
