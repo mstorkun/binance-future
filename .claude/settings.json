@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./*.csv)",
+      "Read(./monte_carlo_results.csv)",
+      "Read(./backtest_results.csv)",
+      "Read(./multi_symbol_results.csv)",
+      "Read(./multi_symbol_walk_forward_results.csv)",
+      "Read(./walk_forward_results.csv)",
+      "Read(./bot.log)",
+      "Read(./.env)",
+      "Read(./__pycache__/**)",
+      "Read(./.venv/**)",
+      "Read(./venv/**)",
+      "Read(./node_modules/**)"
+    ]
+  }
+}
