@@ -10,13 +10,26 @@ SYMBOLS         = ["SOL/USDT", "ETH/USDT", "BNB/USDT"]
 SYMBOL          = "BTC/USDT"
 TIMEFRAME       = "4h"
 DAILY_TIMEFRAME = "1d"          # Yüksek TF trend filtresi
-LEVERAGE        = 10            # User chose aggressive: 7-10x
+LEVERAGE        = 5             # Balanced profile selected by risk sweep
 
 # --- Sermaye & Risk ---
 CAPITAL_USDT         = 1000.0
-RISK_PER_TRADE_PCT   = 0.05     # %5 per trade (corr-aware sizing 1 açık -> %3.35, 2 açık -> %2.5)
+RISK_PER_TRADE_PCT   = 0.03     # %3 per symbol sleeve; ~%1 portfolio risk on first trade
 MAX_OPEN_POSITIONS   = 2
-DAILY_LOSS_LIMIT_PCT = 0.05     # %5 günlük kayıp → bot durur (agresif modla uyumlu)
+DAILY_LOSS_LIMIT_PCT = 0.03     # %3 daily loss -> bot stops
+DYNAMIC_RISK_ENABLED = True
+DYNAMIC_RISK_MIN_MULT = 0.50
+DYNAMIC_RISK_MAX_MULT = 1.25
+FINAL_RISK_MIN_MULT = 0.10
+FINAL_RISK_MAX_MULT = 1.25
+CALENDAR_RISK_ENABLED = True
+CALENDAR_EVENT_FILE = "event_calendar.csv"
+WEEKEND_RISK_MULT = 0.70
+WEEKLY_OPEN_RISK_MULT = 0.75
+FUNDING_RISK_MULT = 0.90
+FUNDING_WINDOW_MINUTES = 30
+DAILY_CLOSE_RISK_MULT = 0.85
+DAILY_CLOSE_WINDOW_MINUTES = 60
 
 # --- SL / TP (ATR çarpanı) ---
 SL_ATR_MULT = 2.0

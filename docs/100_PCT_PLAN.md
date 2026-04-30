@@ -63,4 +63,17 @@ If A+B+C lands at 40-70%/yr with -30 to -50% DD, the user must accept that 100%/
 
 ## Status
 
-Phase 1 in progress.
+Phase 1 risk-accounting repair is partly complete:
+
+- Portfolio equity/margin accounting corrected.
+- Portfolio sizing aligned with the live bot.
+- Bootstrap/block Monte Carlo exists.
+- Calendar/news-risk gate exists for new entries.
+- News impact scoring exists, including post-news market reaction measurement.
+- 10-agent risk optimization selected the **balanced** default profile:
+  `5x`, `3%` sleeve risk, `2` max open positions, `3%` daily loss stop.
+
+Latest balanced 3-year portfolio backtest after calendar-risk controls:
+`+52.15% total`, `+15.02% CAGR`, `2.71% max DD`.
+
+The 100%/yr target is still not supported. Next gate: portfolio walk-forward with the corrected accounting engine and then a live-safe news watcher.

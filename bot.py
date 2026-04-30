@@ -181,9 +181,26 @@ def run():
                 # 5. Yeni pozisyon aç
                 price = float(df["close"].iloc[-2])   # son kapanan bar
                 atr   = float(df["atr"].iloc[-2])
+                signal_bar = df.iloc[-2]
+                risk_decision = r.entry_risk_decision(signal_bar, signal, ts=signal_bar.name)
+                if risk_decision.block_new_entries:
+                    log.warning(
+                        f"[{sym}] Risk takvimi/haber olayi nedeniyle yeni pozisyon bloklandi: "
+                        f"{', '.join(risk_decision.reasons)}"
+                    )
+                    continue
+                effective_risk = config.RISK_PER_TRADE_PCT * risk_decision.multiplier
+                log.info(
+                    f"[{sym}] Risk: base={config.RISK_PER_TRADE_PCT*100:.2f}% "
+                    f"x{risk_decision.multiplier:.2f} -> {effective_risk*100:.2f}% "
+                    f"({', '.join(risk_decision.reasons) or 'normal'})"
+                )
 
                 # Atomik emir açma işlemi, riski bölünmüş bütçeye (allocated_balance) göre ayarlar
-                result = om.open_position(exchange, signal, allocated_balance_per_symbol, atr, price)
+                result = om.open_position(
+                    exchange, signal, allocated_balance_per_symbol, atr, price,
+                    risk_pct=effective_risk,
+                )
                 if result:
                     global_open_count += 1
                     active_positions[sym] = {

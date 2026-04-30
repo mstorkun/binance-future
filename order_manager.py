@@ -68,7 +68,8 @@ def _cancel_order_safe(exchange: ccxt.Exchange, order_id: str):
         log.warning(f"SL iptal hatası (zaten iptal/dolu olabilir): {e}")
 
 
-def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float, price: float):
+def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float, price: float,
+                  risk_pct: float | None = None):
     """
     Atomik pozisyon açma:
     1. Kaldıracı ayarla (başarısızsa abort)
@@ -80,7 +81,7 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
         log.error("Kaldıraç ayarsız, pozisyon açma iptal edildi.")
         return None
 
-    size = r.position_size(balance, atr, price)
+    size = r.position_size(balance, atr, price, risk_pct=risk_pct)
     size = _amount_to_precision(exchange, size)
 
     notional = size * price

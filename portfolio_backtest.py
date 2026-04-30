@@ -45,6 +45,7 @@ def run_portfolio_backtest(
     start_balance: float,
     max_concurrent: int = 2,
     risk_per_trade: float | None = None,
+    leverage: float | None = None,
     enable_circuit_breaker: bool = True,
     enable_corr_sizing: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -54,14 +55,17 @@ def run_portfolio_backtest(
     """
     if risk_per_trade is None:
         risk_per_trade = config.RISK_PER_TRADE_PCT
+    if leverage is None:
+        leverage = config.LEVERAGE
 
     # Ortak timeline
     all_timestamps = set()
     for sym in symbols:
         all_timestamps.update(data_by_symbol[sym]["df"].index)
     timeline = sorted(all_timestamps)
+    allocation_count = max(len(symbols), 1)
 
-    cash = float(start_balance)
+    wallet = float(start_balance)
     open_positions: dict[str, dict] = {}
     trades = []
     equity_history = []
@@ -73,18 +77,10 @@ def run_portfolio_backtest(
     cb_locked          = False  # -30% DD'de manuel onay gerekli
 
     for ts in timeline:
-        # Mevcut equity = cash + her açık pozisyonun unrealized PnL'i
-        unrealized = 0.0
-        for sym, pos in open_positions.items():
-            df = data_by_symbol[sym]["df"]
-            if ts not in df.index:
-                continue
-            cur_price = df.loc[ts, "close"]
-            if pos["side"] == strat.LONG:
-                unrealized += (cur_price - pos["entry"]) * pos["size"]
-            else:
-                unrealized += (pos["entry"] - cur_price) * pos["size"]
-        equity = cash + unrealized
+        # Futures equity: wallet balance plus open-position unrealized PnL.
+        equity, unrealized, used_margin = _account_state(
+            wallet, open_positions, data_by_symbol, ts
+        )
 
         # 1) Açık pozisyonları kontrol et: SL hit, trailing güncelle, trend exit
         for sym in list(open_positions.keys()):
@@ -113,10 +109,8 @@ def run_portfolio_backtest(
                 exit_price = bar["close"]    # bar kapanış
 
             if exit_reason:
-                _close_position(pos, sym, exit_price, ts, data_by_symbol, trades, ts)
-                # Sermayeyi geri ver
-                cash += _position_margin(pos)
-                cash += _realized_pnl(pos, exit_price)
+                pnl = _close_position(pos, sym, exit_price, ts, data_by_symbol, trades, ts)
+                wallet += pnl
                 del open_positions[sym]
                 continue
 
@@ -132,6 +126,10 @@ def run_portfolio_backtest(
                 pos["sl"] = new_sl
 
         # Circuit breaker: equity peak'e göre drawdown
+        equity, unrealized, used_margin = _account_state(
+            wallet, open_positions, data_by_symbol, ts
+        )
+
         if enable_circuit_breaker:
             peak_equity = max(peak_equity, equity)
             dd_pct = (peak_equity - equity) / peak_equity
@@ -179,46 +177,72 @@ def run_portfolio_backtest(
                     effective_risk = _correlation_aware_risk(len(open_positions), risk_per_trade)
                 if enable_circuit_breaker:
                     effective_risk *= cb_risk_multiplier
+                risk_decision = r.entry_risk_decision(bar, signal, ts=ts)
+                if risk_decision.block_new_entries:
+                    continue
+                effective_risk *= risk_decision.multiplier
 
-                allocated = equity / max_concurrent
+                # Live bot divides total equity across watched symbols, not only open slots.
+                allocated = equity / allocation_count
                 size = (allocated * effective_risk) / (atr * config.SL_ATR_MULT)
                 size = round(size, 6)
 
                 notional = size * entry
                 if notional < 100:    # min notional
                     continue
-                margin = notional / config.LEVERAGE
-                if margin > cash:
+                margin = notional / leverage
+                available_margin = max(wallet - used_margin, 0.0)
+                if margin > available_margin:
                     continue
 
                 sl, _ = r.sl_tp_prices(entry, atr, signal)
-                cash -= margin    # margin lock
                 open_positions[sym] = {
                     "side": signal, "entry": entry, "size": size,
                     "sl": sl, "extreme": entry,
                     "entry_time": next_bar.name, "atr": atr,
                     "margin": margin, "notional": notional,
+                    "risk_pct": effective_risk,
+                    "risk_mult": risk_decision.multiplier,
+                    "risk_reasons": "|".join(risk_decision.reasons),
                 }
+                used_margin += margin
 
-        equity_history.append({"timestamp": ts, "equity": equity, "cash": cash,
-                                "open_positions": len(open_positions)})
+        equity, unrealized, used_margin = _account_state(
+            wallet, open_positions, data_by_symbol, ts
+        )
+        equity_history.append({
+            "timestamp": ts,
+            "equity": equity,
+            "wallet": wallet,
+            "unrealized": unrealized,
+            "used_margin": used_margin,
+            "available_margin": max(wallet - used_margin, 0.0),
+            "open_positions": len(open_positions),
+        })
 
     return pd.DataFrame(trades), pd.DataFrame(equity_history)
 
 
-def _position_margin(pos: dict) -> float:
-    return pos["margin"]
+def _account_state(wallet: float, open_positions: dict, data_by_symbol: dict, ts) -> tuple[float, float, float]:
+    unrealized = 0.0
+    used_margin = 0.0
+    for sym, pos in open_positions.items():
+        used_margin += pos["margin"]
+        df = data_by_symbol[sym]["df"]
+        if ts not in df.index:
+            continue
+        cur_price = df.loc[ts, "close"]
+        if pos["side"] == strat.LONG:
+            unrealized += (cur_price - pos["entry"]) * pos["size"]
+        else:
+            unrealized += (pos["entry"] - cur_price) * pos["size"]
+    return wallet + unrealized, unrealized, used_margin
 
 
-def _realized_pnl(pos: dict, exit_price: float) -> float:
+def _gross_pnl(pos: dict, exit_price: float) -> float:
     if pos["side"] == strat.LONG:
-        gross = (exit_price - pos["entry"]) * pos["size"]
-    else:
-        gross = (pos["entry"] - exit_price) * pos["size"]
-    notional = (pos["entry"] + exit_price) / 2 * pos["size"]
-    commission = notional * 0.0008
-    slippage   = notional * 0.0015
-    return gross - commission - slippage
+        return (exit_price - pos["entry"]) * pos["size"]
+    return (pos["entry"] - exit_price) * pos["size"]
 
 
 def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_symbol, trades, ts):
@@ -235,10 +259,7 @@ def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_sym
         side=pos["side"],
         fallback_periods=bars_held / 2.0,
     )
-    if pos["side"] == strat.LONG:
-        gross = (exit_price - pos["entry"]) * pos["size"]
-    else:
-        gross = (pos["entry"] - exit_price) * pos["size"]
+    gross = _gross_pnl(pos, exit_price)
     pnl = gross - commission - slippage - funding
     trades.append({
         "symbol":      sym,
@@ -253,8 +274,12 @@ def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_sym
         "slippage":    round(slippage, 4),
         "funding":     round(funding, 4),
         "bars_held":   bars_held,
+        "risk_pct":    round(pos.get("risk_pct", 0.0), 5),
+        "risk_mult":   round(pos.get("risk_mult", 1.0), 3),
+        "risk_reasons": pos.get("risk_reasons", ""),
         "pnl":         round(pnl, 2),
     })
+    return pnl
 
 
 def _bars_between(df: pd.DataFrame, start_ts, end_ts) -> int:
