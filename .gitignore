@@ -5,6 +5,9 @@ paper_state.json
 paper_decisions.csv
 paper_trades.csv
 paper_equity.csv
+paper_errors.csv
+paper_heartbeat.json
+paper_runner.lock
 testnet_fill_probe.csv
 __pycache__/
 *.pyc

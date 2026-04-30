@@ -27,7 +27,7 @@ def _restore(saved):
     config.DONCHIAN_PERIOD, config.VOLUME_MULT, config.SL_ATR_MULT = saved
 
 
-def run_segment(df_4h, df_1d, donchian, vol_mult, sl_mult, funding_rates=None,
+def run_segment(df_4h, df_1d, df_1w, donchian, vol_mult, sl_mult, funding_rates=None,
                 warmup_skip_ts=None):
     """
     Bir segmentte verilen parametrelerle backtest.
@@ -35,7 +35,7 @@ def run_segment(df_4h, df_1d, donchian, vol_mult, sl_mult, funding_rates=None,
     """
     saved = _override(donchian, vol_mult, sl_mult)
     try:
-        trades = run_backtest(df_4h, df_1d, funding_rates)
+        trades = run_backtest(df_4h, df_1d, df_1w, funding_rates)
     finally:
         _restore(saved)
 
@@ -55,13 +55,13 @@ def run_segment(df_4h, df_1d, donchian, vol_mult, sl_mult, funding_rates=None,
     }
 
 
-def find_best_params(df_train_4h, df_train_1d, funding_rates=None):
+def find_best_params(df_train_4h, df_train_1d, df_train_1w, funding_rates=None):
     """Train segmentinde grid arama."""
     best = None
     for donchian in [15, 20, 30]:
         for vol_mult in [1.2, 1.5, 2.0]:
             for sl_mult in [1.5, 2.0, 2.5]:
-                res = run_segment(df_train_4h, df_train_1d, donchian, vol_mult, sl_mult, funding_rates)
+                res = run_segment(df_train_4h, df_train_1d, df_train_1w, donchian, vol_mult, sl_mult, funding_rates)
                 if res is None:
                     continue
                 score = res["total_pnl"] / (res["max_dd"] + 1)
@@ -79,7 +79,11 @@ def _slice_daily(df_1d, start_ts, end_ts):
     return df_1d.loc[(df_1d.index >= start_ts) & (df_1d.index <= end_ts)]
 
 
-def walk_forward(df_4h, df_1d, funding_rates=None, train_bars=3000, test_bars=1000,
+def _slice_weekly(df_1w, start_ts, end_ts):
+    return df_1w.loc[(df_1w.index >= start_ts - pd.Timedelta(days=14)) & (df_1w.index <= end_ts)]
+
+
+def walk_forward(df_4h, df_1d, df_1w=None, funding_rates=None, train_bars=3000, test_bars=1000,
                  roll_bars=1000, warmup_bars=200):
     """
     Test penceresinden önce `warmup_bars` kadar bar prepend edilir, böylece
@@ -103,19 +107,21 @@ def walk_forward(df_4h, df_1d, funding_rates=None, train_bars=3000, test_bars=10
 
         df_train_1d = _slice_daily(df_1d, df_train_4h.index[0], df_train_4h.index[-1])
         df_test_1d  = _slice_daily(df_1d, df_test_4h.index[0],  df_test_4h.index[-1])
+        df_train_1w = _slice_weekly(df_1w, df_train_4h.index[0], df_train_4h.index[-1]) if df_1w is not None else None
+        df_test_1w = _slice_weekly(df_1w, df_test_4h.index[0], df_test_4h.index[-1]) if df_1w is not None else None
 
         print(f"\n--- Periyot {period} ---")
         print(f"  Train: {df_train_4h.index[0]} - {df_train_4h.index[-1]} ({len(df_train_4h)} bar)")
         print(f"  Test : {df_test_4h.index[0]} - {df_test_4h.index[-1]} ({len(df_test_4h)} bar)")
 
-        best = find_best_params(df_train_4h, df_train_1d, funding_rates)
+        best = find_best_params(df_train_4h, df_train_1d, df_train_1w, funding_rates)
         if best is None:
             print("  Train'de işlem yok, atlandı.")
             start += roll_bars
             period += 1
             continue
 
-        test_res = run_segment(df_test_4h, df_test_1d,
+        test_res = run_segment(df_test_4h, df_test_1d, df_test_1w,
                                best["donchian"], best["vol_mult"], best["sl_mult"], funding_rates,
                                warmup_skip_ts=df_4h.index[train_end] if warmup_count > 0 else None)
 
@@ -134,12 +140,12 @@ def walk_forward(df_4h, df_1d, funding_rates=None, train_bars=3000, test_bars=10
 
 
 if __name__ == "__main__":
-    df_4h, df_1d = fetch_history_with_daily(years=3)
+    df_4h, df_1d, df_1w = fetch_history_with_daily(years=3)
     funding = fetch_funding_history(years=3)
-    print(f"\n4H bar: {len(df_4h)} | 1D bar: {len(df_1d)} | funding: {len(funding)}\n")
+    print(f"\n4H bar: {len(df_4h)} | 1D bar: {len(df_1d)} | 1W bar: {len(df_1w)} | funding: {len(funding)}\n")
 
     # 18 ay train, 3 ay test, 3 ay roll → 8+ dönem (3 yıl veride)
-    results = walk_forward(df_4h, df_1d, funding, train_bars=3000, test_bars=500, roll_bars=500)
+    results = walk_forward(df_4h, df_1d, df_1w, funding, train_bars=3000, test_bars=500, roll_bars=500)
 
     if results.empty:
         print("Hicbir periyot tamamlanamadi.")

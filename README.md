@@ -76,6 +76,7 @@ python multi_symbol_backtest.py
 python multi_symbol_walk_forward.py
 python monte_carlo.py --trades backtest_results.csv
 python paper_runner.py --once --reset
+python -m unittest discover -s tests -v
 ```
 
 For the live/testnet bot, place your API keys in `.env` or environment variables. **Do not switch off `config.TESTNET = True` without going through the gating criteria.**

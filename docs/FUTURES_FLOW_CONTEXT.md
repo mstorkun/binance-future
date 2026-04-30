@@ -21,6 +21,9 @@ The module fetches:
   decision.
 - `flow_data.add_flow_indicators()` merges the context into the latest closed
   candle without using future flow buckets.
+- Flow freshness is checked with `FLOW_MAX_AGE_MINUTES`. Stale flow columns are
+  blanked and the risk layer emits `flow:stale` instead of changing position
+  size.
 - `risk.entry_risk_decision()` applies a small flow multiplier:
   - taker pressure aligned with the trade: modest boost
   - taker/top-trader pressure against the trade: reduction

@@ -11,7 +11,9 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import time
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -35,8 +37,60 @@ def _utc_now() -> str:
     return pd.Timestamp.now(tz="UTC").isoformat()
 
 
+def _atomic_write_json(path: str | Path, payload: dict[str, Any]) -> None:
+    target = Path(path)
+    tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    os.replace(tmp, target)
+
+
+def _write_heartbeat(status: str, **extra: Any) -> None:
+    payload = {
+        "status": status,
+        "updated_at": _utc_now(),
+        "pid": os.getpid(),
+        **extra,
+    }
+    _atomic_write_json(getattr(config, "PAPER_HEARTBEAT_FILE", "paper_heartbeat.json"), payload)
+
+
 def _public_exchange() -> ccxt.Exchange:
     return ccxt.binance({"options": {"defaultType": "future"}})
+
+
+def _lock_age_minutes(path: Path) -> float:
+    modified = pd.Timestamp.fromtimestamp(path.stat().st_mtime, tz="UTC")
+    return (pd.Timestamp.now(tz="UTC") - modified).total_seconds() / 60.0
+
+
+class PaperRunnerLock:
+    """Simple single-instance lock for the paper runner."""
+
+    def __init__(self, path: str | Path | None = None):
+        self.path = Path(path or getattr(config, "PAPER_LOCK_FILE", "paper_runner.lock"))
+        self.fd: int | None = None
+
+    def __enter__(self):
+        stale_after = float(getattr(config, "PAPER_LOCK_STALE_MINUTES", 240))
+        if self.path.exists():
+            age = _lock_age_minutes(self.path)
+            if age <= stale_after:
+                raise RuntimeError(f"paper runner already locked by {self.path} age={age:.1f}m")
+            self.path.unlink()
+
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        self.fd = os.open(str(self.path), flags)
+        os.write(self.fd, json.dumps({"pid": os.getpid(), "created_at": _utc_now()}).encode("utf-8"))
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.fd is not None:
+            os.close(self.fd)
+            self.fd = None
+        try:
+            self.path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _load_state(reset: bool = False) -> dict[str, Any]:
@@ -53,7 +107,7 @@ def _load_state(reset: bool = False) -> dict[str, Any]:
 
 def _save_state(state: dict[str, Any]) -> None:
     state["updated_at"] = _utc_now()
-    Path(config.PAPER_STATE_FILE).write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    _atomic_write_json(config.PAPER_STATE_FILE, state)
 
 
 def _append_csv(path: str, rows: list[dict[str, Any]]) -> None:
@@ -62,15 +116,49 @@ def _append_csv(path: str, rows: list[dict[str, Any]]) -> None:
     file_path = Path(path)
     file_exists = file_path.exists()
     fieldnames: list[str] = []
+    existing_rows: list[dict[str, Any]] = []
+    existing_fieldnames: list[str] = []
+    if file_exists:
+        with file_path.open("r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            existing_fieldnames = reader.fieldnames or []
+            fieldnames.extend(existing_fieldnames)
+            existing_rows = list(reader)
     for row in rows:
         for key in row:
             if key not in fieldnames:
                 fieldnames.append(key)
-    with file_path.open("a", newline="", encoding="utf-8") as f:
+    if not file_exists:
+        mode = "w"
+        output_rows = rows
+        target_path = file_path
+    elif any(key not in existing_fieldnames for row in rows for key in row):
+        mode = "w"
+        output_rows = existing_rows + rows
+        target_path = file_path.with_name(f".{file_path.name}.{os.getpid()}.tmp")
+    else:
+        mode = "a"
+        output_rows = rows
+        target_path = file_path
+
+    with target_path.open(mode, newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
-        if not file_exists:
+        if mode == "w":
             writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(output_rows)
+    if target_path != file_path:
+        os.replace(target_path, file_path)
+
+
+def _append_error(error: Exception, attempt: int | None = None) -> None:
+    _append_csv(getattr(config, "PAPER_ERRORS_CSV", "paper_errors.csv"), [{
+        "run_at_utc": _utc_now(),
+        "pid": os.getpid(),
+        "attempt": attempt if attempt is not None else "",
+        "error_type": type(error).__name__,
+        "error": str(error),
+        "traceback": traceback.format_exc(limit=5),
+    }])
 
 
 def _prepare_symbol(exchange: ccxt.Exchange, symbol: str) -> pd.DataFrame:
@@ -229,6 +317,9 @@ def _decision_row(
         "flow_top_long_short_ratio": bar.get("flow_top_long_short_ratio", ""),
         "flow_oi_change": bar.get("flow_oi_change", ""),
         "flow_funding_rate": bar.get("flow_funding_rate", ""),
+        "flow_fresh": bar.get("flow_fresh", ""),
+        "flow_bucket_age_minutes": bar.get("flow_bucket_age_minutes", ""),
+        "flow_snapshot_age_minutes": bar.get("flow_snapshot_age_minutes", ""),
         "risk_mult": risk_decision.multiplier if risk_decision else "",
         "risk_block": risk_decision.block_new_entries if risk_decision else "",
         "risk_reasons": "|".join(risk_decision.reasons) if risk_decision else "",
@@ -328,6 +419,15 @@ def run_once(reset: bool = False) -> dict[str, Any]:
         "open_positions": len(state["positions"]),
     }])
     _save_state(state)
+    _write_heartbeat(
+        "ok",
+        wallet=round(wallet, 6),
+        equity=round(equity, 6),
+        unrealized=round(unrealized, 6),
+        open_positions=len(state["positions"]),
+        decisions=len(decision_rows),
+        closed_trades=len(closed_trades),
+    )
     return {
         "wallet": wallet,
         "equity": equity,
@@ -336,6 +436,23 @@ def run_once(reset: bool = False) -> dict[str, Any]:
         "decisions": decision_rows,
         "closed_trades": closed_trades,
     }
+
+
+def _run_once_with_retry(reset: bool = False) -> dict[str, Any]:
+    max_retries = int(getattr(config, "PAPER_MAX_RETRIES", 3))
+    base_sleep = float(getattr(config, "PAPER_RETRY_BASE_SECONDS", 5))
+    last_error: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            return run_once(reset=reset)
+        except Exception as exc:
+            last_error = exc
+            _append_error(exc, attempt=attempt)
+            _write_heartbeat("error", attempt=attempt, error_type=type(exc).__name__, error=str(exc))
+            if attempt < max_retries:
+                time.sleep(base_sleep * attempt)
+    assert last_error is not None
+    raise last_error
 
 
 def main() -> None:
@@ -349,21 +466,33 @@ def main() -> None:
     if not args.once and not args.loop:
         args.once = True
 
-    first = True
-    while True:
-        result = run_once(reset=args.reset and first)
-        print(
-            "paper telemetry:",
-            f"equity={result['equity']:.2f}",
-            f"wallet={result['wallet']:.2f}",
-            f"open={result['open_positions']}",
-            f"decisions={len(result['decisions'])}",
-            f"closed={len(result['closed_trades'])}",
-        )
-        if args.once:
-            break
-        first = False
-        time.sleep(max(args.interval_minutes, 1.0) * 60)
+    with PaperRunnerLock():
+        first = True
+        while True:
+            try:
+                result = _run_once_with_retry(reset=args.reset and first)
+                print(
+                    "paper telemetry:",
+                    f"equity={result['equity']:.2f}",
+                    f"wallet={result['wallet']:.2f}",
+                    f"open={result['open_positions']}",
+                    f"decisions={len(result['decisions'])}",
+                    f"closed={len(result['closed_trades'])}",
+                    flush=True,
+                )
+            except Exception as exc:
+                if args.once:
+                    raise
+                sleep_seconds = float(getattr(config, "PAPER_ERROR_SLEEP_SECONDS", 300))
+                print(f"paper telemetry error: {type(exc).__name__}: {exc}; sleeping {sleep_seconds:.0f}s", flush=True)
+                time.sleep(sleep_seconds)
+                first = False
+                continue
+
+            if args.once:
+                break
+            first = False
+            time.sleep(max(args.interval_minutes, 1.0) * 60)
 
 
 if __name__ == "__main__":

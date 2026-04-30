@@ -64,6 +64,21 @@ def _filled(order: dict, fallback: float) -> float:
     return fallback
 
 
+def _safe_reduce_only_close(exchange, symbol: str, side: str, amount: float) -> dict | None:
+    close_side = "sell" if side == "long" else "buy"
+    try:
+        return exchange.create_order(
+            symbol,
+            "market",
+            close_side,
+            amount,
+            params={"reduceOnly": True, "newOrderRespType": "RESULT"},
+        )
+    except Exception as exc:
+        print(f"EMERGENCY TESTNET CLOSE FAILED: {exc}")
+        return None
+
+
 def run_probe(symbol: str, side: str, notional: float, approve: bool) -> None:
     if not approve:
         raise SystemExit("Refusing to send testnet order without --approve-testnet-fill.")
@@ -79,11 +94,25 @@ def run_probe(symbol: str, side: str, notional: float, approve: bool) -> None:
     order_side = "buy" if side == "long" else "sell"
     close_side = "sell" if side == "long" else "buy"
 
-    entry_order = exchange.create_order(symbol, "market", order_side, amount, params={"newOrderRespType": "RESULT"})
-    entry = _avg_price(entry_order, ref_price)
-    filled = _filled(entry_order, amount)
-    close_order = exchange.create_order(symbol, "market", close_side, filled, params={"reduceOnly": True, "newOrderRespType": "RESULT"})
-    exit_price = _avg_price(close_order, entry)
+    entry_order = None
+    close_order = None
+    filled = 0.0
+    try:
+        entry_order = exchange.create_order(symbol, "market", order_side, amount, params={"newOrderRespType": "RESULT"})
+        entry = _avg_price(entry_order, ref_price)
+        filled = _filled(entry_order, amount)
+        close_order = exchange.create_order(
+            symbol,
+            "market",
+            close_side,
+            filled,
+            params={"reduceOnly": True, "newOrderRespType": "RESULT"},
+        )
+        exit_price = _avg_price(close_order, entry)
+    except Exception:
+        if filled > 0:
+            close_order = _safe_reduce_only_close(exchange, symbol, side, filled)
+        raise
 
     row = {
         "run_at_utc": _utc_now(),

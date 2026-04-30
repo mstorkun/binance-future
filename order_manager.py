@@ -285,21 +285,28 @@ def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: f
     log.info(f"Trailing soft SL guncellendi: {cur_sl:.2f} -> {new_sl:.2f} | hard={hard_sl:.2f}")
 
 
-def close_position_market(exchange: ccxt.Exchange, side: str, size: float):
-    """Trend tersine döndüğünde pozisyonu market emirle kapat."""
+def close_position_market(exchange: ccxt.Exchange, side: str, size: float) -> bool:
+    """Fail-safe reduce-only market close; cancel failures do not block close."""
     close_side = "sell" if side == "long" else "buy"
     try:
         exchange.cancel_all_orders(config.SYMBOL)
-        exchange.create_order(
+    except ccxt.BaseError as e:
+        log.warning(f"Kapatma oncesi emir iptali basarisiz, market close yine denenecek: {e}")
+
+    try:
+        order = exchange.create_order(
             symbol=config.SYMBOL,
             type="market",
             side=close_side,
             amount=size,
             params={"reduceOnly": True},
         )
-        log.info(f"Pozisyon kapatıldı (trend exit): {side.upper()}")
+        fill_price, filled_size = _resolve_market_fill(exchange, order, 0.0, size)
+        log.info(f"Pozisyon kapatildi (trend exit): {side.upper()} | miktar={filled_size} | fill={fill_price:.4f}")
+        return True
     except ccxt.BaseError as e:
-        log.error(f"Kapatma hatası: {e}")
+        log.error(f"Kapatma hatasi: {e}")
+        return False
 
 
 def close_all(exchange: ccxt.Exchange):

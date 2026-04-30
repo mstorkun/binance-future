@@ -190,6 +190,10 @@ def _flow_risk_decision(bar, side: str, close: float | None = None, open_: float
     if not getattr(config, "FLOW_RISK_ENABLED", False):
         return RiskDecision(1.0, False, ())
 
+    flow_fresh = bar.get("flow_fresh")
+    if flow_fresh is not None and str(flow_fresh).lower() in {"false", "0", "nan", "<na>"}:
+        return RiskDecision(1.0, False, ("flow:stale",))
+
     mult = 1.0
     reasons: list[str] = []
     taker_buy_ratio = _num(bar.get("flow_taker_buy_ratio"))

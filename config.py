@@ -121,6 +121,7 @@ FLOW_OI_CHANGE_CONFIRM = 0.03
 FLOW_OI_CHANGE_EXTREME = 0.12
 FLOW_FUNDING_HIGH = 0.0005
 FLOW_FUNDING_EXTREME = 0.0010
+FLOW_MAX_AGE_MINUTES = 300
 
 # --- Backtest maliyet varsayımları ---
 # Tarihsel funding verisi çekilemezse fallback olarak kullanılır.
@@ -134,9 +135,16 @@ PAPER_STATE_FILE = "paper_state.json"
 PAPER_DECISIONS_CSV = "paper_decisions.csv"
 PAPER_TRADES_CSV = "paper_trades.csv"
 PAPER_EQUITY_CSV = "paper_equity.csv"
+PAPER_ERRORS_CSV = "paper_errors.csv"
+PAPER_HEARTBEAT_FILE = "paper_heartbeat.json"
+PAPER_LOCK_FILE = "paper_runner.lock"
 PAPER_START_BALANCE = CAPITAL_USDT
 PAPER_ENTRY_SLIPPAGE_RATE = SLIPPAGE_RATE_ROUND_TRIP / 2
 PAPER_EXIT_SLIPPAGE_RATE = SLIPPAGE_RATE_ROUND_TRIP / 2
+PAPER_MAX_RETRIES = 3
+PAPER_RETRY_BASE_SECONDS = 5
+PAPER_ERROR_SLEEP_SECONDS = 300
+PAPER_LOCK_STALE_MINUTES = 240
 TESTNET_FILL_PROBE_NOTIONAL_USDT = 110.0
 
 # --- Trend takip indikatörleri (eski mantık, bazı yardımcılar hala kullanılıyor) ---
