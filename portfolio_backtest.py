@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pandas as pd
 import config
+import execution_guard as eg
 import indicators as ind
 import strategy as strat
 import risk as r
@@ -28,17 +29,6 @@ def _prepare_symbol_df(symbol: str, df_4h: pd.DataFrame, df_1d: pd.DataFrame) ->
     return df
 
 
-def _correlation_aware_risk(open_count: int, base_risk: float) -> float:
-    """3-2-1.5 corr-aware: aynı anda açık pozisyon sayısı arttıkça risk azalır."""
-    if open_count == 0:
-        return base_risk
-    if open_count == 1:
-        return base_risk * 0.67   # 3% -> 2%
-    if open_count == 2:
-        return base_risk * 0.50   # 3% -> 1.5%
-    return base_risk * 0.33       # 3% -> 1%
-
-
 def run_portfolio_backtest(
     symbols: list[str],
     data_by_symbol: dict[str, dict],
@@ -46,6 +36,7 @@ def run_portfolio_backtest(
     max_concurrent: int = 2,
     risk_per_trade: float | None = None,
     leverage: float | None = None,
+    risk_basis: str | None = None,
     enable_circuit_breaker: bool = True,
     enable_corr_sizing: bool = True,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -57,6 +48,8 @@ def run_portfolio_backtest(
         risk_per_trade = config.RISK_PER_TRADE_PCT
     if leverage is None:
         leverage = config.LEVERAGE
+    if risk_basis is None:
+        risk_basis = getattr(config, "RISK_BASIS", "portfolio")
 
     # Ortak timeline
     all_timestamps = set()
@@ -91,39 +84,38 @@ def run_portfolio_backtest(
             bar = df.loc[ts]
             window = df.loc[:ts]
 
-            # Önce SL kontrolü (kötümser intra-bar varsayım)
-            sl_hit = False
-            exit_price = None
-            if pos["side"] == strat.LONG and bar["low"] <= pos["sl"]:
-                sl_hit, exit_price = True, pos["sl"]
-            elif pos["side"] == strat.SHORT and bar["high"] >= pos["sl"]:
-                sl_hit, exit_price = True, pos["sl"]
+            stop_decision = eg.stop_decision(pos, bar)
+            exit_price = stop_decision.price
 
             # Trend exit?
-            trend_exit = strat.check_exit(window, pos["side"]) if not sl_hit else False
+            trend_exit = strat.check_exit(window, pos["side"]) if not stop_decision.hit else False
             exit_reason = None
-            if sl_hit:
-                exit_reason = "sl"
+            if stop_decision.hit:
+                exit_reason = stop_decision.reason
             elif trend_exit:
                 exit_reason = "trend_exit"
                 exit_price = bar["close"]    # bar kapanış
 
             if exit_reason:
-                pnl = _close_position(pos, sym, exit_price, ts, data_by_symbol, trades, ts)
+                pnl = _close_position(pos, sym, exit_price, ts, data_by_symbol, trades, ts, exit_reason)
                 wallet += pnl
                 del open_positions[sym]
                 continue
 
             # Trailing güncelle
-            if pos["side"] == strat.LONG:
-                pos["extreme"] = max(pos["extreme"], bar["high"])
-            else:
-                pos["extreme"] = min(pos["extreme"], bar["low"])
-            new_sl = strat.trailing_stop(pos["entry"], pos["extreme"], pos["side"])
-            if pos["side"] == strat.LONG and new_sl > pos["sl"]:
-                pos["sl"] = new_sl
-            elif pos["side"] == strat.SHORT and new_sl < pos["sl"]:
-                pos["sl"] = new_sl
+            trailing_guard = eg.should_skip_trailing_update(bar)
+            if trailing_guard.ok:
+                if pos["side"] == strat.LONG:
+                    pos["extreme"] = max(pos["extreme"], bar["high"])
+                else:
+                    pos["extreme"] = min(pos["extreme"], bar["low"])
+                new_sl = strat.trailing_stop(pos["entry"], pos["extreme"], pos["side"])
+                if pos["side"] == strat.LONG and new_sl > pos["sl"]:
+                    pos["sl"] = new_sl
+                    pos["hard_sl"] = eg.hard_stop_from_soft(new_sl, pos["atr"], pos["side"])
+                elif pos["side"] == strat.SHORT and new_sl < pos["sl"]:
+                    pos["sl"] = new_sl
+                    pos["hard_sl"] = eg.hard_stop_from_soft(new_sl, pos["atr"], pos["side"])
 
         # Circuit breaker: equity peak'e göre drawdown
         equity, unrealized, used_margin = _account_state(
@@ -174,7 +166,7 @@ def run_portfolio_backtest(
                 # Pozisyon boyutu — corr-aware + circuit breaker risk multiplier
                 effective_risk = risk_per_trade
                 if enable_corr_sizing:
-                    effective_risk = _correlation_aware_risk(len(open_positions), risk_per_trade)
+                    effective_risk = r.correlation_aware_risk(len(open_positions), risk_per_trade)
                 if enable_circuit_breaker:
                     effective_risk *= cb_risk_multiplier
                 risk_decision = r.entry_risk_decision(bar, signal, ts=ts)
@@ -182,8 +174,10 @@ def run_portfolio_backtest(
                     continue
                 effective_risk *= risk_decision.multiplier
 
-                # Live bot divides total equity across watched symbols, not only open slots.
-                allocated = equity / allocation_count
+                if risk_basis == "portfolio":
+                    allocated = equity
+                else:
+                    allocated = equity / allocation_count
                 size = (allocated * effective_risk) / (atr * config.SL_ATR_MULT)
                 size = round(size, 6)
 
@@ -196,9 +190,10 @@ def run_portfolio_backtest(
                     continue
 
                 sl, _ = r.sl_tp_prices(entry, atr, signal)
+                hard_sl = eg.hard_stop_from_soft(sl, atr, signal)
                 open_positions[sym] = {
                     "side": signal, "entry": entry, "size": size,
-                    "sl": sl, "extreme": entry,
+                    "sl": sl, "hard_sl": hard_sl, "extreme": entry,
                     "entry_time": next_bar.name, "atr": atr,
                     "margin": margin, "notional": notional,
                     "risk_pct": effective_risk,
@@ -245,7 +240,7 @@ def _gross_pnl(pos: dict, exit_price: float) -> float:
     return (pos["entry"] - exit_price) * pos["size"]
 
 
-def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_symbol, trades, ts):
+def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_symbol, trades, ts, exit_reason: str):
     notional = (pos["entry"] + exit_price) / 2 * pos["size"]
     commission = notional * 0.0008
     slippage   = notional * 0.0015
@@ -274,6 +269,9 @@ def _close_position(pos: dict, sym: str, exit_price: float, exit_ts, data_by_sym
         "slippage":    round(slippage, 4),
         "funding":     round(funding, 4),
         "bars_held":   bars_held,
+        "exit_reason":  exit_reason,
+        "soft_sl":      round(pos.get("sl", 0.0), 4),
+        "hard_sl":      round(pos.get("hard_sl", 0.0), 4),
         "risk_pct":    round(pos.get("risk_pct", 0.0), 5),
         "risk_mult":   round(pos.get("risk_mult", 1.0), 3),
         "risk_reasons": pos.get("risk_reasons", ""),
@@ -327,6 +325,7 @@ if __name__ == "__main__":
     peak        = equity["equity"].cummax()
     dd_series   = peak - equity["equity"]
     max_dd      = dd_series.max()
+    max_dd_peak_pct = ((peak - equity["equity"]) / peak).max() * 100
     pct_return  = (final_eq - config.CAPITAL_USDT) / config.CAPITAL_USDT * 100
     cagr        = ((final_eq / config.CAPITAL_USDT) ** (1/3) - 1) * 100
 
@@ -338,7 +337,7 @@ if __name__ == "__main__":
     print(f"Son equity       : {final_eq:.2f} USDT")
     print(f"Toplam getiri    : {pct_return:+.2f}% / 3 yil")
     print(f"CAGR             : {cagr:+.2f}%/yil")
-    print(f"Max drawdown     : {max_dd:.2f} USDT ({max_dd/config.CAPITAL_USDT*100:.1f}%)")
+    print(f"Max drawdown     : {max_dd:.2f} USDT ({max_dd/config.CAPITAL_USDT*100:.1f}% start, {max_dd_peak_pct:.1f}% peak)")
     print(f"Toplam komisyon  : {trades['commission'].sum():.2f}")
     print(f"Toplam slippage  : {trades['slippage'].sum():.2f}")
     print(f"Toplam funding   : {trades['funding'].sum():+.2f}")

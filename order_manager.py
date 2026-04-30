@@ -1,6 +1,7 @@
 import logging
 import ccxt
 import config
+import execution_guard as eg
 import risk as r
 
 log = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ def _create_sl_order(exchange: ccxt.Exchange, sl_side: str, size: float, sl_pric
             type="stop_market",
             side=sl_side,
             amount=size,
-            params={"stopPrice": sl_price, "reduceOnly": True},
+            params=eg.exchange_stop_params(sl_price),
         )
         return order
     except ccxt.BaseError as e:
@@ -90,8 +91,14 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
         return None
 
     initial_sl, _ = r.sl_tp_prices(price, atr, side)
+    hard_sl = eg.hard_stop_from_soft(initial_sl, atr, side)
     order_side = "buy" if side == "long" else "sell"
     sl_side    = "sell" if side == "long" else "buy"
+
+    guard = eg.pre_trade_liquidity_check(exchange, config.SYMBOL, side, notional, price)
+    if not guard.ok:
+        log.warning(f"Likidite/spread guard pozisyonu blokladi: {guard.reason}")
+        return None
 
     try:
         order = exchange.create_order(
@@ -106,12 +113,12 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
         log.error(f"Pozisyon açma hatası: {e}")
         return None
 
-    sl_order = _create_sl_order(exchange, sl_side, size, initial_sl)
+    sl_order = _create_sl_order(exchange, sl_side, size, hard_sl)
     if sl_order is None:
         log.error("SL kurulamadı, pozisyon ACIL KAPATILIYOR.")
         _safe_close_market(exchange, side, size)
         return None
-    log.info(f"Initial SL koyuldu: {initial_sl:.2f}")
+    log.info(f"Hard SL koyuldu: {hard_sl:.2f} | Soft SL: {initial_sl:.2f}")
 
     return {
         "order":     order,
@@ -119,11 +126,13 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
         "side":      side,
         "entry":     price,
         "sl":        initial_sl,
+        "hard_sl":   hard_sl,
+        "atr":       atr,
         "sl_order_id": sl_order.get("id"),
     }
 
 
-def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: float, extreme: float):
+def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: float, extreme: float, bar=None):
     """
     Trailing SL güncellemesi — race condition önleyici sıra:
     1. Yeni SL emrini OLUŞTUR (her iki SL kısa süre birlikte yaşar — pozisyon korumasız KALMAZ)
@@ -135,6 +144,13 @@ def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: f
     size  = position["size"]
     cur_sl = position["sl"]
     old_sl_id = position.get("sl_order_id")
+    atr = float(position.get("atr") or 0)
+
+    if bar is not None:
+        guard = eg.should_skip_trailing_update(bar)
+        if not guard.ok:
+            log.info(f"Trailing SL guncellemesi atlandi: {guard.reason}")
+            return
 
     if side == "long":
         gain = extreme - entry
@@ -153,8 +169,10 @@ def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: f
 
     sl_side = "sell" if side == "long" else "buy"
 
-    # Önce yeni emri oluştur — pozisyon her an korunsun
-    new_sl_order = _create_sl_order(exchange, sl_side, size, new_sl)
+    hard_sl = eg.hard_stop_from_soft(new_sl, atr, side) if atr > 0 else new_sl
+
+    # Önce yeni hard-stop emrini oluştur — pozisyon her an korunsun
+    new_sl_order = _create_sl_order(exchange, sl_side, size, hard_sl)
     if new_sl_order is None:
         log.error("Yeni trailing SL oluşturulamadı, eski SL korunuyor.")
         return
@@ -164,8 +182,9 @@ def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: f
         _cancel_order_safe(exchange, old_sl_id)
 
     position["sl"] = new_sl
+    position["hard_sl"] = hard_sl
     position["sl_order_id"] = new_sl_order.get("id")
-    log.info(f"Trailing SL güncellendi: {cur_sl:.2f} → {new_sl:.2f}")
+    log.info(f"Trailing soft SL guncellendi: {cur_sl:.2f} -> {new_sl:.2f} | hard={hard_sl:.2f}")
 
 
 def close_position_market(exchange: ccxt.Exchange, side: str, size: float):

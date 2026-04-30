@@ -10,13 +10,15 @@ SYMBOLS         = ["SOL/USDT", "ETH/USDT", "BNB/USDT"]
 SYMBOL          = "BTC/USDT"
 TIMEFRAME       = "4h"
 DAILY_TIMEFRAME = "1d"          # Yüksek TF trend filtresi
-LEVERAGE        = 5             # Balanced profile selected by risk sweep
+LEVERAGE        = 10            # Growth 70 compound candidate
 
 # --- Sermaye & Risk ---
 CAPITAL_USDT         = 1000.0
-RISK_PER_TRADE_PCT   = 0.03     # %3 per symbol sleeve; ~%1 portfolio risk on first trade
+RISK_PER_TRADE_PCT   = 0.04     # %4 of current portfolio equity on first open position
 MAX_OPEN_POSITIONS   = 2
-DAILY_LOSS_LIMIT_PCT = 0.03     # %3 daily loss -> bot stops
+DAILY_LOSS_LIMIT_PCT = 0.06     # approx first+second corr-aware SL day guard
+RISK_BASIS = "portfolio"        # "portfolio" = full equity, "symbol_sleeve" = equity / symbol count
+CORRELATION_AWARE_SIZING_ENABLED = True
 DYNAMIC_RISK_ENABLED = True
 DYNAMIC_RISK_MIN_MULT = 0.50
 DYNAMIC_RISK_MAX_MULT = 1.25
@@ -34,6 +36,21 @@ DAILY_CLOSE_WINDOW_MINUTES = 60
 # --- SL / TP (ATR çarpanı) ---
 SL_ATR_MULT = 2.0
 TP_ATR_MULT = 4.0
+
+# --- Whale/wick protection ---
+WICK_GUARD_ENABLED = True
+WICK_GUARD_RANGE_ATR_MULT = 2.50
+WICK_GUARD_WICK_BODY_RATIO = 2.50
+WICK_GUARD_VOLUME_MULT = 2.00
+SOFT_STOP_CLOSE_CONFIRM = True
+HARD_STOP_EXTRA_ATR = 1.00
+USE_MARK_PRICE_STOPS = True
+USE_PRICE_PROTECT = True
+ORDER_BOOK_GUARD_ENABLED = True
+ORDER_BOOK_GUARD_FAIL_CLOSED = True
+MAX_SPREAD_PCT = 0.0015
+MIN_DEPTH_TO_NOTIONAL_MULT = 3.0
+ORDER_BOOK_DEPTH_BAND_PCT = 0.0020
 
 # --- Backtest maliyet varsayımları ---
 # Tarihsel funding verisi çekilemezse fallback olarak kullanılır.

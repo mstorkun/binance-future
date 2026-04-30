@@ -12,6 +12,7 @@ Kullanım:
 import ccxt
 import pandas as pd
 import config
+import execution_guard as eg
 import indicators as ind
 import strategy as strat
 import risk as r
@@ -71,6 +72,7 @@ def run_backtest(
         entry      = entry_bar["open"]
         atr        = df.iloc[i]["atr"]
         initial_sl, _ = r.sl_tp_prices(entry, atr, signal)
+        hard_sl    = eg.hard_stop_from_soft(initial_sl, atr, signal)
         size       = r.position_size(balance, atr, entry)
 
         current_sl = initial_sl
@@ -82,6 +84,12 @@ def run_backtest(
         for j in range(i + 2, len(df)):
             bar    = df.iloc[j]
             window_j = df.iloc[: j + 1]
+            pos = {"side": signal, "sl": current_sl, "hard_sl": hard_sl}
+
+            stop_decision = eg.stop_decision(pos, bar)
+            if stop_decision.hit:
+                result, exit_price, exit_bar = stop_decision.reason, stop_decision.price, j
+                break
 
             # Trend tersine döndü mü?
             if strat.check_exit(window_j, signal):
@@ -90,12 +98,11 @@ def run_backtest(
                 exit_bar   = j
                 break
 
-            # KÖTÜMSER VARSAYIM: SL kontrolünü ESKİ current_sl ile yap (intra-bar
-            # sırası bilinmiyor; iyimser değil, daha tutucu sonuç)
+            trailing_guard = eg.should_skip_trailing_update(bar)
+            if not trailing_guard.ok:
+                continue
+
             if signal == "long":
-                if bar["low"] <= current_sl:
-                    result, exit_price, exit_bar = "sl", current_sl, j
-                    break
                 # Sonra extreme + trailing güncelle (bir sonraki bar için)
                 if bar["high"] > extreme:
                     extreme = bar["high"]
@@ -103,16 +110,15 @@ def run_backtest(
                     trail = strat.trailing_stop(entry, extreme, signal)
                     if trail > current_sl:
                         current_sl = trail
+                        hard_sl = eg.hard_stop_from_soft(current_sl, atr, signal)
             else:
-                if bar["high"] >= current_sl:
-                    result, exit_price, exit_bar = "sl", current_sl, j
-                    break
                 if bar["low"] < extreme:
                     extreme = bar["low"]
                 if extreme < entry:
                     trail = strat.trailing_stop(entry, extreme, signal)
                     if trail < current_sl:
                         current_sl = trail
+                        hard_sl = eg.hard_stop_from_soft(current_sl, atr, signal)
 
         if result is None:
             i += 1
@@ -152,6 +158,8 @@ def run_backtest(
             "exit":        round(exit_price, 2),
             "extreme":     round(extreme, 2),
             "result":      result,
+            "soft_sl":     round(current_sl, 2),
+            "hard_sl":     round(hard_sl, 2),
             "size":        round(size, 6),
             "notional":    round(notional, 2),
             "commission":  round(commission, 4),
@@ -179,7 +187,7 @@ def print_summary(trades: pd.DataFrame):
     total_pnl = trades["pnl"].sum()
     max_dd   = (trades["balance"].cummax() - trades["balance"]).max()
     trend_exits = len(trades[trades["result"] == "trend_exit"])
-    sl_hits     = len(trades[trades["result"] == "sl"])
+    sl_hits     = len(trades[trades["result"].isin(["soft_sl", "soft_sl_confirmed", "hard_sl"])])
 
     print(f"\n{'='*45}")
     print(f"Toplam işlem    : {total}")

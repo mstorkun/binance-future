@@ -1,8 +1,8 @@
 # 100%/yr Implementation Plan
 
-> User insists on 100%/yr target. Current portfolio CAGR is 10.71%/yr.
-> Closing the gap requires a combined approach (A + B + C) and is not
-> guaranteed. This document tracks the plan and the realistic outcomes.
+> User target evolved from 70%/yr toward uncapped upside in strong trends.
+> The bot should not cap profit; it should cap risk. This document tracks the
+> validation path.
 
 ## Plan Phases
 
@@ -10,8 +10,8 @@
 - [x] Capital allocation fix (done previously)
 - [ ] Walk-forward warmup buffer
 - [ ] Per-trade CSV columns (size, notional, commission, slippage, funding)
-- [ ] True portfolio walk-forward (concurrent positions, capital lock)
-- [ ] Bootstrap + block-bootstrap Monte Carlo
+- [x] True portfolio walk-forward (concurrent positions, capital lock)
+- [x] Bootstrap + block-bootstrap Monte Carlo
 
 ### Phase 2 — Strategy Enhancement (path A)
 - [ ] New indicators: regime detector (vol cluster + ADX state machine)
@@ -27,32 +27,29 @@
 - [ ] Re-optimize parameters at 15min
 
 ### Phase 4 — Aggressive Sizing with Safeguards (path C)
-- [ ] Drawdown circuit breaker (-10/-20/-30% rules)
-- [ ] Correlation-aware sizing (3-2-1.5%)
+- [x] Drawdown circuit breaker (-10/-20/-30% rules)
+- [x] Correlation-aware sizing, now shared by live bot and backtest
 - [ ] Cluster-loss guard (3 symbols hit SL same day → 24h pause)
 - [ ] Per-symbol daily PnL cap
 
 ### Phase 5 — Validation
-- [ ] Backtest all four configurations (current, A, B, C, A+B+C)
-- [ ] Portfolio walk-forward each
-- [ ] Bootstrap MC each
+- [x] Backtest risk profiles through corrected portfolio engine
+- [x] Portfolio walk-forward for growth candidate
+- [x] Bootstrap/block MC for growth candidate
 - [ ] 10-agent review with corrected data
 
 ## Expected Outcomes
 
 | Configuration | Realistic CAGR | Max DD | Honest Verdict |
 |---|---|---|---|
-| Current (4H, 5x, 3%) | 10-15% | 6-10% | Methodology repaired baseline |
-| + Hybrid signal (A) | 15-25% | 10-15% | Plausible improvement |
-| + 15min (B) | 20-30% | 15-25% | Higher noise tax |
-| + Aggressive sizing (C) | 30-50% | 25-40% | Survives, doesn't thrive |
-| **All combined** | **40-70%** | **30-50%** | **Stretch goal** |
-| User target | 100%+ | -- | **Not technically supported** |
+| Conservative | 34.40% | 3.86% peak DD | Safe but below target |
+| Balanced | 55.46% | 5.77% peak DD | Strong risk-adjusted |
+| **growth_70_compound** | **79.56%** | **7.67% peak DD** | Current testnet candidate |
+| growth_100_compound | 107.12% | 9.54% peak DD | Higher return, weaker risk quality |
+| extreme_10pct+ | 301%+ | 16%+ peak DD | Too aggressive for default |
 
-If A+B+C lands at 40-70%/yr with -30 to -50% DD, the user must accept that 100%/yr requires either:
-- A bull-market tailwind (free 30-40% extra in a strong year),
-- An undiscovered alpha source (unlikely without months of R&D), or
-- HFT-grade infrastructure (out of scope for this project).
+The selected profile does not cap upside. If a strong trend year produces
+100-200%+, trailing exits can allow it. The cap is on risk, not on profit.
 
 ## Hard Stops
 
@@ -63,17 +60,25 @@ If A+B+C lands at 40-70%/yr with -30 to -50% DD, the user must accept that 100%/
 
 ## Status
 
-Phase 1 risk-accounting repair is partly complete:
+Current validation state:
 
 - Portfolio equity/margin accounting corrected.
 - Portfolio sizing aligned with the live bot.
 - Bootstrap/block Monte Carlo exists.
 - Calendar/news-risk gate exists for new entries.
 - News impact scoring exists, including post-news market reaction measurement.
-- 10-agent risk optimization selected the **balanced** default profile:
-  `5x`, `3%` sleeve risk, `2` max open positions, `3%` daily loss stop.
+- Live bot and backtest now share correlation-aware sizing.
+- Default candidate is **growth_70_compound**:
+  `10x`, `4%` portfolio risk, `2` max open positions, `6%` daily loss stop.
 
-Latest balanced 3-year portfolio backtest after calendar-risk controls:
-`+52.15% total`, `+15.02% CAGR`, `2.71% max DD`.
+Latest corrected 3-year portfolio backtest:
+`+478.95% total`, `+79.56% CAGR`, `7.67% peak DD`.
 
-The 100%/yr target is still not supported. Next gate: portfolio walk-forward with the corrected accounting engine and then a live-safe news watcher.
+Latest walk-forward: 7/7 positive periods for the fixed growth candidate, 14.30%
+average test-period return, 7.67% worst test-period peak DD.
+
+Latest Monte Carlo: 5th percentile ending equity is about 4705 USDT from 1000
+USDT; peak-DD p95 is about 19.6-21.2% depending on method.
+
+Next gate: testnet/paper with real fills, order-book guard logs, and news watcher
+in reduce/block mode only.

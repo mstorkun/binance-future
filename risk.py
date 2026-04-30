@@ -27,6 +27,19 @@ def position_size(balance: float, atr: float, price: float, risk_pct: float | No
     return round(contracts, 4)
 
 
+def correlation_aware_risk(open_count: int, base_risk: float) -> float:
+    """Reduce new-entry risk as correlated portfolio exposure increases."""
+    if not getattr(config, "CORRELATION_AWARE_SIZING_ENABLED", True):
+        return base_risk
+    if open_count <= 0:
+        return base_risk
+    if open_count == 1:
+        return base_risk * 0.67
+    if open_count == 2:
+        return base_risk * 0.50
+    return base_risk * 0.33
+
+
 @dataclass(frozen=True)
 class RiskDecision:
     multiplier: float

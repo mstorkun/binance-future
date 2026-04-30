@@ -27,6 +27,7 @@ import data
 import indicators as ind
 import strategy as strat
 import risk as r
+import execution_guard as eg
 import order_manager as om
 
 
@@ -66,21 +67,26 @@ def _recover_position(live_pos: dict, df) -> dict:
     side      = live_pos.get("side") or (strat.LONG if contracts > 0 else strat.SHORT)
     entry     = float(live_pos.get("entryPrice") or df["close"].iloc[-1])
 
+    atr = float(df["atr"].iloc[-2])
     real_sl, sl_order_id = om.fetch_active_sl(exchange)
     if real_sl is not None:
-        sl = real_sl
-        log.info(f"State recovery: borsadaki SL bulundu = {sl:.2f}")
+        hard_sl = real_sl
+        extra = atr * getattr(config, "HARD_STOP_EXTRA_ATR", 1.0)
+        sl = hard_sl + extra if side == strat.LONG else hard_sl - extra
+        log.info(f"State recovery: borsadaki hard SL bulundu = {hard_sl:.2f} | soft SL~{sl:.2f}")
     else:
-        atr = float(df["atr"].iloc[-2])
         sl, _ = r.sl_tp_prices(entry, atr, side)
+        hard_sl = eg.hard_stop_from_soft(sl, atr, side)
         sl_order_id = None
-        log.warning(f"State recovery: borsada SL bulunamadı, ATR ile tahmin = {sl:.2f}")
+        log.warning(f"State recovery: borsada SL bulunamadi, soft/hard tahmin = {sl:.2f}/{hard_sl:.2f}")
 
     log.info(f"State recovery: {side.upper()} entry={entry:.2f} size={abs(contracts)}")
     return {
         "side":         side,
         "entry":        entry,
         "sl":           sl,
+        "hard_sl":      hard_sl,
+        "atr":          atr,
         "size":         abs(contracts),
         "extreme":      entry,
         "sl_order_id":  sl_order_id,
@@ -117,9 +123,9 @@ def run():
             global_open_count = len(active_positions)
         log.info(f"Açık pozisyon: {global_open_count}/{config.MAX_OPEN_POSITIONS}")
 
-        # Bütçeyi eşit sembol sayısına böl (Örn 1000$ ve 3 sembol -> 333$)
+        # Risk base: full portfolio equity or per-symbol sleeve.
         num_symbols = len(config.SYMBOLS)
-        allocated_balance_per_symbol = equity / num_symbols
+        risk_base_balance = equity if config.RISK_BASIS == "portfolio" else equity / num_symbols
 
         for sym in config.SYMBOLS:
             config.SYMBOL = sym  # Global değişkeni o anki sembole ayarla
@@ -144,7 +150,18 @@ def run():
                         active_positions[sym] = _recover_position(live_pos, df)
 
                     pos = active_positions[sym]
-                    cur_price = float(df["close"].iloc[-1])
+                    closed_bar = df.iloc[-2]
+                    cur_price = float(closed_bar["close"])
+
+                    stop_decision = eg.stop_decision(pos, closed_bar)
+                    if stop_decision.hit:
+                        log.info(
+                            f"[{sym}] {stop_decision.reason} teyit edildi -> "
+                            f"{pos['side'].upper()} kapatiliyor."
+                        )
+                        om.close_position_market(exchange, pos["side"], pos["size"])
+                        active_positions.pop(sym, None)
+                        continue
 
                     # Trend tersine döndü mü?
                     if strat.check_exit(df, pos["side"]):
@@ -155,12 +172,12 @@ def run():
 
                     # Extreme güncelle
                     if pos["side"] == strat.LONG:
-                        pos["extreme"] = max(pos["extreme"], cur_price)
+                        pos["extreme"] = max(pos["extreme"], float(closed_bar["high"]))
                     else:
-                        pos["extreme"] = min(pos["extreme"], cur_price)
+                        pos["extreme"] = min(pos["extreme"], float(closed_bar["low"]))
 
                     # Trailing SL hesapla ve gerekirse borsada güncelle
-                    om.update_trailing_sl(exchange, pos, cur_price, pos["extreme"])
+                    om.update_trailing_sl(exchange, pos, cur_price, pos["extreme"], bar=closed_bar)
                     continue
 
                 # 4b. Açık pozisyon yok — bot state'i temizle, yeni sinyal ara
@@ -189,16 +206,18 @@ def run():
                         f"{', '.join(risk_decision.reasons)}"
                     )
                     continue
-                effective_risk = config.RISK_PER_TRADE_PCT * risk_decision.multiplier
+                base_risk = r.correlation_aware_risk(global_open_count, config.RISK_PER_TRADE_PCT)
+                effective_risk = base_risk * risk_decision.multiplier
                 log.info(
                     f"[{sym}] Risk: base={config.RISK_PER_TRADE_PCT*100:.2f}% "
+                    f"corr={base_risk*100:.2f}% "
                     f"x{risk_decision.multiplier:.2f} -> {effective_risk*100:.2f}% "
                     f"({', '.join(risk_decision.reasons) or 'normal'})"
                 )
 
-                # Atomik emir açma işlemi, riski bölünmüş bütçeye (allocated_balance) göre ayarlar
+                # Atomik emir acma islemi, secili risk base'e gore boyutlar.
                 result = om.open_position(
-                    exchange, signal, allocated_balance_per_symbol, atr, price,
+                    exchange, signal, risk_base_balance, atr, price,
                     risk_pct=effective_risk,
                 )
                 if result:
@@ -207,6 +226,8 @@ def run():
                         "side":         result["side"],
                         "entry":        result["entry"],
                         "sl":           result["sl"],
+                        "hard_sl":      result.get("hard_sl"),
+                        "atr":          result.get("atr"),
                         "size":         result["size"],
                         "extreme":      result["entry"],
                         "sl_order_id":  result.get("sl_order_id"),

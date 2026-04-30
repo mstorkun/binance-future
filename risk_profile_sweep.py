@@ -16,17 +16,22 @@ from portfolio_backtest import fetch_all_data, run_portfolio_backtest
 PROFILES = [
     {"name": "conservative", "leverage": 3, "risk_per_trade": 0.02, "max_concurrent": 2},
     {"name": "balanced", "leverage": 5, "risk_per_trade": 0.03, "max_concurrent": 2},
-    {"name": "aggressive", "leverage": 10, "risk_per_trade": 0.05, "max_concurrent": 2},
+    {"name": "growth_70_compound", "leverage": 10, "risk_per_trade": 0.04, "max_concurrent": 2},
+    {"name": "growth_100_compound", "leverage": 10, "risk_per_trade": 0.05, "max_concurrent": 2},
+    {"name": "extreme_10pct", "leverage": 10, "risk_per_trade": 0.10, "max_concurrent": 2},
+    {"name": "extreme_11pct", "leverage": 10, "risk_per_trade": 0.11, "max_concurrent": 2},
 ]
 
 
 def _summarize(name: str, leverage: float, risk_per_trade: float, max_concurrent: int,
-               trades: pd.DataFrame, equity: pd.DataFrame, years: int, symbol_count: int) -> dict:
+               trades: pd.DataFrame, equity: pd.DataFrame, years: int, symbol_count: int,
+               risk_basis: str) -> dict:
     start = config.CAPITAL_USDT
     final_equity = float(equity["equity"].iloc[-1]) if not equity.empty else start
     peak = equity["equity"].cummax() if not equity.empty else pd.Series([start])
     dd = peak - equity["equity"] if not equity.empty else pd.Series([0.0])
     max_dd = float(dd.max())
+    dd_peak_pct = float(((peak - equity["equity"]) / peak.replace(0, pd.NA)).max() * 100) if not equity.empty else 0.0
     total_pnl = float(trades["pnl"].sum()) if not trades.empty else 0.0
     win_rate = float((trades["pnl"] > 0).sum() / len(trades) * 100) if not trades.empty else 0.0
     return_pct = (final_equity - start) / start * 100
@@ -36,8 +41,12 @@ def _summarize(name: str, leverage: float, risk_per_trade: float, max_concurrent
     return {
         "profile": name,
         "leverage": leverage,
+        "risk_basis": risk_basis,
         "sleeve_risk_pct": risk_per_trade * 100,
-        "first_trade_portfolio_risk_pct": risk_per_trade / symbol_count * 100,
+        "first_trade_portfolio_risk_pct": (
+            risk_per_trade * 100 if risk_basis == "portfolio"
+            else risk_per_trade / symbol_count * 100
+        ),
         "max_concurrent": max_concurrent,
         "trades": len(trades),
         "win_rate": win_rate,
@@ -47,6 +56,7 @@ def _summarize(name: str, leverage: float, risk_per_trade: float, max_concurrent
         "cagr_pct": cagr,
         "max_dd": max_dd,
         "max_dd_pct": max_dd / start * 100,
+        "max_dd_peak_pct": dd_peak_pct,
         "calmar": calmar,
         "commission": float(trades["commission"].sum()) if not trades.empty else 0.0,
         "slippage": float(trades["slippage"].sum()) if not trades.empty else 0.0,
@@ -72,6 +82,7 @@ def run_sweep(years: int = 3) -> pd.DataFrame:
             max_concurrent=profile["max_concurrent"],
             risk_per_trade=profile["risk_per_trade"],
             leverage=profile["leverage"],
+            risk_basis=profile.get("risk_basis", config.RISK_BASIS),
         )
         rows.append(_summarize(
             profile["name"],
@@ -82,6 +93,7 @@ def run_sweep(years: int = 3) -> pd.DataFrame:
             equity,
             years,
             len(symbols),
+            profile.get("risk_basis", config.RISK_BASIS),
         ))
 
     results = pd.DataFrame(rows)
