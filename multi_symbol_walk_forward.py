@@ -13,31 +13,32 @@ Eğer 0 sembolde → strateji terk
 
 import pandas as pd
 import config
-from backtest import _fetch_paginated
+from backtest import _fetch_paginated, fetch_funding_history
 from walk_forward import walk_forward
 from multi_symbol_backtest import SYMBOLS
 
 
-def fetch_for_symbol(symbol: str, years: int = 3) -> tuple[pd.DataFrame, pd.DataFrame]:
+def fetch_for_symbol(symbol: str, years: int = 3) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     saved = config.SYMBOL
     config.SYMBOL = symbol
     try:
         df_4h = _fetch_paginated(config.TIMEFRAME, years)
         df_1d = _fetch_paginated(config.DAILY_TIMEFRAME, years)
+        funding = fetch_funding_history(years)
     finally:
         config.SYMBOL = saved
-    return df_4h, df_1d
+    return df_4h, df_1d, funding
 
 
 def wf_for_symbol(symbol: str, years: int = 3) -> dict:
     print(f"\n========== {symbol} ==========")
-    df_4h, df_1d = fetch_for_symbol(symbol, years)
-    print(f"4H: {len(df_4h)} bar | 1D: {len(df_1d)} bar")
+    df_4h, df_1d, funding = fetch_for_symbol(symbol, years)
+    print(f"4H: {len(df_4h)} bar | 1D: {len(df_1d)} bar | funding: {len(funding)}")
 
     saved = config.SYMBOL
     config.SYMBOL = symbol
     try:
-        results = walk_forward(df_4h, df_1d, train_bars=3000, test_bars=500, roll_bars=500)
+        results = walk_forward(df_4h, df_1d, funding, train_bars=3000, test_bars=500, roll_bars=500)
     finally:
         config.SYMBOL = saved
 
@@ -91,7 +92,7 @@ if __name__ == "__main__":
 
     print("\n--- VERDIKT ---")
     if pos_symbols >= 3 and avg_test_pnl > 0:
-        print("GUCLU: 3+ sembolde test ortalamasi pozitif. Strateji gercek bir kenar tasiyor.")
+        print("UMUT VERICI: 3+ sembolde test ortalamasi pozitif. Edge olabilir, kesin degil.")
         print("Sonraki: parametre stabilite haritasi + Monte Carlo + testnet'te paper trading.")
     elif pos_symbols == 2:
         print("ZAYIF: 2/4 sembolde pozitif. Kullanilabilir degil, daha cok iyilestirme gerekli.")

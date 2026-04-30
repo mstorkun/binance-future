@@ -1,78 +1,78 @@
 # Binance Futures Trading Bot
 
-BTC/USDT 4H trend takip botu. EMA 21/50 + ADX + RSI + ATR sinyali, ATR tabanlı stop-loss, trailing stop ve trend tersine dönüş çıkışı ile.
+Binance Futures için 4 saatlik Donchian breakout trend takip botu.
 
-> **Durum:** Geliştirme aşamasında. Walk-forward analiz overfitting gösterdi, canlı kullanılmamalı. Detay: [docs/WALK_FORWARD.md](docs/WALK_FORWARD.md).
+> Durum: Araştırma ve test aşamasında. Backtest altyapısı ilerledi, ancak canlı para ile kullanılmaya hazır değil. En güncel karar için `docs/MULTI_SYMBOL.md` ve `docs/WALK_FORWARD.md` dosyalarından başlayın.
 
 ## Hızlı Bakış
 
-| | |
+| Başlık | Değer |
 |---|---|
-| **Sermaye** | 1000 USDT |
-| **Sembol** | BTC/USDT Perpetual |
-| **Zaman dilimi** | 4 saat |
-| **Kaldıraç** | 3x |
-| **Per trade risk** | %2 (20 USDT) |
-| **Max drawdown limiti** | %3 günlük |
+| Sermaye varsayımı | 1000 USDT |
+| Ana timeframe | 4 saat |
+| Yüksek timeframe filtresi | 1D EMA50 |
+| Kaldıraç | 3x |
+| İşlem başı risk | %2 |
+| Ana sinyal | Donchian breakout |
+| Filtreler | Hacim, ADX, RSI, 1D trend |
+| Çıkış | ATR initial SL, trailing SL, Donchian exit |
 
 ## Strateji
 
-Trend takip — sinyal koşulları:
+Giriş mantığı:
 
-1. EMA 21/50 kesişimi (trend dönüşü)
-2. ADX > 20 (trend gücü)
-3. RSI 40-70 (long) veya 30-60 (short) — aşırı bölge dışı
+1. 4H kapanış fiyatı önceki Donchian kanalını kırar.
+2. Hacim, 20 bar ortalamasının belirlenen katının üstündedir.
+3. ADX trend gücü eşiğinin üstündedir.
+4. RSI aşırı alım/satım bölgesinde değildir.
+5. 1D trend filtresi aynı yönü onaylar.
 
-Çıkış:
-- ATR tabanlı initial stop-loss (1.5×ATR)
-- Trailing stop: kazancın %15'ini geri ver, %85'ini kilitle
-- Trend tersine dönerse market kapatma
+Çıkış mantığı:
 
-## Dosya Yapısı
+- İlk stop-loss: ATR tabanlı.
+- Trailing stop: kazancın bir bölümünü kilitler.
+- Erken çıkış: ters yönde daha kısa Donchian kanal kırılımı.
 
-```
-binance-bot/
-├── config.py           # Tüm parametreler
-├── data.py             # ccxt veri çekme
-├── indicators.py       # EMA, ADX (Wilder), RSI (Wilder), ATR (Wilder)
-├── strategy.py         # Sinyal mantığı
-├── risk.py             # Pozisyon boyutu, SL/TP
-├── order_manager.py    # Emir yönetimi (atomik açma + rollback)
-├── bot.py              # Canlı bot ana döngüsü
-├── backtest.py         # Vektörel backtest
-├── optimize.py         # Parametre tarama
-├── walk_forward.py     # Out-of-sample doğrulama
-├── requirements.txt
-├── .env.example
-└── docs/               # Denetim raporları, sonuçlar
-    ├── REVIEW.md          # 5 ajan denetim raporu
-    ├── BUGS_FIXED.md      # Düzeltilen 12 kritik bug
-    ├── BACKTEST_RESULTS.md
-    ├── WALK_FORWARD.md
-    ├── ARCHITECTURE.md
-    └── NEXT_STEPS.md
+## Güncel Bulgular
+
+- Tek BTC backtest sonucu zayıf ve walk-forward tarafında negatif.
+- Çoklu sembol testinde ETH, SOL ve BNB sonuçları BTC'den daha iyi görünüyor.
+- 4 sembol walk-forward özeti: 3/4 sembolde test ortalaması pozitif, fakat train-test farkı hâlâ yüksek.
+- Sonuç: Strateji umut verici olabilir, ama overfitting riski devam ediyor. Testnet/paper aşamasına geçmeden önce ek sağlamlık testleri gerekli.
+
+## Dosyalar
+
+```text
+config.py                    Parametreler
+data.py                      Canlı veri ve borsa sorguları
+indicators.py                ATR, RSI, ADX, Donchian, günlük trend
+strategy.py                  Sinyal ve çıkış kuralları
+risk.py                      Pozisyon boyutu ve SL/TP hesabı
+order_manager.py             Emir açma, SL güncelleme, pozisyon kapama
+bot.py                       Tek sembollü testnet/canlı bot döngüsü
+backtest.py                  Tek sembol backtest
+optimize.py                  Parametre tarama
+walk_forward.py              Tek sembol walk-forward
+multi_symbol_backtest.py     Çoklu sembol düz backtest
+multi_symbol_walk_forward.py Çoklu sembol walk-forward
+monte_carlo.py               Trade-shuffle drawdown testi
+docs/                        İnceleme ve sonuç raporları
 ```
 
 ## Kurulum
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env
-# .env dosyasına API key/secret yaz
-python backtest.py        # Geçmiş veride test
-python walk_forward.py    # Overfitting kontrolü
-python bot.py             # Canlı çalıştır (sadece testnet öneriliyor)
+copy .env.example .env
+python backtest.py
+python walk_forward.py
+python multi_symbol_backtest.py
+python multi_symbol_walk_forward.py
+python monte_carlo.py --trades backtest_results.csv
 ```
 
-## Diğer AI'lar İçin Notlar
+Canlı/testnet bot için API anahtarlarını `.env` veya ortam değişkenlerine girin. `config.TESTNET = True` kalmadan gerçek para moduna geçmeyin.
 
-Bu repo bir başka AI/mühendis tarafından review edilebilir. Şuradan başlayın:
+## Güvenlik Notu
 
-1. [docs/REVIEW.md](docs/REVIEW.md) — Önceki review bulguları
-2. [docs/BUGS_FIXED.md](docs/BUGS_FIXED.md) — Düzeltilen bug'lar
-3. [docs/WALK_FORWARD.md](docs/WALK_FORWARD.md) — Stratejinin neden çalışmadığı
-4. [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md) — Önerilen iyileştirme yolları
-
-## Lisans
-
-Kişisel kullanım — paylaşmadan önce sorulması gerekir.
+Bu repo yatırım tavsiyesi değildir. Vadeli işlemler kaldıraç, likidasyon, funding, slippage ve API/bağlantı riski taşır. Canlıya geçmeden önce testnet, paper trading, alarm/monitoring ve küçük sermaye aşaması zorunlu kabul edilmelidir.

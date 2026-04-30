@@ -1,60 +1,55 @@
 # Walk-Forward Analiz
 
-**Amaç:** Optimize edilmiş parametrelerin gerçek piyasada (out-of-sample) çalışıp çalışmadığını ölçmek.
+Amaç: Parametrelerin geçmiş veriye fazla uyup uymadığını ölçmek.
 
-**Yöntem:** Veriyi 3 dönem'e böl. Her dönemde:
-- Train (3000 bar / 18 ay): En iyi parametreleri bul
-- Test (1000 bar / 6 ay): O parametrelerle performansı ölç
+Yöntem:
 
-Bu, gerçek hayatta bot kurulurken yaşanacak şeyin tam simülasyonu: Geçmiş veriyle parametre seç, geleceğe uygula.
+- Train: 3000 adet 4H bar, yaklaşık 16-18 ay.
+- Test: 500 adet 4H bar, yaklaşık 3 ay.
+- Roll: 500 adet 4H bar.
+- Her dönemde parametreler sadece train üzerinde seçilir, sonra test döneminde denenir.
 
-## Sonuçlar
+## Güncel BTC Sonucu
 
-| Dönem | Train Pencere | Test Pencere | Train PnL | Test PnL | Test WR | Test Trade |
-|---|---|---|---|---|---|---|
-| 1 | 2023-05 → 2024-09 | 2024-09 → 2025-02 | +47.1$ | **+35.4$** ✓ | %100 | 3 |
-| 2 | 2023-10 → 2025-02 | 2025-02 → 2025-08 | +64.7$ | **-32.3$** ✗ | %50 | 4 |
-| 3 | 2024-03 → 2025-08 | 2025-08 → 2026-01 | +102.8$ | **-7.6$** ✗ | %50 | 2 |
+`walk_forward_results.csv` son çalıştırmada 7 test penceresi içeriyor.
 
-## Özet İstatistikler
+| Dönem | Train PnL | Test PnL | Test WR | Test Trade | Test DD |
+|---|---:|---:|---:|---:|---:|
+| 1 | +167.45 | +20.09 | %61.5 | 13 | 37.35 |
+| 2 | +192.30 | -7.11 | %50.0 | 6 | 49.11 |
+| 3 | +241.57 | -69.37 | %33.3 | 9 | 78.39 |
+| 4 | +237.77 | +20.79 | %66.7 | 6 | 6.95 |
+| 5 | +223.36 | -71.76 | %18.2 | 11 | 69.09 |
+| 6 | +59.05 | +16.48 | %75.0 | 4 | 23.35 |
+| 7 | +116.88 | -1.71 | %50.0 | 4 | 3.81 |
 
-| | Train | Test |
-|---|---|---|
-| Ortalama PnL | **+71.5$** | **-1.5$** |
-| Karlı dönem | 3/3 | 1/3 |
-| Train>Test farkı | — | **73$ (overfitting)** |
+## Özet
 
-## Yorumlama
+| Metrik | Değer |
+|---|---:|
+| Test dönemi | 7 |
+| Pozitif test dönemi | 3/7 |
+| Ortalama test PnL | -13.23 USDT |
+| Toplam test PnL | -92.59 USDT |
+| Ortalama train PnL | +176.91 USDT |
+| Ortalama train-test farkı | +190.14 USDT |
 
-### Overfitting Kanıtı
+## Yorum
 
-Train'de ortalama +71.5$ kar, test'te ortalama -1.5$ zarar. Train ile test arasında 73$ fark var. Bu **klasik overfitting tablosu**:
+BTC tek başına hâlâ güvenilir görünmüyor. Train dönemleri güçlü, test dönemleri zayıf. Bu tablo overfitting riskinin devam ettiğini gösteriyor.
 
-- Stratejinin parametreleri geçmiş veriye fit oluyor
-- Geleceğe uygulandığında bu fit dağılıyor
-- Gerçek "edge" yok, sadece veri uydurması var
-
-### İstatistiksel Yetersizlik
-
-3 dönemden sadece 1'i karlı. Bu:
-- Şans eseri olabilir
-- 50% binom dağılımı altında p=0.5 (anlamsız)
-- En az 10+ dönem gerekir anlamlı sonuç için
-
-### Periyot 1 Anomalisi
-
-Periyot 1 test'te **%100 win rate**. Ama sadece **3 trade**. Bu istatistiksel olarak anlamsız (varyans çok yüksek). 3 trade ile %100 WR'nin gerçek WR'nin %50 olma olasılığı hala %12.5'tir.
-
-### Periyot 2-3 Çöküşü
-
-İki ardışık dönemde test negatif. Strateji 2025-02 sonrasında çalışmamış. Olası nedenler:
-- BTC volatilite rejimi değişimi (ETF sonrası düşük vol)
-- Trend yapısının değişmesi (range-bound piyasa)
-- Komisyon yükünün küçük PnL'leri yemesi
+Bu sonuç, stratejinin tamamen çöpe atılması gerektiği anlamına gelmez; ancak BTC üzerinde seçilen parametrelerin geleceğe taşınmadığını gösterir. Bu yüzden çoklu sembol testine bakmak daha doğru: `docs/MULTI_SYMBOL.md`.
 
 ## Sonuç
 
-Bu strateji **canlıda kullanılmamalı**. Overfitting kanıtı net.
+BTC/USDT tek sembol ile canlıya geçilmemeli.
+
+Öncelik:
+
+1. Çoklu sembol portföy testi.
+2. Parametre stabilite haritası.
+3. Monte Carlo trade-shuffle.
+4. Testnet/paper trading.
 
 ## Yeniden Üretim
 
@@ -62,13 +57,4 @@ Bu strateji **canlıda kullanılmamalı**. Overfitting kanıtı net.
 python walk_forward.py
 ```
 
-Output: `walk_forward_results.csv`
-
-## Daha İyi Test İçin
-
-İlerleyen aşamalarda bu walk-forward iyileştirilebilir:
-- Daha küçük roll (3 ay) → daha çok dönem
-- Monte Carlo trade-shuffling → DD dağılımı
-- Çoklu sembol üzerinden ağırlıklı ortalama
-- Funding rate dahil
-- Slippage'ı volatiliteye bağlı modelleme (yüksek vol = yüksek slip)
+Çıktı: `walk_forward_results.csv`

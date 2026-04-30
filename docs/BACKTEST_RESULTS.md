@@ -1,79 +1,75 @@
 # Backtest Sonuçları
 
-**Veri:** BTC/USDT 4H, Mayıs 2023 - Nisan 2026 (3 yıl, 6570 bar)
+Bu rapor güncel Donchian breakout mimarisi içindir. Eski EMA crossover sonuçları artık karar için kullanılmamalı.
 
-## Bug Düzeltmesi Öncesi/Sonrası
+## Model
 
-| Metrik | Önce (bug'lı) | Sonra (gerçek) |
-|---|---|---|
-| Toplam işlem | 57 | 46 |
-| Win rate | %60 | %76 |
-| Toplam PnL | **+1016 USDT** | **+131 USDT** |
-| Yıllık getiri | ~%33 | ~%4.4 |
-| Max DD | 385$ (%38) | 35$ (%3.5) |
-| PnL/DD oranı | 2.6 | 3.7 |
+- Sinyal: Donchian breakout.
+- Filtreler: hacim, ADX, RSI, 1D EMA50 trend.
+- Risk: ATR tabanlı SL, %2 işlem başı risk, 3x kaldıraç.
+- Maliyetler: taker komisyon, slippage ve funding.
 
-**PnL %87 düştü** (1016 → 131). Wilder smoothing + leverage bug + komisyon/slippage düzeltmeleri.
+## BTC/USDT Düz Backtest
 
-## En İyi Konfigürasyon
+Son kayıtlı sonuç:
 
-```python
-SL_ATR_MULT      = 1.5
-TRAIL_GIVEBACK   = 0.15
-TRAIL_ACTIVATE   = 0.0   # ATR çarpanı (0 = anında aktive)
-ADX_THRESH       = 20
-LEVERAGE         = 3
-RISK_PER_TRADE   = 0.02
-```
+| Metrik | Değer |
+|---|---:|
+| İşlem | 86 |
+| Win rate | %55.8 |
+| Toplam PnL | +76.03 USDT |
+| Max DD | 54.25 USDT |
+| 3 yıl getiri | %7.60 |
+| PnL/DD | 1.38 |
 
-## Optimize Top-10 (108 kombinasyon)
+Yorum: BTC düz backtest pozitif ama zayıf. Walk-forward sonucu negatif olduğu için tek başına canlıya geçiş gerekçesi değildir.
 
-```
-trades  win_rate  total_pnl  max_dd  sl_mult  trail_giveback  trail_activate  adx
-    46    %76.1    131.06    34.66    1.5     0.15            0.0             20
-    46    %76.1    109.67    35.23    1.5     0.20            0.0             20
-    21    %76.2     65.05    22.39    2.0     0.15            0.0             25
-    21    %71.4     67.70    24.98    1.5     0.15            0.0             25
-    21    %76.2     57.88    22.41    2.0     0.20            0.0             25
-    46    %78.3     89.95    35.39    2.0     0.15            0.0             20
-    46    %80.4     80.53    32.52    2.5     0.15            0.0             20
-    21    %71.4     58.56    26.53    1.5     0.20            0.0             25
-    21    %76.2     47.48    21.88    2.5     0.15            0.0             25
-    61    %78.7     74.59    35.74    2.5     0.15            0.0             18
-```
+## Çoklu Sembol Düz Backtest
 
-## Sonuçların Yorumu
+`multi_symbol_results.csv` son kayıtlı özet:
 
-**İyi yan:**
-- Win rate %76 yüksek
-- Max DD %3.5 düşük (sermaye koruma çalışıyor)
-- 3 yıl pozitif PnL
+| Sembol | İşlem | Win Rate | PnL | Max DD | Getiri |
+|---|---:|---:|---:|---:|---:|
+| BTC/USDT | 86 | %55.8 | +76.03 | 54.25 | %7.60 |
+| ETH/USDT | 77 | %63.6 | +243.94 | 39.81 | %24.39 |
+| SOL/USDT | 90 | %72.2 | +473.80 | 71.70 | %47.38 |
+| BNB/USDT | 70 | %57.1 | +79.11 | 63.52 | %7.91 |
 
-**Kötü yan:**
-- Yıllık ~%4.4 getiri kripto riski için düşük (kripto volatilitesi >%50)
-- 46 işlem 3 yılda istatistiksel olarak zayıf
-- Walk-forward'ta out-of-sample **negatif** ([WALK_FORWARD.md](WALK_FORWARD.md))
+Bu düz backtest 4/4 pozitif, ancak düz backtest tek başına yeterli değildir. Ana karar walk-forward ve canlı/paper test ile verilmelidir.
 
-## Komisyon ve Slippage Detayı
+## Funding Modeli
 
-Backtest'te her işlem PnL'sinden düşülüyor:
+`backtest.py` artık opsiyonel tarihsel funding serisi kabul eder:
 
-```python
-notional = (entry + exit_price) * size
-commission_and_slippage = notional * 0.0009  # %0.04 komisyon × 2 + %0.05 slippage
-```
+- Funding verisi varsa long/short yönüne göre signed funding hesaplanır.
+- Funding verisi yoksa `config.DEFAULT_FUNDING_RATE_PER_8H` fallback olarak kullanılır.
+- Bu fallback konservatiftir; gerçek funding bazen maliyet, bazen gelir olabilir.
 
-Tipik trade nominali ~1500-2000 USDT, gider başına ~1.5-2 USDT.
-46 trade × ~1.7 USDT = **~78 USDT toplam gider** (raporlanan PnL'den düşülmüş halde).
+## Monte Carlo Drawdown
+
+Mevcut `backtest_results.csv` üzerinde 1000 trade-shuffle denemesi:
+
+| Metrik | Değer |
+|---|---:|
+| PnL p05 | +76.03 USDT |
+| PnL medyan | +76.03 USDT |
+| PnL p95 | +76.03 USDT |
+| DD medyan | 98.46 USDT |
+| DD p95 | 160.81 USDT |
+| DD max | 225.16 USDT |
+
+Toplam PnL aynı trade seti karıştırıldığı için değişmiyor; asıl sinyal drawdown tarafında. BTC backtest'in tarihsel DD'si 54.25 USDT iken, sıra riski %95 senaryoda 160.81 USDT'ye çıkıyor. Bu nedenle canlı risk %2 yerine daha düşük başlamalı veya portföy/pozisyon limiti eklenmeli.
 
 ## Yeniden Üretim
 
 ```bash
-python backtest.py     # Tek konfig (config.py)
-python optimize.py     # 108 kombinasyon tarama
-python walk_forward.py # Out-of-sample doğrulama
+python backtest.py
+python multi_symbol_backtest.py
+python monte_carlo.py --trades backtest_results.csv
 ```
 
-Sonuç dosyaları:
+Çıktılar:
+
 - `backtest_results.csv`
-- `walk_forward_results.csv`
+- `multi_symbol_results.csv`
+- `monte_carlo_results.csv`

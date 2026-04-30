@@ -21,6 +21,10 @@ DAILY_LOSS_LIMIT_PCT = 0.03     # %3 günlük kayıp → bot durur
 SL_ATR_MULT = 2.0
 TP_ATR_MULT = 4.0
 
+# --- Backtest maliyet varsayımları ---
+# Tarihsel funding verisi çekilemezse fallback olarak kullanılır.
+DEFAULT_FUNDING_RATE_PER_8H = 0.0001
+
 # --- Trend takip indikatörleri (eski mantık, bazı yardımcılar hala kullanılıyor) ---
 EMA_FAST   = 21
 EMA_SLOW   = 50

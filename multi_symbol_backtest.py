@@ -10,25 +10,25 @@ Aynı parametre seti tüm sembollerde kullanılır. Sembol başına farklı para
 seçmek = overfitting (her sembol için kendi geçmişine fit olur).
 """
 
-import ccxt
 import pandas as pd
 import config
-from backtest import _fetch_paginated, run_backtest
+from backtest import _fetch_paginated, fetch_funding_history, run_backtest
 
 
 SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT"]
 
 
-def fetch_symbol_data(symbol: str, years: int = 3) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Bir sembol için 4H + 1D verisi çek."""
+def fetch_symbol_data(symbol: str, years: int = 3) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Bir sembol için 4H + 1D + funding verisi çek."""
     saved_symbol = config.SYMBOL
     config.SYMBOL = symbol
     try:
         df_4h = _fetch_paginated(config.TIMEFRAME, years)
         df_1d = _fetch_paginated(config.DAILY_TIMEFRAME, years)
+        funding = fetch_funding_history(years)
     finally:
         config.SYMBOL = saved_symbol
-    return df_4h, df_1d
+    return df_4h, df_1d, funding
 
 
 def backtest_symbol(symbol: str, years: int = 3) -> dict:
@@ -36,14 +36,14 @@ def backtest_symbol(symbol: str, years: int = 3) -> dict:
     config.SYMBOL = symbol
     try:
         print(f"\n>>> {symbol} verisi cekiliyor...")
-        df_4h, df_1d = fetch_symbol_data(symbol, years)
-        print(f"  4H: {len(df_4h)} bar | 1D: {len(df_1d)} bar")
+        df_4h, df_1d, funding = fetch_symbol_data(symbol, years)
+        print(f"  4H: {len(df_4h)} bar | 1D: {len(df_1d)} bar | funding: {len(funding)} kayit")
 
         if len(df_4h) < 500:
             print(f"  Yetersiz veri, atlandı.")
             return None
 
-        trades = run_backtest(df_4h, df_1d)
+        trades = run_backtest(df_4h, df_1d, funding)
     finally:
         config.SYMBOL = saved_symbol
 
@@ -105,7 +105,7 @@ if __name__ == "__main__":
     # Verdikt
     print("\n--- VERDIKT ---")
     if pos_count >= 3:
-        print("Strateji sembollerin cogunda pozitif -> kenar (edge) GERCEK olabilir.")
+        print("Strateji sembollerin cogunda pozitif -> kenar (edge) olabilir, WF/paper ile dogrula.")
     elif pos_count == 2:
         print("Karisik sonuc -> daha fazla test (walk-forward, parametre stabilite) gerekli.")
     else:

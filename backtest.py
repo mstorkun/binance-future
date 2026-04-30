@@ -17,7 +17,40 @@ import strategy as strat
 import risk as r
 
 
-def run_backtest(df: pd.DataFrame, df_daily: pd.DataFrame | None = None) -> pd.DataFrame:
+def _funding_cost(
+    funding_rates: pd.DataFrame | None,
+    entry_time,
+    exit_time,
+    notional: float,
+    side: str,
+    fallback_periods: float,
+) -> float:
+    """
+    Funding cost model.
+
+    If historical funding rates are supplied, calculate signed funding:
+    - long pays positive funding and receives negative funding
+    - short receives positive funding and pays negative funding
+
+    If no usable funding data exists, fall back to a conservative fixed average.
+    Returned value is a cost to subtract from PnL; it can be negative.
+    """
+    if funding_rates is not None and not funding_rates.empty:
+        window = funding_rates.loc[
+            (funding_rates.index > entry_time) & (funding_rates.index <= exit_time)
+        ]
+        if not window.empty:
+            side_sign = 1 if side == strat.LONG else -1
+            return float((window["funding_rate"] * notional * side_sign).sum())
+
+    return notional * config.DEFAULT_FUNDING_RATE_PER_8H * fallback_periods
+
+
+def run_backtest(
+    df: pd.DataFrame,
+    df_daily: pd.DataFrame | None = None,
+    funding_rates: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     df = ind.add_indicators(df)
     if df_daily is not None and not df_daily.empty:
         df = ind.add_daily_trend(df, df_daily)
@@ -94,12 +127,16 @@ def run_backtest(df: pd.DataFrame, df_daily: pd.DataFrame | None = None) -> pd.D
         commission = notional * 0.0008
         # Slippage: kırılım anlarında orderbook ince — 15 bps round-trip
         slippage   = notional * 0.0015
-        # Funding rate: BTC perp ortalama %0.01/8h. 4H bar süresinde ortalama
-        # 1 funding ödemesi varsayalım (trade süresi ortalama ~3-6 gün = 9-18 funding).
-        # Her exit_bar - i+1 = bar sayısı / 2 ≈ funding sayısı (8h aralık = 2 × 4H bar).
         bars_held       = max(exit_bar - (i + 1), 1)
         funding_periods = bars_held / 2.0
-        funding         = abs(notional) * 0.0001 * funding_periods  # long-bias varsayım
+        funding         = _funding_cost(
+            funding_rates=funding_rates,
+            entry_time=entry_bar.name,
+            exit_time=df.index[exit_bar],
+            notional=abs(notional),
+            side=signal,
+            fallback_periods=funding_periods,
+        )
 
         pnl -= (commission + slippage + funding)
 
@@ -171,6 +208,49 @@ def _fetch_paginated(timeframe: str, years: int) -> pd.DataFrame:
     return df[~df.index.duplicated()]
 
 
+def fetch_funding_history(years: int = 3) -> pd.DataFrame:
+    """Tarihsel funding rate verisini çeker. Destek yoksa boş DataFrame döner."""
+    exchange = ccxt.binance({"options": {"defaultType": "future"}})
+    since = exchange.milliseconds() - int(years * 365 * 24 * 60 * 60 * 1000)
+    all_rates = []
+
+    while since < exchange.milliseconds():
+        try:
+            batch = exchange.fetch_funding_rate_history(config.SYMBOL, since=since, limit=1000)
+        except (ccxt.NotSupported, ccxt.BadSymbol, ccxt.ExchangeError, ccxt.NetworkError) as e:
+            print(f"  funding: cekilemedi ({e}); fallback kullanilacak.")
+            return pd.DataFrame(columns=["funding_rate"])
+
+        if not batch:
+            break
+
+        all_rates.extend(batch)
+        last_ts = batch[-1].get("timestamp")
+        if last_ts is None or last_ts <= since:
+            break
+        since = last_ts + 1
+
+        if len(batch) < 1000:
+            break
+
+    if not all_rates:
+        return pd.DataFrame(columns=["funding_rate"])
+
+    rows = []
+    for item in all_rates:
+        ts = item.get("timestamp")
+        rate = item.get("fundingRate")
+        if ts is None or rate is None:
+            continue
+        rows.append({"timestamp": pd.to_datetime(ts, unit="ms"), "funding_rate": float(rate)})
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return pd.DataFrame(columns=["funding_rate"])
+    df.set_index("timestamp", inplace=True)
+    return df[~df.index.duplicated()].sort_index()
+
+
 def fetch_long_history(years: int = 3) -> pd.DataFrame:
     """4H barlarını döndürür (geriye uyumluluk için)."""
     return _fetch_paginated(config.TIMEFRAME, years)
@@ -186,11 +266,13 @@ def fetch_history_with_daily(years: int = 3) -> tuple[pd.DataFrame, pd.DataFrame
 
 if __name__ == "__main__":
     df_4h, df_1d = fetch_history_with_daily(years=3)
+    funding = fetch_funding_history(years=3)
     print(f"4H: {df_4h.index[0]} - {df_4h.index[-1]} ({len(df_4h)} bar)")
     print(f"1D: {df_1d.index[0]} - {df_1d.index[-1]} ({len(df_1d)} bar)")
+    print(f"Funding: {len(funding)} kayit")
 
     print("\nBacktest çalıştırılıyor...")
-    trades = run_backtest(df_4h, df_1d)
+    trades = run_backtest(df_4h, df_1d, funding)
     print_summary(trades)
 
     if not trades.empty:

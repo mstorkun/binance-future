@@ -3,6 +3,7 @@
 **Soru:** Donchian breakout stratejisi BTC'ye özel mi, yoksa genel bir kenar (edge) mi?
 
 **Yöntem:** Aynı parametre seti ile BTC, ETH, SOL, BNB üzerinde 3 yıllık backtest + walk-forward.
+Düz backtest ve walk-forward tarihsel funding verisi kullanır; veri çekilemezse fallback varsayımına düşer.
 
 ---
 
@@ -10,15 +11,15 @@
 
 ```
 symbol     trades  win_rate  total_pnl   max_dd  pnl_pct  pnl_dd
-BTC/USDT       86    %54.7      +62.50    56.08    %6.25    1.09
-ETH/USDT       77    %63.6     +237.80    40.15   %23.78    5.78  ← güçlü
-SOL/USDT       90    %72.2     +470.65    72.11   %47.07    6.44  ← çok güçlü
-BNB/USDT       70    %54.3      +69.88    64.14    %6.99    1.07
+BTC/USDT       86    %55.8      +76.03    54.25    %7.60    1.38
+ETH/USDT       77    %63.6     +243.94    39.81   %24.39    5.98  ← güçlü
+SOL/USDT       90    %72.2     +473.80    71.70   %47.38    6.52  ← çok güçlü
+BNB/USDT       70    %57.1      +79.11    63.52    %7.91    1.23
 ```
 
 **Özet:**
 - 4/4 sembol pozitif PnL ✓
-- Ortalama PnL: +210 USDT/sembol (3 yıl)
+- Ortalama PnL: +218 USDT/sembol (3 yıl)
 - En güçlü: SOL (+47% getiri)
 - En zayıf: BTC, BNB (+6-7% getiri)
 
@@ -30,17 +31,17 @@ Her dönem: 18 ay train + 3 ay test, 3 ay roll.
 
 ```
 symbol     periods  train_avg  test_avg  test_total  test_pos  pos_ratio  test_dd_avg  overfit
-BTC/USDT         7    +168     -14.8      -103.65        3       42.9%      39.1       +183
-ETH/USDT         7    +166      +4.4       +31.05        4       57.1%      17.8       +162
-SOL/USDT         7    +241     +13.4       +93.74        5       71.4%      17.3       +228
-BNB/USDT         7    +105      +6.0       +42.18        4       57.1%      23.2       +100
+BTC/USDT         7    +176.9   -13.2       -92.59        3       42.9%      38.3       +190
+ETH/USDT         7    +167.8    +5.0       +35.24        4       57.1%      17.7       +163
+SOL/USDT         7    +243.9   +13.7       +96.07        5       71.4%      17.2       +230
+BNB/USDT         7    +110.8    +6.8       +47.71        4       57.1%      23.1       +104
 ```
 
 **Özet:**
 - 3/4 sembolde test ortalaması POZİTİF (sadece BTC negatif)
 - 28 dönemden 16'sı pozitif (%57)
-- En güvenilir: **SOL** (5/7 dönem pozitif, +13.4 ortalama, en düşük DD)
-- En kötü: **BTC** (3/7 dönem pozitif, -14.8 ortalama)
+- En güvenilir: **SOL** (5/7 dönem pozitif, +13.7 ortalama, en düşük DD)
+- En kötü: **BTC** (3/7 dönem pozitif, -13.2 ortalama)
 
 ---
 
@@ -50,7 +51,7 @@ BNB/USDT         7    +105      +6.0       +42.18        4       57.1%      23.2
 
 - Donchian breakout BTC'ye özel **değil** — 4 sembolde de pozitif
 - ETH/SOL/BNB BTC'den daha iyi performans gösteriyor (altcoinlerde trend daha kalıcı)
-- SOL özellikle güçlü: %71 pozitif dönem, ortalama +13 USDT/dönem
+- SOL özellikle güçlü: %71 pozitif dönem, ortalama +13.7 USDT/dönem
 
 ### Kötü haber
 
@@ -60,8 +61,9 @@ BNB/USDT         7    +105      +6.0       +42.18        4       57.1%      23.2
 
 ### Net Sonuç
 
-> **Strateji gerçek bir kenar (edge) taşıyor**, ama **BTC'de zayıf**.
-> Sadece BTC'ye uygulamak yanıltıcı sonuç verir. SOL/ETH öncelikli olmalı.
+> **Strateji gerçek bir kenar taşıyor olabilir**, ama kanıt henüz kesin değil.
+> BTC zayıf; SOL/ETH daha umut verici. Canlı karar için parametre stabilitesi,
+> Monte Carlo ve testnet/paper sonuçları beklenmeli.
 
 ---
 
@@ -72,17 +74,17 @@ BNB/USDT         7    +105      +6.0       +42.18        4       57.1%      23.2
 # config.py
 SYMBOL = "SOL/USDT"
 ```
-Backtest: +470 USDT, WF: 5/7 pozitif. Ama SOL volatilitesi yüksek, slippage daha kötü olabilir.
+Backtest: +474 USDT, WF: 5/7 pozitif. Ama SOL volatilitesi yüksek, slippage daha kötü olabilir.
 
 ### Seçenek B — Portföy: ETH + SOL + BNB
 1000 USDT'yi 3 sembole böl (333 USDT/sembol). Diversifikasyon avantajı.
-- Beklenen kâr: ortalama (+237 + 470 + 70) / 3 ≈ +260 USDT/sembol × 3 = ~780 USDT (3 yıl)
+- Düz backtest ortalaması: (+244 + 474 + 79) / 3 ≈ +266 USDT/sembol (3 yıl)
 - Korelasyon riski: kripto coinleri birbirine ~0.85 korele, gerçek diversifikasyon sınırlı
 
 ### Seçenek C — BTC'yi tamamen at
 BTC liste dışı. Sadece ETH/SOL/BNB.
 
-**Tavsiyem: Seçenek B** — testnet'te 3 sembol portföyü, sonra canlıda ETH+SOL ağırlıklı.
+**Tavsiyem: Seçenek B'yi testnet/paper aşamasında denemek** — canlı para kararı için erken.
 
 ---
 

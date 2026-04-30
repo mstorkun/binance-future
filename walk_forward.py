@@ -7,11 +7,9 @@ API'sine bağlı; parametreler config monkey-patch ile değiştirilir.
 """
 
 import pandas as pd
+
 import config
-import indicators as ind
-import strategy as strat
-import risk as r
-from backtest import run_backtest, fetch_history_with_daily
+from backtest import fetch_funding_history, run_backtest, fetch_history_with_daily
 
 
 # === Yardımcılar ===
@@ -29,11 +27,11 @@ def _restore(saved):
     config.DONCHIAN_PERIOD, config.VOLUME_MULT, config.SL_ATR_MULT = saved
 
 
-def run_segment(df_4h, df_1d, donchian, vol_mult, sl_mult):
+def run_segment(df_4h, df_1d, donchian, vol_mult, sl_mult, funding_rates=None):
     """Bir segmentte verilen parametrelerle backtest."""
     saved = _override(donchian, vol_mult, sl_mult)
     try:
-        trades = run_backtest(df_4h, df_1d)
+        trades = run_backtest(df_4h, df_1d, funding_rates)
     finally:
         _restore(saved)
 
@@ -47,13 +45,13 @@ def run_segment(df_4h, df_1d, donchian, vol_mult, sl_mult):
     }
 
 
-def find_best_params(df_train_4h, df_train_1d):
+def find_best_params(df_train_4h, df_train_1d, funding_rates=None):
     """Train segmentinde grid arama."""
     best = None
     for donchian in [15, 20, 30]:
         for vol_mult in [1.2, 1.5, 2.0]:
             for sl_mult in [1.5, 2.0, 2.5]:
-                res = run_segment(df_train_4h, df_train_1d, donchian, vol_mult, sl_mult)
+                res = run_segment(df_train_4h, df_train_1d, donchian, vol_mult, sl_mult, funding_rates)
                 if res is None:
                     continue
                 score = res["total_pnl"] / (res["max_dd"] + 1)
@@ -71,7 +69,7 @@ def _slice_daily(df_1d, start_ts, end_ts):
     return df_1d.loc[(df_1d.index >= start_ts) & (df_1d.index <= end_ts)]
 
 
-def walk_forward(df_4h, df_1d, train_bars=3000, test_bars=1000, roll_bars=1000):
+def walk_forward(df_4h, df_1d, funding_rates=None, train_bars=3000, test_bars=1000, roll_bars=1000):
     results = []
     start = 0
     period = 1
@@ -89,7 +87,7 @@ def walk_forward(df_4h, df_1d, train_bars=3000, test_bars=1000, roll_bars=1000):
         print(f"  Train: {df_train_4h.index[0]} - {df_train_4h.index[-1]} ({len(df_train_4h)} bar)")
         print(f"  Test : {df_test_4h.index[0]} - {df_test_4h.index[-1]} ({len(df_test_4h)} bar)")
 
-        best = find_best_params(df_train_4h, df_train_1d)
+        best = find_best_params(df_train_4h, df_train_1d, funding_rates)
         if best is None:
             print("  Train'de işlem yok, atlandı.")
             start += roll_bars
@@ -97,7 +95,7 @@ def walk_forward(df_4h, df_1d, train_bars=3000, test_bars=1000, roll_bars=1000):
             continue
 
         test_res = run_segment(df_test_4h, df_test_1d,
-                               best["donchian"], best["vol_mult"], best["sl_mult"])
+                               best["donchian"], best["vol_mult"], best["sl_mult"], funding_rates)
 
         print(f"  Best train: donchian={best['donchian']} vol_mult={best['vol_mult']} sl_mult={best['sl_mult']}")
         print(f"  Train: {best['trades']} trade, %{best['win_rate']:.1f} WR, PnL={best['total_pnl']:.1f}, DD={best['max_dd']:.1f}")
@@ -115,10 +113,11 @@ def walk_forward(df_4h, df_1d, train_bars=3000, test_bars=1000, roll_bars=1000):
 
 if __name__ == "__main__":
     df_4h, df_1d = fetch_history_with_daily(years=3)
-    print(f"\n4H bar: {len(df_4h)} | 1D bar: {len(df_1d)}\n")
+    funding = fetch_funding_history(years=3)
+    print(f"\n4H bar: {len(df_4h)} | 1D bar: {len(df_1d)} | funding: {len(funding)}\n")
 
     # 18 ay train, 3 ay test, 3 ay roll → 8+ dönem (3 yıl veride)
-    results = walk_forward(df_4h, df_1d, train_bars=3000, test_bars=500, roll_bars=500)
+    results = walk_forward(df_4h, df_1d, funding, train_bars=3000, test_bars=500, roll_bars=500)
 
     if results.empty:
         print("Hicbir periyot tamamlanamadi.")
