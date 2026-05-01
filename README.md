@@ -43,6 +43,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Candidate Monte Carlo: block bootstrap ending-equity p05 is `6191.14` from `1000` start, ending-equity loss probability is `0%`, and peak-DD p95 is `6.25%`.
 - Timeframe research: [docs/TIMEFRAME_SWEEP.md](docs/TIMEFRAME_SWEEP.md) shows 1h is not robust after horizon scaling, while 2h is a stronger but higher-drawdown candidate than the current 4h default.
 - Stability references: [docs/REFERENCE_REVIEW.md](docs/REFERENCE_REVIEW.md) maps Binance/Freqtrade/NautilusTrader/TradingView/GitHub references to concrete safety and validation work while paper tests run.
+- Critical audit: [docs/CRITICAL_AUDIT_2026_05_01.md](docs/CRITICAL_AUDIT_2026_05_01.md) records the latest no-go review and separates confirmed blockers from claims that still need evidence.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files

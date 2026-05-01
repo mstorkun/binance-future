@@ -1,0 +1,200 @@
+# Critical Audit 2026-05-01
+
+Source: Claude multi-agent review supplied by the user on 2026-05-01.
+
+This document records the critique and Codex's first-pass triage. It is not a
+strategy change and does not approve live trading.
+
+## Executive Decision
+
+The review is directionally useful and should be treated as a live-trading
+blocker list, but not every claim is current or equally supported by the repo.
+
+Current decision:
+
+- Do not go live.
+- Do not change the active strategy from this report alone.
+- Freeze claims of high CAGR as research-only until methodology is repaired.
+- Keep the paper runners running, but use the waiting time for safety and
+  methodology fixes.
+
+## Claude Review Summary
+
+The supplied report argues:
+
+- The bot should not trade live capital.
+- Current CAGR claims are not statistically defensible.
+- DOGE/LINK/TRX may be an in-sample symbol selection artifact.
+- Walk-forward and Monte Carlo validation need stronger methodology.
+- Production safety is not mature enough for unattended Futures trading.
+- Realistic 12-month net expectation may be close to flat after fees,
+  slippage, funding, and regime changes.
+
+## Codex First-Pass Triage
+
+| Claim | Status | Notes |
+|---|---|---|
+| Live trading should remain blocked | Confirmed | `config.TESTNET=True`, `LIVE_TRADING_APPROVED=False`; keep this. |
+| Strategy edge is not proven | Confirmed | Backtest evidence is research-grade, not deployment-grade. |
+| DOGE/LINK/TRX is cherry-picked from candidate sweep | Confirmed risk | It ranked first in an in-sample sweep. Needs holdout and multiple-testing controls. |
+| Walk-forward is fake because there is no train selection | Partially true | `portfolio_walk_forward.py` selects risk profile on train, but does not optimize core strategy parameters. We need true parameter walk-forward. |
+| Monte Carlo only assumes IID | Partially outdated | Current code has bootstrap and block-bootstrap, but still does not model volatility regime, liquidity shocks, funding spikes, or symbol correlation perfectly. |
+| Slippage is optimistic | Confirmed risk | Static slippage is inadequate for breakout bars and thin/fast markets. |
+| Funding model is weak | Confirmed risk | Funding needs symbol/time-specific validation and adverse-funding stress. |
+| Sharpe/Sortino/DSR/PBO metrics missing | Confirmed | `rg` shows no Sharpe/Sortino implementation. |
+| Test coverage is too narrow | Confirmed | Test count improved to 34, but strategy/risk/order lifecycle coverage is still insufficient. |
+| RAM-only live state | Confirmed | `bot.py` keeps `active_positions` in memory; restart recovery exists but trailing state can degrade. |
+| Liquidation/protections disabled | Confirmed but intentional | These are disabled because prior side-by-side tests hurt performance. They still need safer live-gate treatment. |
+| `priceProtect="TRUE"` is definitely a bug | Needs evidence | Binance REST docs show booleans in response and string fields for several order params; this should be verified by `testnet_fill_probe.py`, not changed blindly. |
+| Margin/position mode not handled | Partially fixed | Position-mode check and leverage confirmation now exist. Margin-mode set/verify is still missing. |
+| Trailing SL race / duplicate reduce-only stop risk | Confirmed risk | Current design creates new SL before canceling old SL to avoid unprotected gaps, but duplicate reduce-only stop behavior must be tested and reconciled. |
+| `config.py` should not hold secrets | Partially true | API secrets come from env, but active runtime config is still committed. Need template + local override pattern. |
+| recvWindow/timesync missing | Confirmed gap | No explicit time sync/recvWindow policy exists. |
+| Alerts missing | Confirmed gap | File telemetry exists, but Telegram/email/push alerting is absent. |
+
+## Immediate Blockers
+
+These must be handled before real capital:
+
+1. Persistent live/testnet state.
+2. Exchange order event persistence: `ORDER_TRADE_UPDATE`, partial fills,
+   fills, cancels, expiry, reduce-only, realized PnL, commission.
+3. Startup reconciliation across exchange position, open orders, local state,
+   hard stop, and last strategy decision.
+4. Margin-mode verification and/or setter.
+5. Time sync and `recvWindow` policy.
+6. Alerting for stale heartbeat, missing stop, order failure, wrong position
+   mode, margin-mode mismatch, leverage mismatch, and daily loss.
+7. Realistic slippage/funding stress tests.
+8. True parameter walk-forward with holdout and multiple-testing correction.
+
+## Methodology Repair Plan
+
+### M0 - Evidence Freeze
+
+- Treat all current CAGR claims as research-only.
+- Add a clear README warning that candidate sweep results are not live
+  expectancy.
+- Do not use `portfolio_candidate_sweep_results.csv` as deployment evidence by
+  itself.
+
+### M1 - Real Walk-Forward
+
+Build a walk-forward that:
+
+- Optimizes strategy parameters only on train windows.
+- Applies selected parameters to untouched OOS windows.
+- Uses non-overlapping or purged/embargoed windows.
+- Records selected parameters per fold.
+- Reports degradation from train to test.
+
+Candidate grid:
+
+- Donchian entry period.
+- Donchian exit period.
+- Volume multiplier.
+- ADX threshold.
+- RSI extremes.
+- ATR stop multiplier.
+- Risk profile.
+
+### M2 - Multiple Testing Control
+
+- Separate final 6-month holdout and do not use it for tuning.
+- Compare chosen symbols against random portfolios.
+- Report rank stability, Bonferroni-style penalty, and probability of backtest
+  overfitting.
+- Add Deflated Sharpe Ratio or a simpler conservative proxy if implementation
+  time is constrained.
+
+### M3 - Cost Stress
+
+- Run results under multiple cost regimes:
+  - current static costs,
+  - 30 bps round-trip slippage,
+  - 60 bps round-trip slippage,
+  - adverse funding stress,
+  - flash-crash stop gap stress.
+- Reject any strategy that only survives the optimistic cost model.
+
+## Production Repair Plan
+
+### P0 - Already Started
+
+- `exchange_filters.py`: Binance `exchangeInfo` validation added.
+- `account_safety.py`: one-way position mode and leverage status added.
+- `ops_status.py --exchange`: can query account safety without slowing the
+  default file-only status command.
+
+### P0 - Still Open
+
+1. Persist live/testnet order events.
+2. Persist live active position state.
+3. Add startup reconciliation.
+4. Add margin-mode verification.
+5. Add time sync / `recvWindow`.
+6. Add alerts.
+
+### P1
+
+1. Add realistic slippage/funding stress framework.
+2. Add strategy/risk unit tests.
+3. Add order lifecycle unit tests.
+4. Add independent cross-backtest check.
+5. Add richer risk-adjusted metrics.
+
+## Specific Notes On Disputed Items
+
+### `priceProtect`
+
+Do not change this blindly. The Binance order API response shows
+`priceProtect` as a boolean, while several request parameters in the same API
+are documented as strings. The current code sends `"TRUE"`. The correct next
+step is a testnet stop-order probe that confirms whether Binance accepts it and
+whether the resulting order has `priceProtect=true`.
+
+### Protections Disabled
+
+`PROTECTIONS_ENABLED=False` and `LIQUIDATION_GUARD_ENABLED=False` are real.
+However, prior validation found some passive mature-bot protections reduced
+CAGR. This does not mean live should run without safety. It means protection
+logic needs separate live-safe gates that do not silently distort the strategy.
+
+### Walk-Forward
+
+The harsh critique is correct for strategy-parameter validation. It is not fully
+correct for `portfolio_walk_forward.py`, which does train-window risk-profile
+selection. Still, that is not enough. We need strategy-parameter walk-forward,
+not only risk-profile walk-forward.
+
+## Current Go/No-Go
+
+No-go for live trading.
+
+Allowed work:
+
+- paper/testnet observation,
+- safety plumbing,
+- methodology repair,
+- documentation,
+- non-live testnet probes with explicit approval.
+
+Not allowed:
+
+- mainnet trading,
+- increasing leverage/risk based on current backtests,
+- enabling disabled protection layers in live/paper without fresh validation,
+- rewriting strategy from a single review without measured evidence.
+
+## Next Codex Action
+
+Implement P0 production repair in this order:
+
+1. order-event persistence,
+2. persistent live/testnet position state,
+3. startup reconciliation,
+4. margin-mode status,
+5. alerting.
+
+In parallel, begin methodology repair with true parameter walk-forward and a
+final holdout.
