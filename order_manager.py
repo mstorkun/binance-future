@@ -2,6 +2,7 @@ import logging
 import ccxt
 import config
 import execution_guard as eg
+import exchange_filters as xf
 import liquidation
 import risk as r
 
@@ -64,15 +65,35 @@ def _amount_to_precision(exchange: ccxt.Exchange, size: float) -> float:
         return round(size, 4)
 
 
-def _create_sl_order(exchange: ccxt.Exchange, sl_side: str, size: float, sl_price: float) -> dict | None:
+def _create_sl_order(
+    exchange: ccxt.Exchange,
+    sl_side: str,
+    size: float,
+    sl_price: float,
+    ref_price: float | None = None,
+) -> dict | None:
     """SL emri oluştur — emrin id'sini döndürür."""
+    filter_result = xf.validate_stop_order(
+        exchange,
+        config.SYMBOL,
+        sl_side,
+        size,
+        sl_price,
+        ref_price=ref_price or sl_price,
+    )
+    if not filter_result.ok:
+        log.error(f"SL emir filtre hatasi: {filter_result.reason}")
+        return None
+
+    checked_size = filter_result.amount or size
+    checked_sl_price = filter_result.price or sl_price
     try:
         order = exchange.create_order(
             symbol=config.SYMBOL,
             type="stop_market",
             side=sl_side,
-            amount=size,
-            params=eg.exchange_stop_params(sl_price),
+            amount=checked_size,
+            params=eg.exchange_stop_params(checked_sl_price),
         )
         return order
     except ccxt.BaseError as e:
@@ -155,10 +176,15 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
     size = r.position_size(balance, atr, price, risk_pct=risk_pct)
     size = _amount_to_precision(exchange, size)
 
-    notional = size * price
-    if notional < MIN_NOTIONAL_USDT:
-        log.warning(f"Pozisyon çok küçük (notional={notional:.2f}<{MIN_NOTIONAL_USDT}), açılmadı.")
+    order_side = "buy" if side == "long" else "sell"
+    sl_side    = "sell" if side == "long" else "buy"
+
+    filter_result = xf.validate_entry_order(exchange, config.SYMBOL, order_side, size, price)
+    if not filter_result.ok:
+        log.warning(f"Exchange filtreleri pozisyonu blokladi: {filter_result.reason}")
         return None
+    size = filter_result.amount or size
+    notional = filter_result.notional or (size * price)
 
     initial_sl, _ = r.sl_tp_prices(price, atr, side)
     hard_sl = eg.hard_stop_from_soft(initial_sl, atr, side)
@@ -166,9 +192,6 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
     if not liq_guard.ok:
         log.warning(f"Likidasyon guard pozisyonu blokladi: {liq_guard.reason}")
         return None
-
-    order_side = "buy" if side == "long" else "sell"
-    sl_side    = "sell" if side == "long" else "buy"
 
     guard = eg.pre_trade_liquidity_check(exchange, config.SYMBOL, side, notional, price)
     if not guard.ok:
@@ -202,7 +225,7 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
 
     log.info(f"Pozisyon acildi: {side.upper()} | miktar={filled_size} | fill={fill_price:.4f}")
 
-    sl_order = _create_sl_order(exchange, sl_side, filled_size, hard_sl)
+    sl_order = _create_sl_order(exchange, sl_side, filled_size, hard_sl, ref_price=fill_price)
     if sl_order is None:
         log.error("SL kurulamadı, pozisyon ACIL KAPATILIYOR.")
         _safe_close_market(exchange, side, filled_size)
@@ -270,7 +293,7 @@ def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: f
     hard_sl = eg.hard_stop_from_soft(new_sl, atr, side) if atr > 0 else new_sl
 
     # Önce yeni hard-stop emrini oluştur — pozisyon her an korunsun
-    new_sl_order = _create_sl_order(exchange, sl_side, size, hard_sl)
+    new_sl_order = _create_sl_order(exchange, sl_side, size, hard_sl, ref_price=current_price)
     if new_sl_order is None:
         log.error("Yeni trailing SL oluşturulamadı, eski SL korunuyor.")
         return

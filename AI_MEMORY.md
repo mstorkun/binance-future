@@ -164,6 +164,10 @@ Other previous validation context:
   guard logic.
 - `order_manager.py`: live/testnet order placement, one-way mode check, hard
   stop placement, reduce-only close.
+- `exchange_filters.py`: Binance Futures `exchangeInfo` filter validation for
+  entry and stop orders. It validates tick size, step size, market lot size,
+  minimum notional, percent-price bounds, and symbol trading status before
+  testnet/live order submission.
 - `paper_runner.py`: no-order paper telemetry runner.
 - `paper_runtime.py`: tagged paper/shadow runtime isolation helpers for
   separate state/decision/equity/heartbeat files and temporary timeframe

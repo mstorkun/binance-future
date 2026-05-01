@@ -11,6 +11,7 @@ import pandas as pd
 import config
 import bias_audit
 import exit_ladder
+import exchange_filters
 import flow_data
 import order_manager
 import paper_runtime
@@ -47,7 +48,106 @@ class FakeExchange:
         return order
 
 
+class FakeExchangeInfo:
+    def fapiPublicGetExchangeInfo(self):
+        return {
+            "symbols": [
+                {
+                    "symbol": "DOGEUSDT",
+                    "status": "TRADING",
+                    "filters": [
+                        {
+                            "filterType": "PRICE_FILTER",
+                            "minPrice": "0.00001",
+                            "maxPrice": "1000",
+                            "tickSize": "0.00010",
+                        },
+                        {
+                            "filterType": "LOT_SIZE",
+                            "minQty": "1",
+                            "maxQty": "10000000",
+                            "stepSize": "1",
+                        },
+                        {
+                            "filterType": "MARKET_LOT_SIZE",
+                            "minQty": "1",
+                            "maxQty": "10000000",
+                            "stepSize": "1",
+                        },
+                        {"filterType": "MIN_NOTIONAL", "notional": "5"},
+                        {
+                            "filterType": "PERCENT_PRICE",
+                            "multiplierUp": "1.1500",
+                            "multiplierDown": "0.8500",
+                        },
+                    ],
+                }
+            ]
+        }
+
+
 class SafetyTests(unittest.TestCase):
+    def test_exchange_filters_floor_market_amount_and_notional(self):
+        exchange_filters.clear_cache()
+        result = exchange_filters.validate_entry_order(
+            FakeExchangeInfo(),
+            "DOGE/USDT",
+            "buy",
+            amount=12.9,
+            ref_price=0.50,
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.amount, 12.0)
+        self.assertEqual(result.notional, 6.0)
+
+    def test_exchange_filters_block_min_notional(self):
+        exchange_filters.clear_cache()
+        result = exchange_filters.validate_entry_order(
+            FakeExchangeInfo(),
+            "DOGE/USDT",
+            "buy",
+            amount=9,
+            ref_price=0.50,
+        )
+        self.assertFalse(result.ok)
+        self.assertIn("min_notional", result.reason)
+
+    def test_exchange_filters_adjust_stop_price_to_tick(self):
+        exchange_filters.clear_cache()
+        sell_result = exchange_filters.validate_stop_order(
+            FakeExchangeInfo(),
+            "DOGE/USDT",
+            "sell",
+            amount=12,
+            stop_price=0.49996,
+            ref_price=0.50,
+        )
+        buy_result = exchange_filters.validate_stop_order(
+            FakeExchangeInfo(),
+            "DOGE/USDT",
+            "buy",
+            amount=12,
+            stop_price=0.50004,
+            ref_price=0.50,
+        )
+        self.assertTrue(sell_result.ok)
+        self.assertEqual(sell_result.price, 0.4999)
+        self.assertTrue(buy_result.ok)
+        self.assertEqual(buy_result.price, 0.5001)
+
+    def test_exchange_filters_block_percent_price_outlier(self):
+        exchange_filters.clear_cache()
+        result = exchange_filters.validate_stop_order(
+            FakeExchangeInfo(),
+            "DOGE/USDT",
+            "sell",
+            amount=12,
+            stop_price=0.40,
+            ref_price=0.50,
+        )
+        self.assertFalse(result.ok)
+        self.assertIn("percent_price_low", result.reason)
+
     def test_market_close_still_runs_when_cancel_fails(self):
         old_symbol = config.SYMBOL
         try:
