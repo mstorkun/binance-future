@@ -18,7 +18,10 @@ strategy, risk, backtest, paper, testnet, or live-trading changes.
 
 ## Current Strategy
 
-- Portfolio candidate: `SOL/USDT`, `ETH/USDT`, `BNB/USDT`.
+- Active portfolio candidate: `SOL/USDT`, `ETH/USDT`, `BNB/USDT`.
+- Research-only stronger candidate from the latest 3-year sweep:
+  `DOGE/USDT`, `LINK/USDT`, `TRX/USDT`. Do not activate it until
+  walk-forward and Monte Carlo pass.
 - Primary timeframe: `4h`.
 - Current profile: `growth_70_compound`.
 - Leverage candidate: `10x`.
@@ -90,10 +93,25 @@ Other previous validation context:
   `python bias_audit.py --symbol SOL/USDT --years 1 --sample-step 96`
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m unittest discover -s tests -v` -> `16` tests OK.
+  `python -m unittest discover -s tests -v` -> `18` tests OK.
+- Portfolio candidate sweep:
+  `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
+  ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
+  win rate, `11271.76` final equity, `124.21%` CAGR, `5.05%` peak DD, and
+  `10.1688` profit factor. Current `SOL/USDT,ETH/USDT,BNB/USDT` ranked `303`
+  with `79.54%` CAGR and `7.67%` peak DD. All top 30 rows included `TRX/USDT`,
+  so this is a strong research lead but needs out-of-sample validation before
+  any config change.
 
 ## Recent Commits
 
+- `7778a1b Add portfolio candidate sweep`
+  - Added `portfolio_candidate_sweep.py`.
+  - Added `docs/PORTFOLIO_CANDIDATE_SWEEP.md`.
+  - Added a research-only symbol portfolio search flow.
+- `785cbad Add passive mature bot operating layers`
+  - Kept mature-bot add-ons passive.
+  - Added side-by-side validation context.
 - `4384b05 Add passive mature bot safeguards`
   - Added `protections.py`.
   - Added `exit_ladder.py`.
@@ -151,15 +169,13 @@ Other previous validation context:
 
 1. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
    mode; current parameters reduce CAGR.
-2. Run `portfolio_candidate_sweep.py` to search for a better symbol portfolio
-   before changing strategy logic.
-   Latest smoke:
-   `python portfolio_candidate_sweep.py --years 1 --symbols SOL/USDT ETH/USDT BNB/USDT --min-size 3 --max-size 3 --max-combos 1 --top 5`
-   gave `86` trades, `56.23%` CAGR, `7.67%` peak DD.
-3. Add a real executor-backed paper implementation only after a net-positive
+2. Run portfolio walk-forward for `DOGE/USDT,LINK/USDT,TRX/USDT`; it is the
+   latest best research candidate but not yet approved for activation.
+3. Run Monte Carlo bootstrap/block for the candidate trade set.
+4. If the candidate passes, compare it side-by-side against the active baseline
+   before editing `config.SYMBOLS`.
+5. Add a real executor-backed paper implementation only after a net-positive
    side-by-side report.
-4. Run portfolio walk-forward for any active change.
-5. Run Monte Carlo bootstrap/block for any active change.
 6. Only after net-positive evidence, consider paper/testnet wiring.
 
 ## Do Not Do Without Explicit Approval
