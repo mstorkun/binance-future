@@ -68,6 +68,7 @@ into the backlog.
 | 33 | No bar-age guard for stale candles | Closed in code: `bot.py` now skips symbol processing when the last closed bar is older than `MAX_CLOSED_BAR_AGE_MULT` times the active timeframe. |
 | 34 | Live trade decision snapshot missing | Closed in code: entry candidates, risk blocks, successful opens, and failed opens are written to ignored `trade_decisions.jsonl` with bar, indicator, risk, and order-result context. |
 | 35 | No one-command kill switch | Closed in code: `emergency_kill_switch.py` provides dry-run status plus explicitly guarded cancel/close execution using reduce-only market closes and order-event telemetry. |
+| 36 | API permission/IP whitelist runbook missing | Closed in docs: `docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md` defines required key permissions, trusted-IP policy, go-live checks, rotation, and `-2015` triage. |
 | B3 | Trailing SL cancel failure can leave orphan reduce-only stops | Closed in code: after a new trailing SL is created, the bot fetches same-side reduce-only STOP orders and cancels all except the new protected stop. |
 
 ### P0 Live Blockers
@@ -76,7 +77,6 @@ into the backlog.
 |---:|---|---|---|
 | 26 | No WebSocket user-data stream | Polling can miss fills/stops until next loop | Add or explicitly reject user-data stream architecture before live. |
 | 27 | Docs and config disagree on leverage/risk | Operators may believe 5x/%3 while config runs 10x/%4 | Create one go-live profile and mark research profiles as not live. |
-| 36 | API permission/IP whitelist runbook missing | API blast radius is undocumented | Add live/testnet key-scope and IP-whitelist runbook. |
 
 ### P1 Engineering And Methodology
 
@@ -106,9 +106,8 @@ into the backlog.
 
 1. Add or explicitly reject the WebSocket user-data stream architecture.
 2. Resolve the doc/config risk-profile inconsistency.
-3. Add API-key runbook.
-4. Add risk-adjusted metrics and multiple-testing controls.
-5. Add correlation stress and pattern-weight ablations.
+3. Add risk-adjusted metrics and multiple-testing controls.
+4. Add correlation stress and pattern-weight ablations.
 
 ## Decision
 

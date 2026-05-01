@@ -199,6 +199,10 @@ Other previous validation context:
   Execution requires `--execute --yes-i-understand`; live config also requires
   `--allow-live`. It cancels open orders per symbol and closes positions with
   reduce-only market orders through the shared idempotent client-order-id path.
+- `docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md`: Binance API key operations
+  runbook. Live key scope is Reading + USD-M Futures trading only, no withdrawal
+  or universal transfer, trusted static IPv4 only, separate testnet/live keys,
+  monthly rotation, and narrow `-2015` triage.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -282,9 +286,9 @@ Other previous validation context:
 - `docs/AUDIT_DIFF_2026_05_01.md`: Claude 10-agent vs Codex triage merge. It
   now marks client order idempotency, partial-fill handling, trailing-stop
   orphan cleanup, tick precision, stale-bar guard, live decision snapshots, and
-  emergency kill switch closed in code, while keeping open P0 blockers for
-  user-data stream decision, doc/config risk-profile mismatch, and API-key
-  runbook.
+  emergency kill switch closed in code, and API key runbook closed in docs,
+  while keeping open P0 blockers for user-data stream decision and doc/config
+  risk-profile mismatch.
 
 ## Runtime / Worktree Notes
 

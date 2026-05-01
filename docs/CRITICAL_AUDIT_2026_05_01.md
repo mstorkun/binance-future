@@ -231,6 +231,9 @@ Closed after the addendum:
    and failed opens are persisted to ignored `trade_decisions.jsonl`.
 7. Emergency kill switch: `emergency_kill_switch.py` provides dry-run status and
    explicitly guarded cancel/close execution with reduce-only market closes.
+8. API key security runbook: `docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md`
+   defines permission scope, trusted-IP policy, go-live checks, rotation, and
+   `-2015` triage.
 
 The remaining newly merged live blockers are:
 
@@ -238,7 +241,6 @@ The remaining newly merged live blockers are:
    explicitly prove polling plus reconciliation is enough.
 2. Resolve doc/config risk-profile inconsistency before any go-live profile is
    named.
-3. Document API permission scope and IP whitelist requirements.
 
 P1 additions:
 
