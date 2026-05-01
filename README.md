@@ -50,6 +50,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - User-data stream decision: [docs/USER_DATA_STREAM_DECISION_2026_05_01.md](docs/USER_DATA_STREAM_DECISION_2026_05_01.md) rejects polling-only live operation and keeps live mode blocked until stream readiness is proven.
 - Risk-adjusted metrics: [docs/RISK_ADJUSTED_METRICS_2026_05_01.md](docs/RISK_ADJUSTED_METRICS_2026_05_01.md) adds Sharpe/Sortino/Calmar reporting and Bonferroni visibility for candidate sweeps.
 - Correlation stress: [docs/CORRELATION_STRESS_2026_05_01.md](docs/CORRELATION_STRESS_2026_05_01.md) adds report-only pairwise symbol correlation stress before any covariance-aware sizing change.
+- Pattern ablation: [docs/PATTERN_ABLATION_2026_05_01.md](docs/PATTERN_ABLATION_2026_05_01.md) adds report-only pattern-risk on/off comparison before any pattern-weight claim.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files
@@ -78,6 +79,7 @@ timeframe_sweep.py           Compare 1h/2h/4h with raw and scaled indicator hori
 risk_metrics.py              Risk-adjusted metric helpers
 risk_adjusted_report.py      JSON report for Sharpe/Sortino and multiple-testing visibility
 correlation_stress.py        Report-only pairwise symbol correlation stress
+pattern_ablation.py          Report-only pattern-risk on/off ablation
 portfolio_param_walk_forward.py Train-only portfolio parameter walk-forward
 portfolio_cost_stress.py       Replay selected WF folds under harsher costs
 portfolio_holdout.py          Final pre-holdout selection and holdout replay
@@ -111,6 +113,7 @@ python mature_bot_compare.py --years 3
 python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 5 --top 20
 python risk_adjusted_report.py
 python correlation_stress.py --years 3
+python pattern_ablation.py --years 3
 python timeframe_sweep.py --years 3 --timeframes 1h 2h 4h --scaled-params
 python portfolio_param_walk_forward.py --years 3 --max-param-combos 6
 python portfolio_cost_stress.py --wf-results portfolio_param_walk_forward_risk_capped_results.csv --years 3

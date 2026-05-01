@@ -30,6 +30,7 @@ portfolio_candidate_universe.csv
 risk_adjusted_report.json
 correlation_stress_report.json
 correlation_stress_pairs.csv
+pattern_ablation_results.csv
 timeframe_sweep_results.csv
 timeframe_walk_forward_results.csv
 timeframe_sweep_scaled_results.csv

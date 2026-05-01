@@ -25,6 +25,7 @@ import order_manager
 import order_events
 import paper_runtime
 import pair_universe
+import pattern_ablation
 import paper_runner
 import paper_report
 import ops_status
@@ -1586,6 +1587,28 @@ class SafetyTests(unittest.TestCase):
         self.assertTrue(summary["high_corr_pairs"])
         self.assertEqual(correlation_stress.suggested_risk_multiplier(0.90), 0.50)
         self.assertEqual(correlation_stress.suggested_risk_multiplier(0.75), 0.75)
+
+    def test_pattern_ablation_restores_config_and_summarizes(self):
+        old_enabled = config.PATTERN_RISK_ENABLED
+        try:
+            config.PATTERN_RISK_ENABLED = True
+            with pattern_ablation.temporary_pattern_risk(False):
+                self.assertFalse(config.PATTERN_RISK_ENABLED)
+            self.assertTrue(config.PATTERN_RISK_ENABLED)
+
+            trades = pd.DataFrame({
+                "pnl": [10.0, -2.0],
+                "commission": [0.1, 0.1],
+                "slippage": [0.2, 0.2],
+                "funding": [0.0, 0.0],
+            })
+            equity = pd.DataFrame({"equity": [1000.0, 1010.0, 1008.0]})
+            row = pattern_ablation.summarize_result("unit", trades, equity)
+            self.assertEqual(row["scenario"], "unit")
+            self.assertEqual(row["trades"], 2)
+            self.assertIn("sharpe", row)
+        finally:
+            config.PATTERN_RISK_ENABLED = old_enabled
 
     def test_portfolio_param_walk_forward_restores_strategy_config(self):
         old_values = (
