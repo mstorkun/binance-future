@@ -1,0 +1,91 @@
+{
+  "compare_row_offset": -1,
+  "generated_at_utc": "2026-05-01T13:15:47.011414+00:00",
+  "results": [
+    {
+      "columns_checked": [
+        "atr",
+        "rsi",
+        "adx",
+        "donchian_high",
+        "donchian_low",
+        "donchian_exit_high",
+        "donchian_exit_low",
+        "volume_ma",
+        "regime",
+        "pattern_score_long",
+        "pattern_score_short",
+        "pattern_bias"
+      ],
+      "compare_row_offset": -1,
+      "issue_count": 0,
+      "issues_preview": [],
+      "rows": 2190,
+      "sample_step": 96,
+      "status": "ok",
+      "symbol": "DOGE/USDT",
+      "timeframe": "4h",
+      "years": 1
+    },
+    {
+      "columns_checked": [
+        "atr",
+        "rsi",
+        "adx",
+        "donchian_high",
+        "donchian_low",
+        "donchian_exit_high",
+        "donchian_exit_low",
+        "volume_ma",
+        "regime",
+        "pattern_score_long",
+        "pattern_score_short",
+        "pattern_bias"
+      ],
+      "compare_row_offset": -1,
+      "issue_count": 0,
+      "issues_preview": [],
+      "rows": 2190,
+      "sample_step": 96,
+      "status": "ok",
+      "symbol": "LINK/USDT",
+      "timeframe": "4h",
+      "years": 1
+    },
+    {
+      "columns_checked": [
+        "atr",
+        "rsi",
+        "adx",
+        "donchian_high",
+        "donchian_low",
+        "donchian_exit_high",
+        "donchian_exit_low",
+        "volume_ma",
+        "regime",
+        "pattern_score_long",
+        "pattern_score_short",
+        "pattern_bias"
+      ],
+      "compare_row_offset": -1,
+      "issue_count": 0,
+      "issues_preview": [],
+      "rows": 2190,
+      "sample_step": 96,
+      "status": "ok",
+      "symbol": "TRX/USDT",
+      "timeframe": "4h",
+      "years": 1
+    }
+  ],
+  "sample_step": 96,
+  "status": "ok",
+  "symbols": [
+    "DOGE/USDT",
+    "LINK/USDT",
+    "TRX/USDT"
+  ],
+  "timeframe": "4h",
+  "total_issue_count": 0,
+  "years": 1
+}

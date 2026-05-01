@@ -259,4 +259,4 @@ P1 additions:
 - correlation stress report added,
 - Sharpe/Sortino plus Bonferroni Sharpe haircut and walk-forward degradation
   proxies added,
-- bias-audit summaries still need reproducible report artifacts.
+- bias-audit JSON and summary report committed for DOGE/LINK/TRX.

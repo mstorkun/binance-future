@@ -58,6 +58,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Dependency pinning: [docs/DEPENDENCY_PINNING_2026_05_01.md](docs/DEPENDENCY_PINNING_2026_05_01.md) pins runtime packages, including `ccxt==4.5.51`.
 - Paper lock heartbeat: [docs/PAPER_LOCK_HEARTBEAT_2026_05_01.md](docs/PAPER_LOCK_HEARTBEAT_2026_05_01.md) refreshes the paper runner lock while long loops are alive.
 - Overfit controls: [docs/OVERFIT_CONTROLS_2026_05_01.md](docs/OVERFIT_CONTROLS_2026_05_01.md) adds Bonferroni Sharpe haircut and walk-forward degradation proxies.
+- Bias audit report: [docs/BIAS_AUDIT_REPORT_2026_05_01.md](docs/BIAS_AUDIT_REPORT_2026_05_01.md) commits reproducible lookahead/recursive drift results for DOGE/LINK/TRX.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files
@@ -76,6 +77,7 @@ pair_universe.py             Passive dynamic pairlist/liquidity/volatility scori
 twap_execution.py            Passive TWAP slice planner
 trade_executor.py            Passive lifecycle contract for future execution refactor
 bias_audit.py                Lookahead/recursive indicator stability audit
+bias_audit_report.py         Reproducible multi-symbol bias-audit artifact writer
 ops_status.py                Local paper/testnet status report
 emergency_kill_switch.py     Dry-run-first emergency cancel/close CLI
 paper_report.py              Detailed paper decision/equity/error report

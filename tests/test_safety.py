@@ -13,6 +13,7 @@ import account_safety
 import alerts
 import config
 import bias_audit
+import bias_audit_report
 import correlation_stress
 import data
 import decision_snapshots
@@ -1514,6 +1515,19 @@ class SafetyTests(unittest.TestCase):
             sample_step=1,
         )
         self.assertEqual(issues, [])
+
+    def test_bias_audit_report_serializes_issue(self):
+        issue = bias_audit.AuditIssue(
+            timestamp=pd.Timestamp("2026-01-01", tz="UTC"),
+            column="atr",
+            full_value=1.0,
+            prefix_value=2.0,
+            diff=1.0,
+        )
+        row = bias_audit_report.issue_to_dict(issue)
+        self.assertEqual(row["column"], "atr")
+        self.assertEqual(row["diff"], 1.0)
+        self.assertIn("2026-01-01", row["timestamp"])
 
     def test_pair_universe_disabled_keeps_symbols(self):
         old_enabled = getattr(config, "PAIR_UNIVERSE_ENABLED", False)

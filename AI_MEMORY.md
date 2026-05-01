@@ -111,7 +111,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `85` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `86` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
@@ -121,7 +121,7 @@ Other previous validation context:
   reporting plus correlation stress, pattern ablation, and exchange-filter cache
   TTL helpers, paper CSV append hardening, stale risk-code quarantine, and
   passive TWAP/executor guardrails, exact requirement pinning, and paper lock
-  heartbeat refresh.
+  heartbeat refresh, and bias-audit report serialization.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
@@ -129,6 +129,10 @@ Other previous validation context:
   after haircut `false`, walk-forward `7/7` positive test folds but `7/7`
   severe train/test degradation folds and PBO proxy `1.0`. Treat this as
   strengthened no-go evidence, not live approval.
+- Bias-audit artifact:
+  `python bias_audit_report.py --symbols DOGE/USDT LINK/USDT TRX/USDT --years 1 --sample-step 96 --fail-on-issue`
+  wrote `docs/BIAS_AUDIT_REPORT_2026_05_01.json`; DOGE/LINK/TRX each used
+  `2190` 4h rows and reported `0` issues.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -254,6 +258,8 @@ Other previous validation context:
   `PaperRunnerLock` heartbeat/mtime behavior.
 - `docs/OVERFIT_CONTROLS_2026_05_01.md`: documents Bonferroni Sharpe haircut
   and walk-forward degradation/PBO proxies.
+- `docs/BIAS_AUDIT_REPORT_2026_05_01.md` and `.json`: committed reproducible
+  lookahead/recursive drift audit result for DOGE/LINK/TRX.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -347,6 +353,7 @@ Other previous validation context:
   30 trades, and peak DD `5.76%`. This supports continued paper/testnet
   observation, not live approval.
 - `bias_audit.py`: lookahead/recursive indicator stability audit.
+- `bias_audit_report.py`: multi-symbol bias-audit JSON artifact writer.
 - `docs/MATURE_BOT_ADDONS.md`: activation rules for new add-ons.
 - `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for
   symbol portfolio search.
