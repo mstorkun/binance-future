@@ -70,6 +70,7 @@ portfolio_candidate_sweep.py Search better symbol combinations
 timeframe_sweep.py           Compare 1h/2h/4h with raw and scaled indicator horizons
 portfolio_param_walk_forward.py Train-only portfolio parameter walk-forward
 portfolio_cost_stress.py       Replay selected WF folds under harsher costs
+portfolio_holdout.py          Final pre-holdout selection and holdout replay
 paper_runner.py              No-order paper telemetry and virtual portfolio runner
 testnet_fill_probe.py        Explicitly approved testnet fill/slippage probe
 order_manager.py             Order placement, SL update, position close
@@ -101,6 +102,7 @@ python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 5 --top 20
 python timeframe_sweep.py --years 3 --timeframes 1h 2h 4h --scaled-params
 python portfolio_param_walk_forward.py --years 3 --max-param-combos 6
 python portfolio_cost_stress.py --wf-results portfolio_param_walk_forward_risk_capped_results.csv --years 3
+python portfolio_holdout.py --years 3 --holdout-bars 500 --max-param-combos 6
 python ops_status.py --json
 python paper_report.py
 python paper_runner.py --once --reset

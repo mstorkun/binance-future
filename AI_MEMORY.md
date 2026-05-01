@@ -213,6 +213,9 @@ Other previous validation context:
 - `portfolio_cost_stress.py`: research-only replay of selected walk-forward OOS
   folds under harsher fee/slippage/funding assumptions. It keeps selected
   params fixed and writes `portfolio_cost_stress_results.csv` plus fold detail.
+- `portfolio_holdout.py`: research-only final holdout check. It selects
+  params/profile only on the pre-holdout train range, then evaluates the chosen
+  candidate on the final holdout bars.
 - Latest smoke:
   `python portfolio_param_walk_forward.py --years 3 --max-param-combos 6`
   completed in about 10 minutes, produced `7/7` positive OOS periods, average
@@ -232,6 +235,12 @@ Other previous validation context:
   fee+slippage 2x `5/7`, and severe costs `4/7`. Compounded OOS return stayed
   positive in every scenario, from `+345.36%` baseline to `+28.25%` severe, but
   severe stress is weak enough that live trading remains blocked.
+- Latest holdout smoke:
+  `python portfolio_holdout.py --years 3 --holdout-bars 500 --max-param-combos 6 --out portfolio_holdout_results.csv`
+  selected `growth_70_compound|D15|DX8|VOL1.2|SL2.0` on the pre-holdout train
+  range and produced final 500-bar holdout return `+10.55%`, win rate `70.00%`,
+  30 trades, and peak DD `5.76%`. This supports continued paper/testnet
+  observation, not live approval.
 - `bias_audit.py`: lookahead/recursive indicator stability audit.
 - `docs/MATURE_BOT_ADDONS.md`: activation rules for new add-ons.
 - `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for

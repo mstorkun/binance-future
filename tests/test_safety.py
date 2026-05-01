@@ -26,6 +26,7 @@ import paper_report
 import ops_status
 import portfolio_candidate_sweep
 import portfolio_cost_stress
+import portfolio_holdout
 import portfolio_param_walk_forward
 import protections
 import risk
@@ -885,6 +886,18 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(row["positive_periods"], 1)
         self.assertEqual(row["total_trades"], 9)
         self.assertAlmostEqual(row["compounded_oos_final_equity"], 1045.0)
+
+    def test_portfolio_holdout_ranges_use_final_bars(self):
+        idx = pd.date_range("2026-01-01", periods=10, freq="4h")
+        ranges = portfolio_holdout.holdout_ranges(idx, 3)
+        self.assertEqual(ranges["train_start"], idx[0])
+        self.assertEqual(ranges["train_end"], idx[6])
+        self.assertEqual(ranges["holdout_start"], idx[7])
+        self.assertEqual(ranges["holdout_end"], idx[9])
+        self.assertEqual(ranges["train_bars"], 7)
+        self.assertEqual(ranges["holdout_bars"], 3)
+        with self.assertRaises(ValueError):
+            portfolio_holdout.holdout_ranges(idx, 10)
 
     def test_timeframe_sweep_bars_for_days(self):
         self.assertEqual(timeframe_sweep.bars_for_days("1h", 1), 24)
