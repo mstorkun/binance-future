@@ -25,6 +25,7 @@ import paper_runner
 import paper_report
 import ops_status
 import portfolio_candidate_sweep
+import portfolio_cost_stress
 import portfolio_param_walk_forward
 import protections
 import risk
@@ -862,6 +863,28 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual([profile["name"] for profile in custom], ["balanced"])
         with self.assertRaises(ValueError):
             portfolio_param_walk_forward.select_profiles(["missing_profile"])
+
+    def test_portfolio_cost_stress_adverse_funding_cost(self):
+        self.assertEqual(portfolio_cost_stress.adverse_funding_cost(10.0, 2.0), 20.0)
+        self.assertEqual(portfolio_cost_stress.adverse_funding_cost(-10.0, 2.0), -5.0)
+        with self.assertRaises(ValueError):
+            portfolio_cost_stress.adverse_funding_cost(10.0, 0.0)
+
+    def test_portfolio_cost_stress_summary_compounds_folds(self):
+        folds = pd.DataFrame({
+            "scenario": ["unit", "unit"],
+            "test_return_pct": [10.0, -5.0],
+            "test_max_dd_peak_pct": [2.0, 3.0],
+            "test_trades": [4, 5],
+            "fee_mult": [1.0, 1.0],
+            "slippage_mult": [2.0, 2.0],
+            "funding_cost_mult": [1.0, 1.0],
+        })
+        summary = portfolio_cost_stress.summarize_folds(folds)
+        row = summary.iloc[0].to_dict()
+        self.assertEqual(row["positive_periods"], 1)
+        self.assertEqual(row["total_trades"], 9)
+        self.assertAlmostEqual(row["compounded_oos_final_equity"], 1045.0)
 
     def test_timeframe_sweep_bars_for_days(self):
         self.assertEqual(timeframe_sweep.bars_for_days("1h", 1), 24)

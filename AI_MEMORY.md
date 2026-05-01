@@ -210,6 +210,9 @@ Other previous validation context:
   selects Donchian/exit/volume/ATR-stop parameters and risk profile on the train
   window, then applies the selected candidate to the OOS test window. Use this
   to address the "fixed parameter walk-forward" methodology gap.
+- `portfolio_cost_stress.py`: research-only replay of selected walk-forward OOS
+  folds under harsher fee/slippage/funding assumptions. It keeps selected
+  params fixed and writes `portfolio_cost_stress_results.csv` plus fold detail.
 - Latest smoke:
   `python portfolio_param_walk_forward.py --years 3 --max-param-combos 6`
   completed in about 10 minutes, produced `7/7` positive OOS periods, average
@@ -223,6 +226,12 @@ Other previous validation context:
   OOS return `24.56%`, worst OOS peak DD `6.08%`, and selected
   `growth_70_compound` in all folds. This is more relevant than the uncapped
   smoke because `extreme_*` profiles are excluded.
+- Latest cost stress:
+  `python portfolio_cost_stress.py --wf-results portfolio_param_walk_forward_risk_capped_results.csv --years 3`
+  produced baseline `7/7` positive OOS, 2x slippage `7/7`, 3x slippage `5/7`,
+  fee+slippage 2x `5/7`, and severe costs `4/7`. Compounded OOS return stayed
+  positive in every scenario, from `+345.36%` baseline to `+28.25%` severe, but
+  severe stress is weak enough that live trading remains blocked.
 - `bias_audit.py`: lookahead/recursive indicator stability audit.
 - `docs/MATURE_BOT_ADDONS.md`: activation rules for new add-ons.
 - `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for

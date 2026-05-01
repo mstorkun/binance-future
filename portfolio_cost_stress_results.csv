@@ -1,0 +1,7 @@
+scenario,periods,positive_periods,avg_test_return_pct,worst_test_return_pct,worst_peak_dd_pct,total_trades,compounded_oos_final_equity,compounded_oos_return_pct,fee_mult,slippage_mult,funding_cost_mult
+baseline,7,7,24.5635,5.4161,6.0833,218,4453.58,345.3578,1.0,1.0,1.0
+slippage_2x,7,7,16.5046,0.6409,7.8787,218,2788.14,178.8138,1.0,2.0,1.0
+slippage_3x,7,5,8.143,-8.1393,12.3816,218,1639.23,63.9228,1.0,3.0,1.0
+funding_cost_2x,7,7,24.0906,5.2256,6.1024,218,4335.19,333.5191,1.0,1.0,2.0
+fee_slippage_2x,7,5,12.1944,-4.7804,11.3587,218,2133.18,113.318,2.0,2.0,1.0
+severe_costs,7,4,4.4048,-11.2782,14.5826,218,1282.5,28.2496,2.0,3.0,2.0
