@@ -852,6 +852,17 @@ class SafetyTests(unittest.TestCase):
         self.assertTrue(all(row.donchian_exit < row.donchian for row in grid))
         self.assertEqual(portfolio_param_walk_forward.generate_param_grid(max_combos=2), grid[:2])
 
+    def test_portfolio_param_walk_forward_selects_risk_capped_profiles(self):
+        profiles = portfolio_param_walk_forward.select_profiles(risk_capped=True)
+        self.assertEqual(
+            [profile["name"] for profile in profiles],
+            ["conservative", "balanced", "growth_70_compound"],
+        )
+        custom = portfolio_param_walk_forward.select_profiles(["balanced"])
+        self.assertEqual([profile["name"] for profile in custom], ["balanced"])
+        with self.assertRaises(ValueError):
+            portfolio_param_walk_forward.select_profiles(["missing_profile"])
+
     def test_timeframe_sweep_bars_for_days(self):
         self.assertEqual(timeframe_sweep.bars_for_days("1h", 1), 24)
         self.assertEqual(timeframe_sweep.bars_for_days("2h", 1), 12)

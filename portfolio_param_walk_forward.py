@@ -29,6 +29,8 @@ DEFAULT_PARAM_GRID = {
     "sl_atr_mult": [1.5, 2.0, 2.5],
 }
 
+RISK_CAPPED_PROFILE_NAMES = ("conservative", "balanced", "growth_70_compound")
+
 
 @dataclass(frozen=True)
 class StrategyParams:
@@ -100,6 +102,22 @@ def generate_candidates(
         for params in generate_param_grid(max_param_combos)
         for profile in profiles
     ]
+
+
+def select_profiles(profile_names: list[str] | None = None, *, risk_capped: bool = False) -> list[dict]:
+    if profile_names:
+        allowed = set(profile_names)
+    elif risk_capped:
+        allowed = set(RISK_CAPPED_PROFILE_NAMES)
+    else:
+        allowed = {profile["name"] for profile in PROFILES}
+
+    profiles = [profile for profile in PROFILES if profile["name"] in allowed]
+    found = {profile["name"] for profile in profiles}
+    missing = sorted(allowed - found)
+    if missing:
+        raise ValueError(f"Unknown profile name(s): {', '.join(missing)}")
+    return profiles
 
 
 def _slice_data(data_by_symbol: dict[str, dict], symbols: list[str], start_ts, end_ts) -> dict[str, dict]:
@@ -193,12 +211,15 @@ def run_walk_forward(
     roll_bars: int = 500,
     max_param_combos: int | None = None,
     min_train_trades: int = 20,
+    profile_names: list[str] | None = None,
+    risk_capped: bool = False,
     out: str = "portfolio_param_walk_forward_results.csv",
 ) -> pd.DataFrame:
     symbols = list(config.SYMBOLS)
     data = fetch_all_data(symbols, years=years)
     base_index = data[symbols[0]]["df"].index
-    candidates = generate_candidates(max_param_combos=max_param_combos)
+    profiles = select_profiles(profile_names, risk_capped=risk_capped)
+    candidates = generate_candidates(profiles=profiles, max_param_combos=max_param_combos)
 
     rows = []
     period = 1
@@ -239,6 +260,8 @@ def run_walk_forward(
             "selected_donchian_exit": p.donchian_exit,
             "selected_volume_mult": p.volume_mult,
             "selected_sl_atr_mult": p.sl_atr_mult,
+            "selector_mode": "risk_capped" if risk_capped else "custom_profiles" if profile_names else "all_profiles",
+            "profile_universe": ",".join(profile["name"] for profile in profiles),
             "train_score": best["score"],
             **{f"train_{k}": v for k, v in best.items() if k not in {"candidate", "score"}},
             **{f"test_{k}": v for k, v in test_metrics.items()},
@@ -269,6 +292,17 @@ def main() -> int:
     parser.add_argument("--roll-bars", type=int, default=500)
     parser.add_argument("--max-param-combos", type=int, default=0, help="Limit parameter combos for a quick smoke run.")
     parser.add_argument("--min-train-trades", type=int, default=20)
+    parser.add_argument(
+        "--risk-capped",
+        action="store_true",
+        help="Select only conservative, balanced, and growth_70_compound profiles.",
+    )
+    parser.add_argument(
+        "--profiles",
+        nargs="*",
+        default=None,
+        help="Explicit profile names to include in selector universe.",
+    )
     parser.add_argument("--out", default="portfolio_param_walk_forward_results.csv")
     args = parser.parse_args()
 
@@ -279,6 +313,8 @@ def main() -> int:
         roll_bars=args.roll_bars,
         max_param_combos=args.max_param_combos or None,
         min_train_trades=args.min_train_trades,
+        profile_names=args.profiles,
+        risk_capped=args.risk_capped,
         out=args.out,
     )
     if results.empty:

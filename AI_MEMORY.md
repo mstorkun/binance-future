@@ -215,8 +215,14 @@ Other previous validation context:
   completed in about 10 minutes, produced `7/7` positive OOS periods, average
   OOS return `80.04%`, worst OOS peak DD `14.88%`, and wrote
   `portfolio_param_walk_forward_results.csv`. Caveat: every fold selected
-  `extreme_11pct`, so this is not live-approval evidence. Next improvement is
-  capped/penalized profile selection.
+  `extreme_11pct`, so this is not live-approval evidence. The script now has
+  `--risk-capped` for conservative/balanced/growth_70-only selection.
+- Latest risk-capped smoke:
+  `python portfolio_param_walk_forward.py --years 3 --max-param-combos 6 --risk-capped --out portfolio_param_walk_forward_risk_capped_results.csv`
+  completed in about 5.5 minutes, produced `7/7` positive OOS periods, average
+  OOS return `24.56%`, worst OOS peak DD `6.08%`, and selected
+  `growth_70_compound` in all folds. This is more relevant than the uncapped
+  smoke because `extreme_*` profiles are excluded.
 - `bias_audit.py`: lookahead/recursive indicator stability audit.
 - `docs/MATURE_BOT_ADDONS.md`: activation rules for new add-ons.
 - `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for
