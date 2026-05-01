@@ -245,6 +245,10 @@ Other previous validation context:
 - `docs/MATURE_BOT_ADDONS.md`: activation rules for new add-ons.
 - `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for
   symbol portfolio search.
+- `docs/AUDIT_DIFF_2026_05_01.md`: Claude 10-agent vs Codex triage merge. It
+  adds open P0 blockers for client order idempotency, partial-fill handling,
+  tick precision, user-data stream decision, doc/config risk-profile mismatch,
+  stale-bar guard, live decision snapshots, kill switch, and API-key runbook.
 
 ## Runtime / Worktree Notes
 

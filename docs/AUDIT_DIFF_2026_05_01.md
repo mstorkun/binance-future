@@ -1,0 +1,113 @@
+# Audit Diff 2026-05-01
+
+Source: Claude 10-agent report cross-check supplied by the user on 2026-05-01.
+
+Purpose: reconcile Claude's critical audit with Codex's repo-aware triage and
+merge the remaining open findings into the live-trading no-go backlog.
+
+## Executive Summary
+
+The two reviews agree on the main decision: this bot must not trade live capital
+yet. The strongest confirmed gaps are methodology risk, cost sensitivity,
+production order safety, state recovery, and operational controls.
+
+Codex has since closed several original gaps:
+
+- strategy-parameter walk-forward smoke,
+- risk-capped parameter walk-forward smoke,
+- cost stress replay,
+- final holdout smoke,
+- persistent order events,
+- persistent live/testnet position state,
+- margin-mode confirmation path,
+- `recvWindow` and time-difference policy,
+- file-based alert generation.
+
+Those repairs improve the evidence base, but they do not remove the live-trading
+block. The remaining execution and ops issues below are still live blockers.
+
+## Full Agreement
+
+| # | Finding | Claude | Codex | Current action |
+|---:|---|---|---|---|
+| 1 | Live trading must stay blocked | Yes | Confirmed | Keep `TESTNET=True`, `LIVE_TRADING_APPROVED=False`. |
+| 2 | Strategy edge was not proven enough | Yes | Confirmed | Param WF, cost stress, holdout added; still research-only. |
+| 3 | DOGE/LINK/TRX selection has cherry-pick risk | Yes | Confirmed risk | Holdout added; multiple-testing controls still open. |
+| 4 | Static slippage is optimistic | Yes | Confirmed risk | Cost stress added; live fill review still needed. |
+| 5 | Funding model is weak | Yes | Confirmed risk | Adverse funding stress added; better historical validation remains open. |
+| 6 | Sharpe/Sortino missing | Yes | Confirmed | P1 risk-adjusted metrics open. |
+| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 51, but strategy/risk/order tests remain thin. |
+| 8 | Live state was RAM-only | Yes | Confirmed | Persistent state added; full exchange reconciliation remains open. |
+| 9 | Trailing SL duplicate reduce-only race risk | Yes | Confirmed risk | Needs testnet/user-data validation. |
+| 10 | `recvWindow` and time sync missing | Yes | Confirmed gap | `RECV_WINDOW_MS` and ccxt time adjustment added. |
+| 11 | Alerting missing | Yes | Confirmed gap | File-based alerts added; external alert channels still open. |
+
+## Partial Agreement Or Nuance
+
+| # | Topic | Claude claim | Codex position | Current status |
+|---:|---|---|---|---|
+| 12 | Walk-forward | No train selection | Risk-profile train selection existed; strategy-param WF was missing | Strategy-param WF and holdout smoke added. |
+| 13 | Monte Carlo IID | Bootstrap is path-independent | Block bootstrap exists but does not model all regimes | Regime/funding/liquidity shock modelling still open. |
+| 14 | `priceProtect="TRUE"` | Definitely a bug | Verify on testnet before changing | Testnet stop-order probe still needed. |
+| 15 | Margin/position mode | Not handled | Position mode/leverage existed; margin mode was gap | Margin-mode confirmation path added. |
+| 16 | `config.py` in git | Secret leak risk | Secrets are env-based, but committed runtime config is still risky | Template/local override pattern open. |
+| 17 | Disabled protections | Critical bug | Intentional because prior tests reduced CAGR; live-safe gates still needed | Live safety gates remain open. |
+
+## Newly Merged Open Findings
+
+These were not prominent enough in the first Codex triage and are now merged
+into the backlog.
+
+### P0 Live Blockers
+
+| # | Finding | Why it matters | Next action |
+|---:|---|---|---|
+| 18 | No `clientOrderId` / idempotency policy | Retry or timeout can submit duplicate orders | Add deterministic client order IDs and duplicate recovery. |
+| 19 | `_resolve_market_fill` can treat partial fills as full | Bot may size stops/state for unfilled contracts | Treat partial fills explicitly and reconcile remaining size. |
+| 21 | End-to-end tick precision audit needed | `round(..., 2)` can be invalid for DOGE/TRX style ticks | Route every live stop/SL price through exchange filters and tests. |
+| 26 | No WebSocket user-data stream | Polling can miss fills/stops until next loop | Add or explicitly reject user-data stream architecture before live. |
+| 27 | Docs and config disagree on leverage/risk | Operators may believe 5x/%3 while config runs 10x/%4 | Create one go-live profile and mark research profiles as not live. |
+| 33 | No bar-age guard for stale candles | Bot can act on stale `iloc[-2]` after downtime | Add closed-bar age validation before signal execution. |
+| 34 | Live trade decision snapshot missing | Forensics cannot explain why a real trade opened | Persist per-trade signal/risk/input snapshot. |
+| 35 | No one-command kill switch | Emergency shutdown is operationally ambiguous | Add emergency cancel/close/status script with dry-run guard. |
+| 36 | API permission/IP whitelist runbook missing | API blast radius is undocumented | Add live/testnet key-scope and IP-whitelist runbook. |
+
+### P1 Engineering And Methodology
+
+| # | Finding | Why it matters | Next action |
+|---:|---|---|---|
+| 20 | Requirements are unpinned | ccxt behavior can drift under the bot | Add lock file or exact prod constraints. |
+| 22 | TWAP is passive shell | Dead safety feature can be misunderstood as active | Either remove from live docs or complete integration. |
+| 23 | `trade_executor.py` and duplicate trailing logic | More paths means drift and inconsistent behavior | Refactor after live blockers are closed. |
+| 24 | `risk_management.py` is stale/dead risk code | Dangerous formulas may be reused accidentally | Delete or quarantine with documentation. |
+| 25 | `exchange_filters.py` cache has no refresh policy | Binance filter changes can stale cached limits | Add TTL refresh or startup refresh policy. |
+| 28 | Bias audit artifacts not committed as reports | Claims are hard to reproduce | Commit audit summaries for active symbols. |
+| 29 | Pattern weights are tunable and weakly justified | Hidden overfit risk | Add permutation/ablation tests. |
+| 30 | Correlation-aware sizing is open-count based | DOGE/LINK/TRX can be highly correlated | Add correlation stress or covariance-aware cap. |
+| 31 | CSV append is not atomic/fsynced | Runtime telemetry can corrupt on crash | Add atomic or journaled CSV write path where important. |
+| 32 | Paper lock heartbeat not refreshed | Manual restart can be blocked by stale locks | Refresh lock heartbeat or improve stale-lock detection. |
+
+## Codex-Only Context Added
+
+| # | Codex note | Meaning |
+|---:|---|---|
+| 37 | `account_safety.py` exists | Position mode, leverage, margin mode, and hard-stop checks are now centralized. |
+| 38 | `ops_status.py --exchange` exists | Exchange safety checks can run separately from file-only status. |
+| 39 | Tests increased | Current test count is 51, but coverage is still not enough for live funds. |
+| 40 | Parameter WF includes Donchian exit | Exit period is now part of the selector grid. |
+
+## Current Priority Order
+
+1. Add idempotent client order IDs and duplicate-order recovery.
+2. Fix partial-fill handling and state sizing.
+3. Audit tick-size precision end to end for entry, stop, trailing, and close.
+4. Add bar-age guard and live decision snapshots.
+5. Add emergency kill switch and API-key runbook.
+6. Add risk-adjusted metrics and multiple-testing controls.
+7. Add correlation stress and pattern-weight ablations.
+
+## Decision
+
+This audit diff does not approve live trading. It only sharpens the no-go list.
+The current repo can continue paper/testnet observation while the P0 blockers
+above are addressed.

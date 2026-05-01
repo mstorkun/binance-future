@@ -198,3 +198,44 @@ Implement P0 production repair in this order:
 
 In parallel, begin methodology repair with true parameter walk-forward and a
 final holdout.
+
+## Addendum - Audit Diff Merge
+
+Source: `docs/AUDIT_DIFF_2026_05_01.md`.
+
+Since this first-pass audit was written, Codex added parameter walk-forward,
+risk-capped walk-forward, cost stress replay, final holdout validation,
+persistent order events, persistent live/testnet state, margin-mode handling,
+`recvWindow`/time-difference policy, and file-based alerts.
+
+Those repairs reduce several original gaps, but live trading is still blocked.
+The newly merged live blockers are:
+
+1. Add deterministic `clientOrderId` / idempotency for entry, stop, close, and
+   retry paths.
+2. Fix partial-fill handling so `_resolve_market_fill` cannot size state/stops
+   as if a partial fill were full.
+3. Audit tick-size precision end to end; every live stop, trailing stop, and
+   close price must pass exchange filters.
+4. Decide and document WebSocket user-data stream architecture before live, or
+   explicitly prove polling plus reconciliation is enough.
+5. Resolve doc/config risk-profile inconsistency before any go-live profile is
+   named.
+6. Add bar-age guard before using `df.iloc[-2]` for live decisions after
+   downtime.
+7. Persist live trade decision snapshots for forensic review.
+8. Add a one-command emergency kill switch.
+9. Document API permission scope and IP whitelist requirements.
+
+P1 additions:
+
+- pin production dependencies or add a lock file,
+- add exchange-filter cache refresh policy,
+- make important CSV telemetry atomic or journaled,
+- refresh paper lock heartbeat,
+- quarantine stale/dead risk code,
+- either remove or complete passive TWAP/executor shells,
+- commit bias-audit summaries,
+- add pattern-weight ablation tests,
+- add correlation stress or covariance-aware risk caps,
+- add Sharpe/Sortino/DSR/PBO or equivalent conservative metrics.
