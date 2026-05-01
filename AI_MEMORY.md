@@ -111,8 +111,9 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `56` tests passed after the client order
-  idempotency and partial-fill handling fixes.
+  `python -m pytest -q` -> `59` tests passed plus `3` subtests after the
+  Claude follow-up fixes for client order id duplicate classification,
+  fetch-by-client-id behavior, partial-fill handling, and trailing stop cleanup.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -173,9 +174,13 @@ Other previous validation context:
   `config.RECV_WINDOW_MS` via `signed_params()`. Entry, hard SL, trailing SL,
   close, and emergency close orders use deterministic `newClientOrderId`
   values; retry/timeout/duplicate paths reuse the same id and reconcile through
-  `fetch_order`. `_resolve_market_fill()` returns explicit requested, filled,
+  Binance Futures `origClientOrderId` lookup. Duplicate detection must stay
+  text-based; do not re-add broad `-2010`, `-2027`, or `-4015` duplicate
+  classification. `_resolve_market_fill()` returns explicit requested, filled,
   and remaining quantities and applies `PARTIAL_FILL_POLICY` (`abort` default,
-  `accept` optional) so state, SL, and rollback use filled size only.
+  `accept` optional) so state, SL, and rollback use filled size only. Trailing
+  stop updates now fetch same-side reduce-only STOP orders and cancel extras
+  after creating the new protected stop.
 - `order_events.py`: append-only JSONL telemetry for live/testnet order
   lifecycle events. `order_manager.py` records entry, stop, close, emergency
   close, cancel, order ack/error, and fill-resolution events. Runtime output is
@@ -214,7 +219,10 @@ Other previous validation context:
   horizons.
 - `testnet_fill_probe.py`: locked testnet fill/slippage probe plus local
   simulation flags for partial-fill rollback and duplicate client-order-id
-  reconciliation. Latest committed simulation artifacts are
+  reconciliation. It also has a real gated duplicate-client-order-id probe via
+  `--probe-duplicate-client-order-id-real --approve-testnet-fill`; this sends
+  real Binance Futures testnet orders and has not been run yet. Latest committed
+  simulation artifacts are
   `testnet_fill_probe_simulation.csv` and `testnet_fill_probe_simulation.jsonl`;
   they do not send real exchange orders.
 - `portfolio_param_walk_forward.py`: research-only portfolio walk-forward that
@@ -257,10 +265,10 @@ Other previous validation context:
 - `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for
   symbol portfolio search.
 - `docs/AUDIT_DIFF_2026_05_01.md`: Claude 10-agent vs Codex triage merge. It
-  now marks client order idempotency and partial-fill handling closed, while
-  keeping open P0 blockers for tick precision, user-data stream decision,
-  doc/config risk-profile mismatch, stale-bar guard, live decision snapshots,
-  kill switch, and API-key runbook.
+  now marks client order idempotency, partial-fill handling, and trailing-stop
+  orphan cleanup closed in code, while keeping open P0 blockers for tick
+  precision, user-data stream decision, doc/config risk-profile mismatch,
+  stale-bar guard, live decision snapshots, kill switch, and API-key runbook.
 
 ## Runtime / Worktree Notes
 

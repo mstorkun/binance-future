@@ -47,7 +47,7 @@ The supplied report argues:
 | Liquidation/protections disabled | Confirmed but intentional | These are disabled because prior side-by-side tests hurt performance. They still need safer live-gate treatment. |
 | `priceProtect="TRUE"` is definitely a bug | Needs evidence | Binance REST docs show booleans in response and string fields for several order params; this should be verified by `testnet_fill_probe.py`, not changed blindly. |
 | Margin/position mode not handled | Partially fixed | Position-mode check and leverage confirmation now exist. Margin-mode set/verify is still missing. |
-| Trailing SL race / duplicate reduce-only stop risk | Confirmed risk | Current design creates new SL before canceling old SL to avoid unprotected gaps, but duplicate reduce-only stop behavior must be tested and reconciled. |
+| Trailing SL race / duplicate reduce-only stop risk | Partially mitigated | Current design creates new SL before canceling old SL, then fetches same-side reduce-only STOP orders and cancels extras. Testnet/user-data validation remains open. |
 | `config.py` should not hold secrets | Partially true | API secrets come from env, but active runtime config is still committed. Need template + local override pattern. |
 | recvWindow/timesync missing | Confirmed gap | No explicit time sync/recvWindow policy exists. |
 | Alerts missing | Confirmed gap | File telemetry exists, but Telegram/email/push alerting is absent. |
@@ -214,8 +214,14 @@ Closed after the addendum:
 
 1. Deterministic `clientOrderId` / idempotency for entry, hard SL, trailing SL,
    close, emergency close, retry, timeout, and duplicate recovery paths.
+   Claude follow-up tightened duplicate detection and switched client-id lookup
+   to Binance Futures `origClientOrderId` first, with ccxt fallback using
+   `id=None`.
 2. Partial-fill handling so `_resolve_market_fill` cannot size state/stops as
    if a partial fill were full.
+3. Trailing-SL orphan cleanup after cancel failure: same-side reduce-only STOP
+   orders are reconciled after each trailing update, keeping the newly created
+   protected stop and canceling extras.
 
 The remaining newly merged live blockers are:
 

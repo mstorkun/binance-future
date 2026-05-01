@@ -14,8 +14,6 @@ import risk as r
 
 log = logging.getLogger(__name__)
 
-MIN_NOTIONAL_USDT = 100  # Binance Futures BTC min notional ~100 USDT
-
 INTENT_ALIASES = {
     "entry": "entry",
     "hard_sl": "hard_sl",
@@ -94,30 +92,34 @@ def _is_duplicate_client_order_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     return any(token in msg for token in (
         "duplicate",
+        "duplicated",
         "already exists",
-        "clientorderid",
-        "client order id",
-        "-2010",
-        "-4015",
-        "-2027",
+        "already exist",
+        "client order id already",
+        "clientorderid already",
     ))
 
 
 def _fetch_order_by_client_id(exchange: ccxt.Exchange, client_order_id_value: str, symbol: str | None = None) -> dict:
     symbol = symbol or config.SYMBOL
     params = signed_params({"origClientOrderId": client_order_id_value})
-    try:
-        return exchange.fetch_order(client_order_id_value, symbol, params)
-    except Exception as first_exc:
-        raw_get_order = getattr(exchange, "fapiPrivateGetOrder", None)
-        if raw_get_order is None:
-            raise first_exc
+    raw_get_order = getattr(exchange, "fapiPrivateGetOrder", None)
+    if raw_get_order is not None:
         raw = raw_get_order({
             "symbol": _exchange_symbol_id(exchange, symbol),
             "origClientOrderId": client_order_id_value,
             **params,
         })
-        return {"id": raw.get("orderId"), "clientOrderId": client_order_id_value, "info": raw}
+        return {
+            "id": raw.get("orderId"),
+            "clientOrderId": raw.get("clientOrderId") or client_order_id_value,
+            "status": raw.get("status"),
+            "info": raw,
+        }
+    try:
+        return exchange.fetch_order(None, symbol, params)
+    except Exception as first_exc:
+        raise first_exc
 
 
 def _create_order_idempotent(
@@ -485,6 +487,67 @@ def _cancel_order_safe(exchange: ccxt.Exchange, order_id: str, client_order_id_v
         log.warning(f"SL iptal hatası (zaten iptal/dolu olabilir): {e}")
 
 
+def _truthy(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in {"true", "1", "yes"}
+    return bool(value)
+
+
+def _order_id(order: dict) -> str | None:
+    info = order.get("info") or {}
+    oid = order.get("id") or info.get("orderId") or info.get("algoId")
+    return str(oid) if oid is not None else None
+
+
+def _order_side(order: dict) -> str:
+    info = order.get("info") or {}
+    return str(order.get("side") or info.get("side") or "").lower()
+
+
+def _order_type(order: dict) -> str:
+    info = order.get("info") or {}
+    return str(order.get("type") or info.get("type") or info.get("origType") or "").lower()
+
+
+def _is_reduce_only_stop_order(order: dict, side: str | None = None) -> bool:
+    info = order.get("info") or {}
+    if side and _order_side(order) != side.lower():
+        return False
+    if "stop" not in _order_type(order):
+        return False
+    return _truthy(order.get("reduceOnly")) or _truthy(info.get("reduceOnly"))
+
+
+def _cleanup_extra_reduce_only_stops(exchange: ccxt.Exchange, keep_order_id: str | None, sl_side: str):
+    if not keep_order_id:
+        return
+    try:
+        open_orders = exchange.fetch_open_orders(config.SYMBOL, params=signed_params())
+    except Exception as e:
+        order_events.record("trailing_stop_cleanup_fetch_error", keep_order_id=keep_order_id, side=sl_side, error=str(e))
+        log.warning(f"Trailing SL temizligi icin acik emirler cekilemedi: {e}")
+        return
+
+    keep_id = str(keep_order_id)
+    stop_orders = [o for o in open_orders if _is_reduce_only_stop_order(o, sl_side)]
+    extra_orders = [o for o in stop_orders if _order_id(o) and _order_id(o) != keep_id]
+    if not extra_orders:
+        return
+    order_events.record(
+        "trailing_stop_cleanup_detected",
+        keep_order_id=keep_id,
+        side=sl_side,
+        active_stop_count=len(stop_orders),
+        extra_stop_ids=[_order_id(o) for o in extra_orders],
+    )
+    for order in extra_orders:
+        oid = _order_id(order)
+        if oid:
+            _cancel_order_safe(exchange, oid, client_order_id_value=_client_order_id_from_order(order))
+
+
 def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float, price: float,
                   risk_pct: float | None = None):
     """
@@ -677,6 +740,7 @@ def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: f
     # Sonra eski emri iptal et
     if old_sl_id:
         _cancel_order_safe(exchange, old_sl_id)
+    _cleanup_extra_reduce_only_stops(exchange, new_sl_order.get("id"), sl_side)
 
     position["sl"] = new_sl
     position["hard_sl"] = hard_sl

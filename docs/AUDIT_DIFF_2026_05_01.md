@@ -36,9 +36,9 @@ block. The remaining execution and ops issues below are still live blockers.
 | 4 | Static slippage is optimistic | Yes | Confirmed risk | Cost stress added; live fill review still needed. |
 | 5 | Funding model is weak | Yes | Confirmed risk | Adverse funding stress added; better historical validation remains open. |
 | 6 | Sharpe/Sortino missing | Yes | Confirmed | P1 risk-adjusted metrics open. |
-| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 56, but strategy/risk/order tests remain thin. |
+| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 59 plus 3 subtests, but strategy/risk/order tests remain thin. |
 | 8 | Live state was RAM-only | Yes | Confirmed | Persistent state added; full exchange reconciliation remains open. |
-| 9 | Trailing SL duplicate reduce-only race risk | Yes | Confirmed risk | Needs testnet/user-data validation. |
+| 9 | Trailing SL duplicate reduce-only race risk | Yes | Confirmed risk | Extra reduce-only STOP cleanup added after trailing updates; testnet/user-data validation still needed. |
 | 10 | `recvWindow` and time sync missing | Yes | Confirmed gap | `RECV_WINDOW_MS` and ccxt time adjustment added. |
 | 11 | Alerting missing | Yes | Confirmed gap | File-based alerts added; external alert channels still open. |
 
@@ -62,8 +62,9 @@ into the backlog.
 
 | # | Finding | Closure |
 |---:|---|---|
-| 18 | No `clientOrderId` / idempotency policy | Closed: entry, hard SL, trailing SL, close, and emergency close now submit deterministic `newClientOrderId`; retry/duplicate paths reuse the same id and reconcile through `fetch_order`. |
+| 18 | No `clientOrderId` / idempotency policy | Closed: entry, hard SL, trailing SL, close, and emergency close now submit deterministic `newClientOrderId`; retry/duplicate paths reuse the same id and reconcile through Binance Futures `origClientOrderId` lookup. Claude follow-up B1/B2 also closed. |
 | 19 | `_resolve_market_fill` can treat partial fills as full | Closed: fill resolution now separates requested/filled/remaining quantity, supports `PARTIAL_FILL_POLICY`, and sizes state/SL/rollback from filled quantity only. |
+| B3 | Trailing SL cancel failure can leave orphan reduce-only stops | Closed in code: after a new trailing SL is created, the bot fetches same-side reduce-only STOP orders and cancels all except the new protected stop. |
 
 ### P0 Live Blockers
 
@@ -98,7 +99,7 @@ into the backlog.
 |---:|---|---|
 | 37 | `account_safety.py` exists | Position mode, leverage, margin mode, and hard-stop checks are now centralized. |
 | 38 | `ops_status.py --exchange` exists | Exchange safety checks can run separately from file-only status. |
-| 39 | Tests increased | Current test count is 56, but coverage is still not enough for live funds. |
+| 39 | Tests increased | Current test count is 59 plus 3 subtests, but coverage is still not enough for live funds. |
 | 40 | Parameter WF includes Donchian exit | Exit period is now part of the selector grid. |
 
 ## Current Priority Order

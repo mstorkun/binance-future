@@ -2,6 +2,9 @@
 
 Role split: Codex implemented the fix; Claude should review.
 
+Follow-up: Claude reviewed commit `e93c2f3`. Codex's response to B1/B2/B3 is
+recorded in `docs/CLAUDE_REVIEW_RESPONSE_2026_05_01.md`.
+
 ## Scope
 
 P0 #18 and #19 from `docs/AUDIT_DIFF_2026_05_01.md`:

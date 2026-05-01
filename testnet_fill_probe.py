@@ -282,6 +282,96 @@ def run_probe(symbol: str, side: str, notional: float, approve: bool) -> None:
     print("testnet fill probe:", row)
 
 
+def run_duplicate_client_order_probe(symbol: str, side: str, notional: float, approve: bool) -> None:
+    if not approve:
+        raise SystemExit("Refusing to send testnet order without --approve-testnet-fill.")
+    if not config.TESTNET:
+        raise SystemExit("Refusing to run duplicate client order probe unless config.TESTNET is True.")
+    if not config.API_KEY or not config.API_SECRET:
+        raise SystemExit("Missing BINANCE_API_KEY / BINANCE_API_SECRET.")
+
+    exchange = data.make_exchange()
+    ticker = exchange.fetch_ticker(symbol)
+    ref_price = float(ticker["last"] or ticker["close"])
+    amount = float(exchange.amount_to_precision(symbol, notional / ref_price))
+    order_side = "buy" if side == "long" else "sell"
+    close_side = "sell" if side == "long" else "buy"
+    cid = order_manager.client_order_id(symbol, "entry")
+
+    first_order = None
+    second_order = None
+    close_order = None
+    try:
+        first_order, first_cid, first_duplicate = order_manager._create_order_idempotent(
+            exchange,
+            symbol=symbol,
+            type="market",
+            side=order_side,
+            amount=amount,
+            intent="entry",
+            params={"newOrderRespType": "RESULT"},
+            client_order_id_value=cid,
+        )
+        second_order, second_cid, second_duplicate = order_manager._create_order_idempotent(
+            exchange,
+            symbol=symbol,
+            type="market",
+            side=order_side,
+            amount=amount,
+            intent="entry",
+            params={"newOrderRespType": "RESULT"},
+            client_order_id_value=cid,
+        )
+
+        filled_by_order_id = {}
+        for order in (first_order, second_order):
+            oid = order.get("id") or (order.get("info") or {}).get("orderId") or id(order)
+            filled_by_order_id[str(oid)] = _filled(order, amount)
+        total_filled = sum(filled_by_order_id.values())
+        if total_filled > 0:
+            close_order, close_cid, close_duplicate = order_manager._create_order_idempotent(
+                exchange,
+                symbol=symbol,
+                type="market",
+                side=close_side,
+                amount=total_filled,
+                intent="close",
+                params={"reduceOnly": True, "newOrderRespType": "RESULT"},
+            )
+        else:
+            close_cid = ""
+            close_duplicate = False
+    except Exception:
+        filled = 0.0
+        for order in (first_order, second_order):
+            if order:
+                filled += _filled(order, 0.0)
+        if filled > 0:
+            close_order = _safe_reduce_only_close(exchange, symbol, side, filled)
+        raise
+
+    row = {
+        "run_at_utc": _utc_now(),
+        "symbol": symbol,
+        "side": side,
+        "requested_notional": notional,
+        "amount": amount,
+        "client_order_id": cid,
+        "first_order_id": first_order.get("id") if first_order else "",
+        "second_order_id": second_order.get("id") if second_order else "",
+        "same_order_id": (first_order or {}).get("id") == (second_order or {}).get("id"),
+        "first_duplicate_reconciled": first_duplicate,
+        "second_duplicate_reconciled": second_duplicate,
+        "first_client_order_id": first_cid,
+        "second_client_order_id": second_cid,
+        "close_order_id": close_order.get("id") if close_order else "",
+        "close_client_order_id": close_cid,
+        "close_duplicate_reconciled": close_duplicate,
+    }
+    _append(row, "testnet_duplicate_client_order_probe.csv")
+    print("testnet duplicate client order probe:", row)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--symbol", default=config.SYMBOLS[0])
@@ -290,8 +380,12 @@ def main() -> None:
     parser.add_argument("--approve-testnet-fill", action="store_true")
     parser.add_argument("--simulate-partial-fill", action="store_true")
     parser.add_argument("--simulate-duplicate-client-order-id", action="store_true")
+    parser.add_argument("--probe-duplicate-client-order-id-real", action="store_true")
     parser.add_argument("--simulation-out", default="testnet_fill_probe_simulation.csv")
     args = parser.parse_args()
+    if args.probe_duplicate_client_order_id_real:
+        run_duplicate_client_order_probe(args.symbol, args.side, args.notional, args.approve_testnet_fill)
+        return
     if args.simulate_partial_fill or args.simulate_duplicate_client_order_id:
         run_simulation_probe(args.simulation_out)
         return

@@ -117,19 +117,63 @@ class RetryCreateExchange:
 class DuplicateCreateExchange:
     def __init__(self):
         self.fetch_params = None
+        self.raw_params = None
 
     def create_order(self, symbol, type, side, amount, params=None):
-        raise ccxt.ExchangeError("-2010 Duplicate order sent")
+        raise ccxt.ExchangeError("Duplicate client order id")
+
+    def fapiPrivateGetOrder(self, params):
+        self.raw_params = params or {}
+        return {
+            "orderId": "existing-order",
+            "clientOrderId": self.raw_params.get("origClientOrderId"),
+            "origQty": "2.0",
+            "executedQty": "2.0",
+            "avgPrice": "101.0",
+            "status": "FILLED",
+        }
 
     def fetch_order(self, order_id, symbol, params=None):
         self.fetch_params = params or {}
         return {
-            "id": "existing-order",
+            "id": "fallback-existing-order",
             "clientOrderId": self.fetch_params.get("origClientOrderId"),
             "amount": 2.0,
             "filled": 2.0,
             "average": 101.0,
         }
+
+
+class FetchFallbackExchange:
+    def __init__(self):
+        self.fetch_order_id = "unset"
+        self.fetch_symbol = None
+        self.fetch_params = None
+
+    def fetch_order(self, order_id, symbol, params=None):
+        self.fetch_order_id = order_id
+        self.fetch_symbol = symbol
+        self.fetch_params = params or {}
+        return {
+            "id": "fallback-existing-order",
+            "clientOrderId": self.fetch_params.get("origClientOrderId"),
+            "amount": 1.0,
+            "filled": 1.0,
+            "average": 100.0,
+        }
+
+
+class RejectCodeExchange:
+    def __init__(self, message):
+        self.message = message
+        self.fetch_called = False
+
+    def create_order(self, symbol, type, side, amount, params=None):
+        raise ccxt.ExchangeError(self.message)
+
+    def fetch_order(self, order_id, symbol, params=None):
+        self.fetch_called = True
+        return {}
 
 
 class PartialFillExchange:
@@ -173,6 +217,42 @@ class StopOrderExchange(FakeExchangeInfo):
         }
         self.created_orders.append(order)
         return order
+
+
+class TrailingCleanupExchange(FakeExchangeInfo):
+    def __init__(self):
+        self.created_orders = []
+        self.open_orders = [
+            {"id": "old-stop", "type": "stop_market", "side": "sell", "reduceOnly": True, "clientOrderId": "old-cid"},
+            {"id": "stale-stop", "type": "stop_market", "side": "sell", "reduceOnly": True, "clientOrderId": "stale-cid"},
+            {"id": "buy-stop", "type": "stop_market", "side": "buy", "reduceOnly": True},
+        ]
+        self.cancelled = []
+
+    def create_order(self, symbol, type, side, amount, params=None):
+        order = {
+            "id": "new-stop",
+            "symbol": symbol,
+            "type": type,
+            "side": side,
+            "amount": amount,
+            "filled": 0.0,
+            "clientOrderId": (params or {}).get("newClientOrderId"),
+            "reduceOnly": True,
+            "params": params or {},
+        }
+        self.created_orders.append(order)
+        self.open_orders.append(order)
+        return order
+
+    def cancel_order(self, order_id, symbol, params=None):
+        self.cancelled.append(order_id)
+        if order_id == "old-stop" and self.cancelled.count(order_id) == 1:
+            raise ccxt.ExchangeError("first cancel failed")
+        self.open_orders = [o for o in self.open_orders if o["id"] != order_id]
+
+    def fetch_open_orders(self, symbol, params=None):
+        return list(self.open_orders)
 
 
 class FakeAccountExchange:
@@ -481,10 +561,45 @@ class SafetyTests(unittest.TestCase):
                 self.assertTrue(duplicate)
                 self.assertEqual(resolved_cid, cid)
                 self.assertEqual(order["id"], "existing-order")
-                self.assertEqual(exchange.fetch_params["origClientOrderId"], cid)
+                self.assertEqual(exchange.raw_params["origClientOrderId"], cid)
+                self.assertIsNone(exchange.fetch_params)
         finally:
             config.ORDER_EVENTS_JSONL = old_path
             config.SYMBOL = old_symbol
+
+    def test_fetch_order_by_client_id_uses_none_id_fallback(self):
+        old_symbol = config.SYMBOL
+        try:
+            config.SYMBOL = "DOGE/USDT"
+            exchange = FetchFallbackExchange()
+            order = order_manager._fetch_order_by_client_id(exchange, "cid-123", "DOGE/USDT")
+            self.assertEqual(order["id"], "fallback-existing-order")
+            self.assertIsNone(exchange.fetch_order_id)
+            self.assertEqual(exchange.fetch_symbol, "DOGE/USDT")
+            self.assertEqual(exchange.fetch_params["origClientOrderId"], "cid-123")
+        finally:
+            config.SYMBOL = old_symbol
+
+    def test_reject_error_codes_are_not_duplicate_recovery(self):
+        messages = [
+            "-2010 NEW_ORDER_REJECTED insufficient balance",
+            "-2027 EXCEEDED_MAX_ALLOWABLE_POSITION",
+            "-4015 CLIENT_ORDER_ID_INVALID",
+        ]
+        for message in messages:
+            with self.subTest(message=message):
+                exchange = RejectCodeExchange(message)
+                with self.assertRaises(ccxt.ExchangeError):
+                    order_manager._create_order_idempotent(
+                        exchange,
+                        symbol="DOGE/USDT",
+                        type="market",
+                        side="buy",
+                        amount=2.0,
+                        intent="entry",
+                        client_order_id_value="cid-123",
+                    )
+                self.assertFalse(exchange.fetch_called)
 
     def test_partial_fill_abort_policy_closes_filled_only(self):
         old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
@@ -600,6 +715,37 @@ class SafetyTests(unittest.TestCase):
         finally:
             config.ORDER_EVENTS_JSONL = old_path
             config.PARTIAL_FILL_POLICY = old_policy
+            config.SYMBOL = old_symbol
+
+    def test_trailing_sl_cleanup_cancels_orphan_reduce_only_stops(self):
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        old_symbol = config.SYMBOL
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                config.SYMBOL = "DOGE/USDT"
+                exchange = TrailingCleanupExchange()
+                position = {
+                    "side": "long",
+                    "entry": 0.50,
+                    "size": 12.0,
+                    "sl": 0.45,
+                    "hard_sl": 0.44,
+                    "sl_order_id": "old-stop",
+                    "atr": 0.01,
+                }
+                order_manager.update_trailing_sl(exchange, position, current_price=0.60, extreme=0.60)
+                self.assertEqual(position["sl_order_id"], "new-stop")
+                self.assertIn("old-stop", exchange.cancelled)
+                self.assertIn("stale-stop", exchange.cancelled)
+                self.assertNotIn("buy-stop", exchange.cancelled)
+                remaining_ids = {o["id"] for o in exchange.open_orders}
+                self.assertIn("new-stop", remaining_ids)
+                self.assertIn("buy-stop", remaining_ids)
+                self.assertNotIn("old-stop", remaining_ids)
+                self.assertNotIn("stale-stop", remaining_ids)
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
             config.SYMBOL = old_symbol
 
     def test_exchange_filters_floor_market_amount_and_notional(self):
