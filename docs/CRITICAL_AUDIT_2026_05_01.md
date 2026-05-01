@@ -237,11 +237,15 @@ Closed after the addendum:
 9. Risk profile guard: `config.LIVE_PROFILE` defines the only allowed live
    profile shape and `data.make_exchange()` blocks live exchange creation when
    the runtime config still matches the research 10x/%4 profile.
+10. User-data stream live gate: REST polling is rejected as sufficient for live
+    funds. `USER_DATA_STREAM_REQUIRED_FOR_LIVE=True` and
+    `USER_DATA_STREAM_READY=False` block live exchange creation until a
+    testnet-proven stream implementation exists.
 
 The remaining newly merged live blockers are:
 
-1. Decide and document WebSocket user-data stream architecture before live, or
-   explicitly prove polling plus reconciliation is enough.
+None from the Claude/Codex merged P0 addendum. Live trading is still blocked by
+runtime gates and unresolved validation work.
 
 P1 additions:
 

@@ -443,6 +443,48 @@ class SafetyTests(unittest.TestCase):
             for key, value in old_values.items():
                 setattr(config, key, value)
 
+    def test_user_data_stream_gate_blocks_balanced_live_exchange_until_ready(self):
+        keys = [
+            "TESTNET",
+            "LIVE_TRADING_APPROVED",
+            "LEVERAGE",
+            "RISK_PER_TRADE_PCT",
+            "DAILY_LOSS_LIMIT_PCT",
+            "MAX_OPEN_POSITIONS",
+            "MARGIN_MODE",
+            "USER_DATA_STREAM_REQUIRED_FOR_LIVE",
+            "USER_DATA_STREAM_READY",
+        ]
+        old_values = {key: getattr(config, key) for key in keys}
+        try:
+            config.TESTNET = False
+            config.LIVE_TRADING_APPROVED = True
+            config.LEVERAGE = 5
+            config.RISK_PER_TRADE_PCT = 0.03
+            config.DAILY_LOSS_LIMIT_PCT = 0.03
+            config.MAX_OPEN_POSITIONS = 2
+            config.MARGIN_MODE = "cross"
+            config.USER_DATA_STREAM_REQUIRED_FOR_LIVE = True
+            config.USER_DATA_STREAM_READY = False
+            with self.assertRaisesRegex(RuntimeError, "user-data stream gate"):
+                data.make_exchange()
+        finally:
+            for key, value in old_values.items():
+                setattr(config, key, value)
+
+    def test_user_data_stream_status_passes_when_not_required(self):
+        old_required = config.USER_DATA_STREAM_REQUIRED_FOR_LIVE
+        old_ready = config.USER_DATA_STREAM_READY
+        try:
+            config.USER_DATA_STREAM_REQUIRED_FOR_LIVE = False
+            config.USER_DATA_STREAM_READY = False
+            status = data.user_data_stream_status()
+            self.assertTrue(status["ok"])
+            self.assertFalse(status["required_for_live"])
+        finally:
+            config.USER_DATA_STREAM_REQUIRED_FOR_LIVE = old_required
+            config.USER_DATA_STREAM_READY = old_ready
+
     def test_account_safety_confirms_one_way_and_leverage(self):
         old_leverage = config.LEVERAGE
         try:

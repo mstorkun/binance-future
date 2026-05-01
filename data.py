@@ -11,6 +11,9 @@ def make_exchange() -> ccxt.Exchange:
         profile = live_profile_status()
         if not profile["ok"]:
             raise RuntimeError(f"Live trading is blocked by profile guard: {profile['reason']}")
+        user_stream = user_data_stream_status()
+        if not user_stream["ok"]:
+            raise RuntimeError(f"Live trading is blocked by user-data stream gate: {user_stream['reason']}")
 
     params = {
         "apiKey": config.API_KEY,
@@ -68,6 +71,17 @@ def _profile_value_equal(left, right) -> bool:
         except (TypeError, ValueError):
             return False
     return left == right
+
+
+def user_data_stream_status() -> dict:
+    required = bool(getattr(config, "USER_DATA_STREAM_REQUIRED_FOR_LIVE", True))
+    ready = bool(getattr(config, "USER_DATA_STREAM_READY", False))
+    return {
+        "ok": (not required) or ready,
+        "required_for_live": required,
+        "ready": ready,
+        "reason": "" if ((not required) or ready) else "user_data_stream_not_ready",
+    }
 
 
 def _ohlcv_to_df(raw: list) -> pd.DataFrame:
