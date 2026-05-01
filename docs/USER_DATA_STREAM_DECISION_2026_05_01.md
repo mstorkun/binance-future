@@ -33,6 +33,8 @@ This is a no-go gate, not a completed stream implementation.
 
 First implementation layer added:
 
+- [USER_STREAM_LISTEN_KEY_2026_05_01.md](USER_STREAM_LISTEN_KEY_2026_05_01.md)
+  adds listenKey start/keepalive URL state helpers.
 - [USER_STREAM_EVENT_PARSER_2026_05_01.md](USER_STREAM_EVENT_PARSER_2026_05_01.md)
   parses `ORDER_TRADE_UPDATE` payloads and records them into local
   `order_events.jsonl` telemetry.

@@ -44,6 +44,7 @@ import risk_metrics
 import timeframe_sweep
 import trade_executor
 import twap_execution
+import user_stream_client
 import user_stream_events
 import walk_forward
 
@@ -372,6 +373,20 @@ class FakeAccountExchange:
         return [{"id": "stop-1", "type": "stop_market", "reduceOnly": True}]
 
 
+class FakeListenKeyExchange:
+    def __init__(self):
+        self.post_calls = 0
+        self.put_calls = []
+
+    def fapiPrivatePostListenKey(self):
+        self.post_calls += 1
+        return {"listenKey": "listen-key-1"}
+
+    def fapiPrivatePutListenKey(self, params):
+        self.put_calls.append(params)
+        return {"listenKey": params["listenKey"]}
+
+
 class SafetyTests(unittest.TestCase):
     def test_live_state_persists_positions_atomically(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -576,6 +591,29 @@ class SafetyTests(unittest.TestCase):
                 self.assertTrue(rows[0]["requires_immediate_reconcile"])
         finally:
             config.ORDER_EVENTS_JSONL = old_path
+
+    def test_user_stream_listen_key_lifecycle_helpers(self):
+        exchange = FakeListenKeyExchange()
+        state = user_stream_client.start_listen_key(exchange)
+        self.assertEqual(state.listen_key, "listen-key-1")
+        self.assertEqual(exchange.post_calls, 1)
+        refreshed = user_stream_client.keepalive_listen_key(exchange, state)
+        self.assertEqual(refreshed.listen_key, "listen-key-1")
+        self.assertEqual(exchange.put_calls, [{"listenKey": "listen-key-1"}])
+        self.assertTrue(user_stream_client.listen_key_ws_url("abc", testnet=False).endswith("/private/ws/abc"))
+        self.assertTrue(user_stream_client.listen_key_ws_url("abc", testnet=True).endswith("/ws/abc"))
+
+    def test_user_stream_listen_key_state_refresh_decisions(self):
+        created = pd.Timestamp("2026-01-01T00:00:00Z")
+        state = user_stream_client.ListenKeyState(
+            listen_key="abc",
+            created_at=created.isoformat(),
+            keepalive_at=created.isoformat(),
+        )
+        self.assertFalse(state.should_keepalive(now=created + pd.Timedelta(minutes=29)))
+        self.assertTrue(state.should_keepalive(now=created + pd.Timedelta(minutes=30)))
+        self.assertFalse(state.should_reconnect(now=created + pd.Timedelta(hours=22)))
+        self.assertTrue(state.should_reconnect(now=created + pd.Timedelta(hours=23)))
 
     def test_account_safety_confirms_one_way_and_leverage(self):
         old_leverage = config.LEVERAGE
