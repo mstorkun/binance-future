@@ -64,6 +64,7 @@ twap_execution.py            Passive TWAP slice planner
 trade_executor.py            Passive lifecycle contract for future execution refactor
 bias_audit.py                Lookahead/recursive indicator stability audit
 ops_status.py                Local paper/testnet status report
+emergency_kill_switch.py     Dry-run-first emergency cancel/close CLI
 paper_report.py              Detailed paper decision/equity/error report
 paper_runtime.py             Tagged paper/shadow runtime isolation helpers
 mature_bot_compare.py        Side-by-side add-on validation
@@ -105,6 +106,7 @@ python portfolio_param_walk_forward.py --years 3 --max-param-combos 6
 python portfolio_cost_stress.py --wf-results portfolio_param_walk_forward_risk_capped_results.csv --years 3
 python portfolio_holdout.py --years 3 --holdout-bars 500 --max-param-combos 6
 python ops_status.py --json
+python emergency_kill_switch.py --json
 python paper_report.py
 python paper_runner.py --once --reset
 python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks --reset

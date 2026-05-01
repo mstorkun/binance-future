@@ -36,7 +36,7 @@ block. The remaining execution and ops issues below are still live blockers.
 | 4 | Static slippage is optimistic | Yes | Confirmed risk | Cost stress added; live fill review still needed. |
 | 5 | Funding model is weak | Yes | Confirmed risk | Adverse funding stress added; better historical validation remains open. |
 | 6 | Sharpe/Sortino missing | Yes | Confirmed | P1 risk-adjusted metrics open. |
-| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 67 plus 3 subtests, but strategy/risk/order tests remain thin. |
+| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 69 plus 3 subtests, but strategy/risk/order tests remain thin. |
 | 8 | Live state was RAM-only | Yes | Confirmed | Persistent state added; full exchange reconciliation remains open. |
 | 9 | Trailing SL duplicate reduce-only race risk | Yes | Confirmed risk | Extra reduce-only STOP cleanup added after trailing updates; testnet/user-data validation still needed. |
 | 10 | `recvWindow` and time sync missing | Yes | Confirmed gap | `RECV_WINDOW_MS` and ccxt time adjustment added. |
@@ -67,6 +67,7 @@ into the backlog.
 | 21 | End-to-end tick precision audit needed | Closed in code: `hard_stop_from_soft()` no longer rounds to 2 decimals; stop prices pass through exchange tick filters; reduce-only close/emergency-close amounts are normalized through market-lot filters. |
 | 33 | No bar-age guard for stale candles | Closed in code: `bot.py` now skips symbol processing when the last closed bar is older than `MAX_CLOSED_BAR_AGE_MULT` times the active timeframe. |
 | 34 | Live trade decision snapshot missing | Closed in code: entry candidates, risk blocks, successful opens, and failed opens are written to ignored `trade_decisions.jsonl` with bar, indicator, risk, and order-result context. |
+| 35 | No one-command kill switch | Closed in code: `emergency_kill_switch.py` provides dry-run status plus explicitly guarded cancel/close execution using reduce-only market closes and order-event telemetry. |
 | B3 | Trailing SL cancel failure can leave orphan reduce-only stops | Closed in code: after a new trailing SL is created, the bot fetches same-side reduce-only STOP orders and cancels all except the new protected stop. |
 
 ### P0 Live Blockers
@@ -75,7 +76,6 @@ into the backlog.
 |---:|---|---|---|
 | 26 | No WebSocket user-data stream | Polling can miss fills/stops until next loop | Add or explicitly reject user-data stream architecture before live. |
 | 27 | Docs and config disagree on leverage/risk | Operators may believe 5x/%3 while config runs 10x/%4 | Create one go-live profile and mark research profiles as not live. |
-| 35 | No one-command kill switch | Emergency shutdown is operationally ambiguous | Add emergency cancel/close/status script with dry-run guard. |
 | 36 | API permission/IP whitelist runbook missing | API blast radius is undocumented | Add live/testnet key-scope and IP-whitelist runbook. |
 
 ### P1 Engineering And Methodology
@@ -99,14 +99,14 @@ into the backlog.
 |---:|---|---|
 | 37 | `account_safety.py` exists | Position mode, leverage, margin mode, and hard-stop checks are now centralized. |
 | 38 | `ops_status.py --exchange` exists | Exchange safety checks can run separately from file-only status. |
-| 39 | Tests increased | Current test count is 67 plus 3 subtests, but coverage is still not enough for live funds. |
+| 39 | Tests increased | Current test count is 69 plus 3 subtests, but coverage is still not enough for live funds. |
 | 40 | Parameter WF includes Donchian exit | Exit period is now part of the selector grid. |
 
 ## Current Priority Order
 
 1. Add or explicitly reject the WebSocket user-data stream architecture.
 2. Resolve the doc/config risk-profile inconsistency.
-3. Add emergency kill switch and API-key runbook.
+3. Add API-key runbook.
 4. Add risk-adjusted metrics and multiple-testing controls.
 5. Add correlation stress and pattern-weight ablations.
 

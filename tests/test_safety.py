@@ -14,6 +14,7 @@ import config
 import bias_audit
 import data
 import decision_snapshots
+import emergency_kill_switch
 import execution_guard
 import exit_ladder
 import exchange_filters
@@ -267,6 +268,50 @@ class TrailingCleanupExchange(FakeExchangeInfo):
 
     def fetch_open_orders(self, symbol, params=None):
         return list(self.open_orders)
+
+
+class KillSwitchExchange(FakeExchangeInfo):
+    def __init__(self):
+        self.open_orders = {
+            "DOGE/USDT": [
+                {"id": "stop-1", "type": "stop_market", "side": "sell", "amount": 10, "reduceOnly": True}
+            ]
+        }
+        self.positions = [
+            {
+                "symbol": "DOGE/USDT",
+                "contracts": 12.7,
+                "side": "long",
+                "entryPrice": 0.5,
+                "info": {"symbol": "DOGEUSDT", "positionAmt": "12.7"},
+            }
+        ]
+        self.cancelled = []
+        self.created_orders = []
+
+    def fetch_open_orders(self, symbol, params=None):
+        return list(self.open_orders.get(symbol, []))
+
+    def fetch_positions(self, symbols):
+        return [pos for pos in self.positions if pos["symbol"] in symbols]
+
+    def cancel_order(self, order_id, symbol, params=None):
+        self.cancelled.append({"order_id": order_id, "symbol": symbol, "params": params or {}})
+
+    def create_order(self, symbol, type, side, amount, params=None):
+        order = {
+            "id": f"close-{len(self.created_orders) + 1}",
+            "symbol": symbol,
+            "type": type,
+            "side": side,
+            "amount": amount,
+            "filled": amount,
+            "average": 0.5,
+            "clientOrderId": (params or {}).get("newClientOrderId"),
+            "params": params or {},
+        }
+        self.created_orders.append(order)
+        return order
 
 
 class FakeAccountExchange:
@@ -548,6 +593,32 @@ class SafetyTests(unittest.TestCase):
                 self.assertEqual(len(rows), 1)
                 self.assertEqual(rows[0]["event_type"], "unit_test_event")
                 self.assertEqual(rows[0]["nested"]["value"], 1)
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
+
+    def test_kill_switch_dry_run_only_plans_actions(self):
+        exchange = KillSwitchExchange()
+        report = emergency_kill_switch.run_kill_switch(exchange, ["DOGE/USDT"], execute=False)
+        self.assertFalse(report["execute"])
+        self.assertEqual(report["totals"]["open_orders"], 1)
+        self.assertEqual(report["totals"]["positions"], 1)
+        self.assertEqual(exchange.cancelled, [])
+        self.assertEqual(exchange.created_orders, [])
+
+    def test_kill_switch_execute_cancels_and_reduce_only_closes(self):
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                exchange = KillSwitchExchange()
+                report = emergency_kill_switch.run_kill_switch(exchange, ["DOGE/USDT"], execute=True)
+                self.assertEqual(report["totals"]["cancelled"], 1)
+                self.assertEqual(report["totals"]["closed"], 1)
+                self.assertEqual(exchange.cancelled[0]["order_id"], "stop-1")
+                self.assertEqual(exchange.created_orders[0]["side"], "sell")
+                self.assertEqual(exchange.created_orders[0]["amount"], 12.0)
+                self.assertTrue(exchange.created_orders[0]["params"]["reduceOnly"])
+                self.assertIn("newClientOrderId", exchange.created_orders[0]["params"])
         finally:
             config.ORDER_EVENTS_JSONL = old_path
 

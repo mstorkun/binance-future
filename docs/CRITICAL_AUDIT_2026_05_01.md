@@ -229,6 +229,8 @@ Closed after the addendum:
    older than `MAX_CLOSED_BAR_AGE_MULT` times the active timeframe.
 6. Trade decision snapshots: entry candidates, risk blocks, successful opens,
    and failed opens are persisted to ignored `trade_decisions.jsonl`.
+7. Emergency kill switch: `emergency_kill_switch.py` provides dry-run status and
+   explicitly guarded cancel/close execution with reduce-only market closes.
 
 The remaining newly merged live blockers are:
 
@@ -236,8 +238,7 @@ The remaining newly merged live blockers are:
    explicitly prove polling plus reconciliation is enough.
 2. Resolve doc/config risk-profile inconsistency before any go-live profile is
    named.
-3. Add a one-command emergency kill switch.
-4. Document API permission scope and IP whitelist requirements.
+3. Document API permission scope and IP whitelist requirements.
 
 P1 additions:
 

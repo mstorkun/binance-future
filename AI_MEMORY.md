@@ -111,12 +111,12 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `67` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `69` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
-  amount normalization, stale closed-bar detection, and trade decision
-  snapshot persistence.
+  amount normalization, stale closed-bar detection, trade decision snapshot
+  persistence, and emergency kill-switch dry-run/execute paths.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -195,6 +195,10 @@ Other previous validation context:
   entry decisions. `bot.py` writes entry candidates, risk blocks, successful
   opens, and failed opens to ignored `trade_decisions.jsonl`, including bar,
   indicator, flow, risk, and order-result context.
+- `emergency_kill_switch.py`: dry-run-by-default emergency cancel/close CLI.
+  Execution requires `--execute --yes-i-understand`; live config also requires
+  `--allow-live`. It cancels open orders per symbol and closes positions with
+  reduce-only market orders through the shared idempotent client-order-id path.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -277,9 +281,10 @@ Other previous validation context:
   symbol portfolio search.
 - `docs/AUDIT_DIFF_2026_05_01.md`: Claude 10-agent vs Codex triage merge. It
   now marks client order idempotency, partial-fill handling, trailing-stop
-  orphan cleanup, tick precision, stale-bar guard, and live decision snapshots
-  closed in code, while keeping open P0 blockers for user-data stream decision,
-  doc/config risk-profile mismatch, kill switch, and API-key runbook.
+  orphan cleanup, tick precision, stale-bar guard, live decision snapshots, and
+  emergency kill switch closed in code, while keeping open P0 blockers for
+  user-data stream decision, doc/config risk-profile mismatch, and API-key
+  runbook.
 
 ## Runtime / Worktree Notes
 
