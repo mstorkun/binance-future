@@ -173,11 +173,11 @@ Other previous validation context:
 
 ## Runtime / Worktree Notes
 
-- A paper runner was last observed healthy with PID `11284`, status `ok`,
-  equity `1000`, wallet `1000`, open positions `0`, testnet `true`, and
-  live trading approval `false`. It started before the active symbol change, so
-  restart it before expecting DOGE/LINK/TRX paper decisions. This can go stale;
-  verify `paper_heartbeat.json` before relying on it.
+- A paper runner was restarted after the active DOGE/LINK/TRX symbol change and
+  last observed healthy with PID `16020`, status `ok`, equity `1000`, wallet
+  `1000`, open positions `0`, testnet `true`, and live trading approval
+  `false`. This can go stale; verify `paper_heartbeat.json` before relying on
+  it.
 - Runtime paper files are ignored by git.
 - `walk_forward_results.csv` is a known pre-existing dirty file. Do not stage,
   revert, or rewrite it unless the user specifically asks.
