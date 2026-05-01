@@ -11,6 +11,7 @@ import pandas as pd
 import account_safety
 import config
 import bias_audit
+import data
 import exit_ladder
 import exchange_filters
 import flow_data
@@ -34,8 +35,10 @@ import walk_forward
 class FakeExchange:
     def __init__(self):
         self.created_orders = []
+        self.cancel_all_params = []
 
-    def cancel_all_orders(self, symbol):
+    def cancel_all_orders(self, symbol, params=None):
+        self.cancel_all_params.append(params or {})
         raise ccxt.ExchangeError("cancel failed")
 
     def create_order(self, symbol, type, side, amount, params=None):
@@ -118,10 +121,10 @@ class FakeAccountExchange:
             for symbol in symbols
         ]
 
-    def set_leverage(self, leverage, symbol):
+    def set_leverage(self, leverage, symbol, params=None):
         return {"symbol": symbol.replace("/", ""), "leverage": leverage}
 
-    def set_margin_mode(self, margin_mode, symbol):
+    def set_margin_mode(self, margin_mode, symbol, params=None):
         return {"symbol": symbol.replace("/", ""), "marginMode": margin_mode}
 
     def fetch_open_orders(self, symbol):
@@ -165,6 +168,22 @@ class SafetyTests(unittest.TestCase):
         )
         self.assertEqual(set(reconciled), {"DOGE/USDT"})
         self.assertEqual(removed, ["LINK/USDT", "OLD/USDT"])
+
+    def test_signed_params_include_recv_window(self):
+        old_recv = getattr(config, "RECV_WINDOW_MS", 5000)
+        try:
+            config.RECV_WINDOW_MS = 7000
+            params = order_manager.signed_params({"reduceOnly": True})
+            self.assertEqual(params["recvWindow"], 7000)
+            self.assertTrue(params["reduceOnly"])
+        finally:
+            config.RECV_WINDOW_MS = old_recv
+
+    def test_make_exchange_enables_time_difference_adjustment(self):
+        exchange = data.make_exchange()
+        self.assertEqual(exchange.options.get("defaultType"), "future")
+        self.assertTrue(exchange.options.get("adjustForTimeDifference"))
+        self.assertEqual(exchange.options.get("recvWindow"), config.RECV_WINDOW_MS)
 
     def test_account_safety_confirms_one_way_and_leverage(self):
         old_leverage = config.LEVERAGE
@@ -219,7 +238,7 @@ class SafetyTests(unittest.TestCase):
             config.SYMBOL = "DOGE/USDT"
             config.MARGIN_MODE = "cross"
             exchange = FakeAccountExchange()
-            exchange.set_margin_mode = lambda margin_mode, symbol: {"symbol": "DOGEUSDT", "marginMode": "isolated"}
+            exchange.set_margin_mode = lambda margin_mode, symbol, params=None: {"symbol": "DOGEUSDT", "marginMode": "isolated"}
             self.assertFalse(order_manager.set_margin_mode(exchange))
         finally:
             config.SYMBOL = old_symbol
@@ -232,7 +251,7 @@ class SafetyTests(unittest.TestCase):
             config.LEVERAGE = 10
             config.SYMBOL = "DOGE/USDT"
             exchange = FakeAccountExchange(dual_side=False, leverage=5)
-            exchange.set_leverage = lambda leverage, symbol: {"symbol": "DOGEUSDT", "leverage": 5}
+            exchange.set_leverage = lambda leverage, symbol, params=None: {"symbol": "DOGEUSDT", "leverage": 5}
             self.assertFalse(order_manager.set_leverage(exchange))
         finally:
             config.LEVERAGE = old_leverage
@@ -347,8 +366,10 @@ class SafetyTests(unittest.TestCase):
     def test_market_close_still_runs_when_cancel_fails(self):
         old_symbol = config.SYMBOL
         old_events = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        old_recv = getattr(config, "RECV_WINDOW_MS", 5000)
         try:
             with tempfile.TemporaryDirectory() as tmp:
+                config.RECV_WINDOW_MS = 7000
                 config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
                 config.SYMBOL = "SOL/USDT"
                 exchange = FakeExchange()
@@ -357,9 +378,12 @@ class SafetyTests(unittest.TestCase):
                 self.assertEqual(len(exchange.created_orders), 1)
                 self.assertEqual(exchange.created_orders[0]["side"], "sell")
                 self.assertTrue(exchange.created_orders[0]["params"]["reduceOnly"])
+                self.assertEqual(exchange.created_orders[0]["params"]["recvWindow"], 7000)
+                self.assertEqual(exchange.cancel_all_params[0]["recvWindow"], 7000)
         finally:
             config.SYMBOL = old_symbol
             config.ORDER_EVENTS_JSONL = old_events
+            config.RECV_WINDOW_MS = old_recv
 
     def test_flow_ttl_marks_old_bucket_stale(self):
         old_max_age = getattr(config, "FLOW_MAX_AGE_MINUTES", 300)

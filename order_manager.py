@@ -13,6 +13,13 @@ log = logging.getLogger(__name__)
 MIN_NOTIONAL_USDT = 100  # Binance Futures BTC min notional ~100 USDT
 
 
+def signed_params(extra: dict | None = None) -> dict:
+    params = {"recvWindow": int(getattr(config, "RECV_WINDOW_MS", 5000))}
+    if extra:
+        params.update(extra)
+    return params
+
+
 def ensure_one_way_mode(exchange: ccxt.Exchange) -> bool:
     """Bot reduceOnly stop logic assumes Binance one-way position mode."""
     if not getattr(config, "REQUIRE_ONE_WAY_MODE", True):
@@ -27,7 +34,7 @@ def ensure_one_way_mode(exchange: ccxt.Exchange) -> bool:
 def set_leverage(exchange: ccxt.Exchange) -> bool:
     """Kaldıracı ayarla. Başarısızsa False döner — pozisyon açma iptal edilmeli."""
     try:
-        response = exchange.set_leverage(config.LEVERAGE, config.SYMBOL)
+        response = exchange.set_leverage(config.LEVERAGE, config.SYMBOL, signed_params())
         if not account_safety.confirm_set_leverage_response(response, config.LEVERAGE):
             log.error(f"Kaldirac cevabi hedefle uyusmuyor: hedef={config.LEVERAGE}, cevap={response}")
             return False
@@ -45,7 +52,7 @@ def set_margin_mode(exchange: ccxt.Exchange) -> bool:
     """Margin mode'u config ile uyumlu hale getir. Basarisizsa pozisyon acma iptal edilir."""
     desired = getattr(config, "MARGIN_MODE", "cross")
     try:
-        response = exchange.set_margin_mode(desired, config.SYMBOL)
+        response = exchange.set_margin_mode(desired, config.SYMBOL, signed_params())
         if not account_safety.confirm_set_margin_mode_response(response, desired):
             log.error(f"Margin mode cevabi hedefle uyusmuyor: hedef={desired}, cevap={response}")
             return False
@@ -68,7 +75,7 @@ def _safe_close_market(exchange: ccxt.Exchange, side: str, size: float):
             type="market",
             side=close_side,
             amount=size,
-            params={"reduceOnly": True},
+            params=signed_params({"reduceOnly": True}),
         )
         order_events.record("emergency_close_ack", order=order_events.extract_order_summary(order))
     except Exception as e:
@@ -126,7 +133,7 @@ def _create_sl_order(
             type="stop_market",
             side=sl_side,
             amount=checked_size,
-            params=eg.exchange_stop_params(checked_sl_price),
+            params=signed_params(eg.exchange_stop_params(checked_sl_price)),
         )
         order_events.record("stop_order_ack", order=order_events.extract_order_summary(order))
         return order
@@ -183,7 +190,7 @@ def _resolve_market_fill(
     order_id = order.get("id") if order else None
     if order_id and (price == fallback_price or size == fallback_size):
         try:
-            fetched = exchange.fetch_order(order_id, config.SYMBOL)
+            fetched = exchange.fetch_order(order_id, config.SYMBOL, signed_params())
             order_events.record(f"{context}_order_fetch", order=order_events.extract_order_summary(fetched))
             price = _order_avg_price(fetched, price)
             size = _order_filled_amount(fetched, size)
@@ -204,7 +211,7 @@ def _resolve_market_fill(
 def _cancel_order_safe(exchange: ccxt.Exchange, order_id: str):
     order_events.record("order_cancel_submit", order_id=order_id)
     try:
-        exchange.cancel_order(order_id, config.SYMBOL)
+        exchange.cancel_order(order_id, config.SYMBOL, signed_params())
         order_events.record("order_cancel_ack", order_id=order_id)
     except Exception as e:
         order_events.record("order_cancel_error", order_id=order_id, error=str(e))
@@ -280,10 +287,10 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
             type="market",
             side=order_side,
             amount=size,
-            params={
+            params=signed_params({
                 "reduceOnly": False,
                 "newOrderRespType": getattr(config, "MARKET_ORDER_RESP_TYPE", "RESULT"),
-            },
+            }),
         )
         order_events.record("entry_order_ack", order=order_events.extract_order_summary(order))
         log.info(f"Pozisyon açıldı: {side.upper()} | miktar={size} | fiyat≈{price:.2f}")
@@ -399,7 +406,7 @@ def close_position_market(exchange: ccxt.Exchange, side: str, size: float) -> bo
     """Fail-safe reduce-only market close; cancel failures do not block close."""
     close_side = "sell" if side == "long" else "buy"
     try:
-        exchange.cancel_all_orders(config.SYMBOL)
+        exchange.cancel_all_orders(config.SYMBOL, signed_params())
         order_events.record("close_cancel_all_ack")
     except ccxt.BaseError as e:
         order_events.record("close_cancel_all_error", error=str(e))
@@ -412,7 +419,7 @@ def close_position_market(exchange: ccxt.Exchange, side: str, size: float) -> bo
             type="market",
             side=close_side,
             amount=size,
-            params={"reduceOnly": True},
+            params=signed_params({"reduceOnly": True}),
         )
         order_events.record("close_order_ack", order=order_events.extract_order_summary(order))
         fill_price, filled_size = _resolve_market_fill(exchange, order, 0.0, size, context="close")
@@ -426,7 +433,7 @@ def close_position_market(exchange: ccxt.Exchange, side: str, size: float) -> bo
 
 def close_all(exchange: ccxt.Exchange):
     try:
-        exchange.cancel_all_orders(config.SYMBOL)
+        exchange.cancel_all_orders(config.SYMBOL, signed_params())
     except Exception as e:
         log.warning(f"Emir iptal hatası: {e}")
     positions = exchange.fetch_positions([config.SYMBOL])
@@ -441,7 +448,7 @@ def close_all(exchange: ccxt.Exchange):
 def fetch_active_sl(exchange: ccxt.Exchange) -> tuple[float | None, str | None]:
     """Borsada aktif SL emrini çek — state recovery için."""
     try:
-        orders = exchange.fetch_open_orders(config.SYMBOL)
+        orders = exchange.fetch_open_orders(config.SYMBOL, params=signed_params())
     except Exception as e:
         log.warning(f"Açık emir sorgusu başarısız: {e}")
         return None, None

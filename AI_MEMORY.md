@@ -168,7 +168,8 @@ Other previous validation context:
   against Binance/testnet without changing the normal file-only status command.
 - `order_manager.py`: live/testnet order placement, one-way mode check, hard
   stop placement, reduce-only close. It now attempts margin-mode confirmation
-  before leverage and entry order submission.
+  before leverage and entry order submission. Signed order-management calls use
+  `config.RECV_WINDOW_MS` via `signed_params()`.
 - `order_events.py`: append-only JSONL telemetry for live/testnet order
   lifecycle events. `order_manager.py` records entry, stop, close, emergency
   close, cancel, order ack/error, and fill-resolution events. Runtime output is

@@ -11,7 +11,11 @@ def make_exchange() -> ccxt.Exchange:
     params = {
         "apiKey": config.API_KEY,
         "secret": config.API_SECRET,
-        "options": {"defaultType": "future"},
+        "options": {
+            "defaultType": "future",
+            "adjustForTimeDifference": bool(getattr(config, "ADJUST_FOR_TIME_DIFFERENCE", True)),
+            "recvWindow": int(getattr(config, "RECV_WINDOW_MS", 5000)),
+        },
     }
     exchange = ccxt.binance(params)
     if config.TESTNET:
