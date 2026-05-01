@@ -14,6 +14,7 @@ import bias_audit
 import exit_ladder
 import exchange_filters
 import flow_data
+import live_state
 import order_manager
 import order_events
 import paper_runtime
@@ -112,6 +113,41 @@ class FakeAccountExchange:
 
 
 class SafetyTests(unittest.TestCase):
+    def test_live_state_persists_positions_atomically(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "live_state.json"
+            positions = live_state.upsert_position(
+                "DOGE/USDT",
+                {"side": "long", "entry": 0.1, "size": 100, "extreme": 0.12},
+                path,
+            )
+            self.assertIn("DOGE/USDT", positions)
+            loaded = live_state.load_positions(path)
+            self.assertEqual(loaded["DOGE/USDT"]["side"], "long")
+            self.assertEqual(loaded["DOGE/USDT"]["extreme"], 0.12)
+
+            positions = live_state.remove_position("DOGE/USDT", path)
+            self.assertNotIn("DOGE/USDT", positions)
+            self.assertEqual(live_state.load_positions(path), {})
+
+    def test_live_state_reconcile_drops_closed_local_positions(self):
+        local = {
+            "DOGE/USDT": {"side": "long"},
+            "LINK/USDT": {"side": "short"},
+            "OLD/USDT": {"side": "long"},
+        }
+        exchange_positions = [
+            {"symbol": "DOGE/USDT", "contracts": 10},
+            {"symbol": "LINK/USDT", "contracts": 0},
+        ]
+        reconciled, removed = live_state.reconcile_positions(
+            local,
+            exchange_positions,
+            ["DOGE/USDT", "LINK/USDT"],
+        )
+        self.assertEqual(set(reconciled), {"DOGE/USDT"})
+        self.assertEqual(removed, ["LINK/USDT", "OLD/USDT"])
+
     def test_account_safety_confirms_one_way_and_leverage(self):
         old_leverage = config.LEVERAGE
         try:

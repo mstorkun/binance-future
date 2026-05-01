@@ -17,6 +17,8 @@ paper_*_heartbeat.json
 paper_*_runner.lock
 order_events.jsonl
 order_events_*.jsonl
+live_state.json
+live_state_*.json
 testnet_fill_probe.csv
 mature_bot_compare_results.csv
 portfolio_candidate_sweep_results.csv

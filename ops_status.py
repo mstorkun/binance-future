@@ -65,6 +65,7 @@ def build_status(include_exchange: bool = False) -> dict[str, Any]:
     trades_tail = _csv_tail(getattr(config, "PAPER_TRADES_CSV", "paper_trades.csv"), 20)
     errors_tail = _csv_tail(getattr(config, "PAPER_ERRORS_CSV", "paper_errors.csv"), 20)
     order_events_tail = _jsonl_tail(getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl"), 20)
+    live_state = _read_json(getattr(config, "LIVE_STATE_FILE", "live_state.json"))
 
     last_equity = equity_tail.iloc[-1].to_dict() if not equity_tail.empty else {}
     actions = decisions_tail["action"].value_counts().to_dict() if "action" in decisions_tail else {}
@@ -96,6 +97,8 @@ def build_status(include_exchange: bool = False) -> dict[str, Any]:
         "recent_errors": int(len(errors_tail)),
         "recent_order_events": order_event_counts,
         "latest_order_event": order_events_tail[-1] if order_events_tail else {},
+        "live_state_positions": len(live_state.get("positions") or {}),
+        "live_state_updated_at": live_state.get("updated_at"),
         "live_trading_approved": bool(getattr(config, "LIVE_TRADING_APPROVED", False)),
         "testnet": bool(getattr(config, "TESTNET", True)),
     }

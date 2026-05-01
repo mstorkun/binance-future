@@ -172,6 +172,10 @@ Other previous validation context:
   lifecycle events. `order_manager.py` records entry, stop, close, emergency
   close, cancel, order ack/error, and fill-resolution events. Runtime output is
   `order_events.jsonl` and is ignored by git.
+- `live_state.py`: persistent JSON state for live/testnet active positions.
+  `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
+  changes, and reconciles stale local symbols against exchange open positions.
+  Runtime output is `live_state.json` and is ignored by git.
 - `exchange_filters.py`: Binance Futures `exchangeInfo` filter validation for
   entry and stop orders. It validates tick size, step size, market lot size,
   minimum notional, percent-price bounds, and symbol trading status before

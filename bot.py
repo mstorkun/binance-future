@@ -29,6 +29,7 @@ import indicators as ind
 import strategy as strat
 import risk as r
 import execution_guard as eg
+import live_state
 import order_manager as om
 import liquidation
 
@@ -48,7 +49,14 @@ log = logging.getLogger(__name__)
 exchange         = data.make_exchange()
 daily_start_bal  = None
 daily_stop_active = False
-active_positions = {}    # symbol -> {"side", "entry", "sl", "size", "extreme"}
+active_positions = live_state.load_positions()    # symbol -> {"side", "entry", "sl", "size", "extreme"}
+
+
+def _persist_positions() -> None:
+    try:
+        live_state.save_positions(active_positions)
+    except Exception as e:
+        log.error(f"Live state yazilamadi: {e}")
 
 
 def _has_open_position() -> dict | None:
@@ -121,12 +129,21 @@ def run():
                 config.SYMBOL = sym
                 om.close_all(exchange)
             active_positions.clear()
+            _persist_positions()
             daily_stop_active = True
             return
 
         # Global açık pozisyon sayısı (tüm semboller arası)
         try:
             all_open = data.fetch_all_open_positions(exchange, config.SYMBOLS)
+            active_positions, removed_symbols = live_state.reconcile_positions(
+                active_positions,
+                all_open,
+                config.SYMBOLS,
+            )
+            if removed_symbols:
+                log.info(f"State reconciliation: lokal kapali pozisyonlar temizlendi: {removed_symbols}")
+                _persist_positions()
             global_open_count = len(all_open)
         except Exception as e:
             log.warning(f"Global pozisyon sorgu hatası: {e}, lokal state kullanılıyor.")
@@ -164,6 +181,7 @@ def run():
                 if live_pos:
                     if sym not in active_positions:
                         active_positions[sym] = _recover_position(live_pos, df)
+                        _persist_positions()
 
                     pos = active_positions[sym]
                     closed_bar = df.iloc[-2]
@@ -177,6 +195,7 @@ def run():
                         )
                         om.close_position_market(exchange, pos["side"], pos["size"])
                         active_positions.pop(sym, None)
+                        _persist_positions()
                         continue
 
                     # Trend tersine döndü mü?
@@ -184,6 +203,7 @@ def run():
                         log.info(f"[{sym}] Trend tersine döndü → {pos['side'].upper()} kapatılıyor.")
                         om.close_position_market(exchange, pos["side"], pos["size"])
                         active_positions.pop(sym, None)
+                        _persist_positions()
                         continue
 
                     # Extreme güncelle
@@ -191,15 +211,18 @@ def run():
                         pos["extreme"] = max(pos["extreme"], float(closed_bar["high"]))
                     else:
                         pos["extreme"] = min(pos["extreme"], float(closed_bar["low"]))
+                    _persist_positions()
 
                     # Trailing SL hesapla ve gerekirse borsada güncelle
                     om.update_trailing_sl(exchange, pos, cur_price, pos["extreme"], bar=closed_bar)
+                    _persist_positions()
                     continue
 
                 # 4b. Açık pozisyon yok — bot state'i temizle, yeni sinyal ara
                 if sym in active_positions:
                     log.info(f"[{sym}] Pozisyon dışarıda kapanmış (SL veya manuel).")
                     active_positions.pop(sym, None)
+                    _persist_positions()
 
                 signal = strat.get_signal(df)
                 log.info(f"[{sym}] Sinyal: {signal or 'YOK'}")
@@ -249,6 +272,7 @@ def run():
                         "extreme":      result["entry"],
                         "sl_order_id":  result.get("sl_order_id"),
                     }
+                    _persist_positions()
                     log.info(f"[{sym}] {signal.upper()} pozisyon başarıyla açıldı. Giriş: {result['entry']} SL: {result['sl']:.2f}")
 
             except Exception as e:
