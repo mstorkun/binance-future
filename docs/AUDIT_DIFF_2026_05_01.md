@@ -36,7 +36,7 @@ block. The remaining execution and ops issues below are still live blockers.
 | 4 | Static slippage is optimistic | Yes | Confirmed risk | Cost stress added; live fill review still needed. |
 | 5 | Funding model is weak | Yes | Confirmed risk | Adverse funding stress added; better historical validation remains open. |
 | 6 | Sharpe/Sortino missing | Yes | Confirmed | Closed for basic reporting: `risk_metrics.py`, `risk_adjusted_report.py`, and candidate sweep Sharpe/Sortino/Calmar fields added. |
-| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 93 plus 3 subtests, but strategy/risk/order tests remain thin. |
+| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 94 plus 3 subtests, but strategy/risk/order tests remain thin. |
 | 8 | Live state was RAM-only | Yes | Confirmed | Persistent state added; full exchange reconciliation remains open. |
 | 9 | Trailing SL duplicate reduce-only race risk | Yes | Confirmed risk | Extra reduce-only STOP cleanup added after trailing updates; testnet/user-data validation still needed. |
 | 10 | `recvWindow` and time sync missing | Yes | Confirmed gap | `RECV_WINDOW_MS` and ccxt time adjustment added. |
@@ -100,15 +100,15 @@ into the backlog.
 |---:|---|---|
 | 37 | `account_safety.py` exists | Position mode, leverage, margin mode, and hard-stop checks are now centralized. |
 | 38 | `ops_status.py --exchange` exists | Exchange safety checks can run separately from file-only status. |
-| 39 | Tests increased | Current test count is 93 plus 3 subtests, but coverage is still not enough for live funds. |
+| 39 | Tests increased | Current test count is 94 plus 3 subtests, but coverage is still not enough for live funds. |
 | 40 | Parameter WF includes Donchian exit | Exit period is now part of the selector grid. |
 
 ## Current Priority Order
 
 1. Run the full candidate-by-fold PBO matrix job and review results.
-2. Add websocket runner/event ordering and wire live-state reconciliation for
-   the user-data stream; listenKey helper, parser, and pure reconciliation
-   decisions are now present.
+2. Add websocket runner/event ordering for the user-data stream; listenKey,
+   parser, reconciliation decisions, and single-message live_state handler are
+   now present.
 
 ## Decision
 

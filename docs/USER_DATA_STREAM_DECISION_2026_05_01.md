@@ -40,9 +40,11 @@ First implementation layer added:
   `order_events.jsonl` telemetry.
 - [USER_STREAM_RECONCILE_2026_05_01.md](USER_STREAM_RECONCILE_2026_05_01.md)
   adds conservative local position reconciliation decisions for parsed events.
+- [USER_STREAM_RUNTIME_HANDLER_2026_05_01.md](USER_STREAM_RUNTIME_HANDLER_2026_05_01.md)
+  persists parsed/reconciled order updates into `live_state`.
 
 The stream runner, keepalive loop, reconnect handling, and live-state
-reconciliation are still missing.
+event ordering/deduplication are still missing.
 
 ## Required Stream Design Before Live
 

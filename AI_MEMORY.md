@@ -111,7 +111,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `93` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `94` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
@@ -123,7 +123,8 @@ Other previous validation context:
   passive TWAP/executor guardrails, exact requirement pinning, and paper lock
   heartbeat refresh, bias-audit report serialization, PBO matrix reporting, and
   Binance user-stream order-update parsing, listenKey lifecycle helpers, and
-  conservative user-stream reconciliation decisions.
+  conservative user-stream reconciliation decisions, and the user-stream runtime
+  handler.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
@@ -159,6 +160,11 @@ Other previous validation context:
   conservatively. It removes state on reduce-only filled stops or
   liquidation/ADL, and marks partial/non-terminal updates. It is not wired into
   live_state yet.
+- User-stream runtime handler:
+  `user_stream_runtime.py` records one parsed update, applies reconcile
+  decisions, persists changed `live_state` positions, and records a
+  `user_stream_reconcile_decision`. There is still no websocket runner or event
+  ordering/deduplication loop.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -296,6 +302,8 @@ Other previous validation context:
   helpers for the future user-data stream runner.
 - `docs/USER_STREAM_RECONCILE_2026_05_01.md`: documents conservative
   local-position decisions from parsed user-stream events.
+- `docs/USER_STREAM_RUNTIME_HANDLER_2026_05_01.md`: documents the single-message
+  parser/reconcile/live_state adapter for future websocket consumption.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -331,6 +339,8 @@ Other previous validation context:
   websocket connection yet.
 - `user_stream_reconcile.py`: conservative position-state decisions from parsed
   user-stream order updates; not wired into live runtime yet.
+- `user_stream_runtime.py`: single-message handler that records, reconciles, and
+  persists parsed user-stream order updates; no websocket loop yet.
 - `correlation_stress.py`: report-only pairwise symbol return correlation
   stress. It writes ignored `correlation_stress_report.json` and
   `correlation_stress_pairs.csv`; it does not change sizing behavior.

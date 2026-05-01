@@ -64,6 +64,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - User-stream parser: [docs/USER_STREAM_EVENT_PARSER_2026_05_01.md](docs/USER_STREAM_EVENT_PARSER_2026_05_01.md) parses Binance `ORDER_TRADE_UPDATE` events into local order-event telemetry.
 - User-stream listenKey helpers: [docs/USER_STREAM_LISTEN_KEY_2026_05_01.md](docs/USER_STREAM_LISTEN_KEY_2026_05_01.md) adds start/keepalive URL state helpers without opening a websocket.
 - User-stream reconcile: [docs/USER_STREAM_RECONCILE_2026_05_01.md](docs/USER_STREAM_RECONCILE_2026_05_01.md) adds conservative local position reconciliation decisions for parsed stream events.
+- User-stream runtime handler: [docs/USER_STREAM_RUNTIME_HANDLER_2026_05_01.md](docs/USER_STREAM_RUNTIME_HANDLER_2026_05_01.md) persists parsed/reconciled order updates into `live_state`.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files
@@ -88,6 +89,7 @@ emergency_kill_switch.py     Dry-run-first emergency cancel/close CLI
 user_stream_client.py        Binance user-stream listenKey lifecycle helpers
 user_stream_events.py        Binance user-stream ORDER_TRADE_UPDATE parser
 user_stream_reconcile.py     Conservative user-stream position-state decisions
+user_stream_runtime.py       Single-message user-stream live_state handler
 paper_report.py              Detailed paper decision/equity/error report
 paper_runtime.py             Tagged paper/shadow runtime isolation helpers
 mature_bot_compare.py        Side-by-side add-on validation

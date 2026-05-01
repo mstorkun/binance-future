@@ -47,6 +47,7 @@ import twap_execution
 import user_stream_client
 import user_stream_events
 import user_stream_reconcile
+import user_stream_runtime
 import walk_forward
 
 
@@ -668,6 +669,46 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(decision["action"], "mark_position")
         self.assertEqual(positions["LINK/USDT"]["last_user_stream_order_status"], "PARTIALLY_FILLED")
         self.assertEqual(positions["LINK/USDT"]["last_user_stream_filled_qty"], 4.0)
+
+    def test_user_stream_runtime_persists_reconciled_positions(self):
+        old_events = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                state_path = Path(tmp) / "live_state.json"
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "order_events.jsonl")
+                live_state.save_positions({"DOGE/USDT": {"side": "long", "size": 100}}, state_path)
+                result = user_stream_runtime.handle_order_trade_update(
+                    {
+                        "e": "ORDER_TRADE_UPDATE",
+                        "E": 1,
+                        "T": 2,
+                        "o": {
+                            "s": "DOGEUSDT",
+                            "c": "hard-sl",
+                            "S": "SELL",
+                            "o": "STOP_MARKET",
+                            "ot": "STOP_MARKET",
+                            "x": "TRADE",
+                            "X": "FILLED",
+                            "i": 1,
+                            "q": "100",
+                            "z": "100",
+                            "R": True,
+                        },
+                    },
+                    state_path=state_path,
+                )
+                self.assertTrue(result["changed"])
+                self.assertEqual(live_state.load_positions(state_path), {})
+                rows = [
+                    json.loads(line)
+                    for line in Path(config.ORDER_EVENTS_JSONL).read_text(encoding="utf-8").splitlines()
+                ]
+                self.assertEqual(rows[0]["event_type"], "user_stream_order_update")
+                self.assertEqual(rows[1]["event_type"], "user_stream_reconcile_decision")
+                self.assertEqual(rows[1]["action"], "remove_position")
+        finally:
+            config.ORDER_EVENTS_JSONL = old_events
 
     def test_account_safety_confirms_one_way_and_leverage(self):
         old_leverage = config.LEVERAGE
