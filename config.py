@@ -14,6 +14,8 @@ REQUIRE_ONE_WAY_MODE = True
 MARKET_ORDER_RESP_TYPE = "RESULT"
 RECV_WINDOW_MS = 5000
 ADJUST_FOR_TIME_DIFFERENCE = True
+CREATE_ORDER_MAX_RETRIES = 2
+PARTIAL_FILL_POLICY = "abort"  # "abort" or "accept"
 TESTNET    = True   # False = canlı işlem
 
 # --- Piyasa ---

@@ -188,13 +188,14 @@ Not allowed:
 
 ## Next Codex Action
 
-Implement P0 production repair in this order:
+Continue the remaining P0 production repair in this order:
 
-1. order-event persistence,
-2. persistent live/testnet position state,
-3. startup reconciliation,
-4. margin-mode status,
-5. alerting.
+1. tick-size precision audit for all live/testnet order prices,
+2. WebSocket user-data stream decision and/or reconciliation proof,
+3. doc/config go-live risk-profile consistency,
+4. stale-bar guard before live signal execution,
+5. live trade decision snapshots,
+6. emergency kill switch and API-key runbook.
 
 In parallel, begin methodology repair with true parameter walk-forward and a
 final holdout.
@@ -209,23 +210,26 @@ persistent order events, persistent live/testnet state, margin-mode handling,
 `recvWindow`/time-difference policy, and file-based alerts.
 
 Those repairs reduce several original gaps, but live trading is still blocked.
-The newly merged live blockers are:
+Closed after the addendum:
 
-1. Add deterministic `clientOrderId` / idempotency for entry, stop, close, and
-   retry paths.
-2. Fix partial-fill handling so `_resolve_market_fill` cannot size state/stops
-   as if a partial fill were full.
-3. Audit tick-size precision end to end; every live stop, trailing stop, and
+1. Deterministic `clientOrderId` / idempotency for entry, hard SL, trailing SL,
+   close, emergency close, retry, timeout, and duplicate recovery paths.
+2. Partial-fill handling so `_resolve_market_fill` cannot size state/stops as
+   if a partial fill were full.
+
+The remaining newly merged live blockers are:
+
+1. Audit tick-size precision end to end; every live stop, trailing stop, and
    close price must pass exchange filters.
-4. Decide and document WebSocket user-data stream architecture before live, or
+2. Decide and document WebSocket user-data stream architecture before live, or
    explicitly prove polling plus reconciliation is enough.
-5. Resolve doc/config risk-profile inconsistency before any go-live profile is
+3. Resolve doc/config risk-profile inconsistency before any go-live profile is
    named.
-6. Add bar-age guard before using `df.iloc[-2]` for live decisions after
+4. Add bar-age guard before using `df.iloc[-2]` for live decisions after
    downtime.
-7. Persist live trade decision snapshots for forensic review.
-8. Add a one-command emergency kill switch.
-9. Document API permission scope and IP whitelist requirements.
+5. Persist live trade decision snapshots for forensic review.
+6. Add a one-command emergency kill switch.
+7. Document API permission scope and IP whitelist requirements.
 
 P1 additions:
 

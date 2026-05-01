@@ -111,7 +111,8 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest tests/test_safety.py -q` -> `26` tests passed.
+  `python -m pytest -q` -> `56` tests passed after the client order
+  idempotency and partial-fill handling fixes.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -169,7 +170,12 @@ Other previous validation context:
 - `order_manager.py`: live/testnet order placement, one-way mode check, hard
   stop placement, reduce-only close. It now attempts margin-mode confirmation
   before leverage and entry order submission. Signed order-management calls use
-  `config.RECV_WINDOW_MS` via `signed_params()`.
+  `config.RECV_WINDOW_MS` via `signed_params()`. Entry, hard SL, trailing SL,
+  close, and emergency close orders use deterministic `newClientOrderId`
+  values; retry/timeout/duplicate paths reuse the same id and reconcile through
+  `fetch_order`. `_resolve_market_fill()` returns explicit requested, filled,
+  and remaining quantities and applies `PARTIAL_FILL_POLICY` (`abort` default,
+  `accept` optional) so state, SL, and rollback use filled size only.
 - `order_events.py`: append-only JSONL telemetry for live/testnet order
   lifecycle events. `order_manager.py` records entry, stop, close, emergency
   close, cancel, order ack/error, and fill-resolution events. Runtime output is
@@ -206,6 +212,11 @@ Other previous validation context:
   changing the strategy.
 - `timeframe_sweep.py`: compares 1h/2h/4h with raw and scaled indicator
   horizons.
+- `testnet_fill_probe.py`: locked testnet fill/slippage probe plus local
+  simulation flags for partial-fill rollback and duplicate client-order-id
+  reconciliation. Latest committed simulation artifacts are
+  `testnet_fill_probe_simulation.csv` and `testnet_fill_probe_simulation.jsonl`;
+  they do not send real exchange orders.
 - `portfolio_param_walk_forward.py`: research-only portfolio walk-forward that
   selects Donchian/exit/volume/ATR-stop parameters and risk profile on the train
   window, then applies the selected candidate to the OOS test window. Use this
@@ -246,20 +257,21 @@ Other previous validation context:
 - `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for
   symbol portfolio search.
 - `docs/AUDIT_DIFF_2026_05_01.md`: Claude 10-agent vs Codex triage merge. It
-  adds open P0 blockers for client order idempotency, partial-fill handling,
-  tick precision, user-data stream decision, doc/config risk-profile mismatch,
-  stale-bar guard, live decision snapshots, kill switch, and API-key runbook.
+  now marks client order idempotency and partial-fill handling closed, while
+  keeping open P0 blockers for tick precision, user-data stream decision,
+  doc/config risk-profile mismatch, stale-bar guard, live decision snapshots,
+  kill switch, and API-key runbook.
 
 ## Runtime / Worktree Notes
 
 - A paper runner was restarted after the active DOGE/LINK/TRX symbol change and
-  last observed healthy with PID `16020`, status `ok`, equity `1000`, wallet
+  last observed healthy with PID `9400`, status `ok`, equity `1000`, wallet
   `1000`, open positions `0`, testnet `true`, and live trading approval
   `false`. This can go stale; verify `paper_heartbeat.json` before relying on
   it.
 - A 2h scaled shadow paper runner was started with:
   `python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks`.
-  Last observed PID `13032`, heartbeat `ok`, equity `1000`, wallet `1000`,
+  Last observed PID `17316`, heartbeat `ok`, equity `1000`, wallet `1000`,
   open positions `0`, actions `{'no_signal': 6}`, warnings none. It writes
   isolated files such as `paper_shadow_2h_state.json` and can be checked with
   `python paper_report.py --tag shadow_2h`.

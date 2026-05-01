@@ -97,6 +97,84 @@ class FakeExchangeInfo:
         }
 
 
+class RetryCreateExchange:
+    def __init__(self):
+        self.created_params = []
+
+    def create_order(self, symbol, type, side, amount, params=None):
+        self.created_params.append(params or {})
+        if len(self.created_params) == 1:
+            raise ccxt.NetworkError("timeout after submit")
+        return {
+            "id": "retry-order",
+            "clientOrderId": (params or {}).get("newClientOrderId"),
+            "amount": amount,
+            "filled": amount,
+            "average": 100.0,
+        }
+
+
+class DuplicateCreateExchange:
+    def __init__(self):
+        self.fetch_params = None
+
+    def create_order(self, symbol, type, side, amount, params=None):
+        raise ccxt.ExchangeError("-2010 Duplicate order sent")
+
+    def fetch_order(self, order_id, symbol, params=None):
+        self.fetch_params = params or {}
+        return {
+            "id": "existing-order",
+            "clientOrderId": self.fetch_params.get("origClientOrderId"),
+            "amount": 2.0,
+            "filled": 2.0,
+            "average": 101.0,
+        }
+
+
+class PartialFillExchange:
+    def __init__(self):
+        self.cancelled = []
+        self.created_orders = []
+
+    def cancel_order(self, order_id, symbol, params=None):
+        self.cancelled.append({"order_id": order_id, "symbol": symbol, "params": params or {}})
+
+    def create_order(self, symbol, type, side, amount, params=None):
+        order = {
+            "id": f"created-{len(self.created_orders) + 1}",
+            "symbol": symbol,
+            "type": type,
+            "side": side,
+            "amount": amount,
+            "filled": amount,
+            "average": 100.0,
+            "clientOrderId": (params or {}).get("newClientOrderId"),
+            "params": params or {},
+        }
+        self.created_orders.append(order)
+        return order
+
+
+class StopOrderExchange(FakeExchangeInfo):
+    def __init__(self):
+        self.created_orders = []
+
+    def create_order(self, symbol, type, side, amount, params=None):
+        order = {
+            "id": "stop-order",
+            "symbol": symbol,
+            "type": type,
+            "side": side,
+            "amount": amount,
+            "filled": 0.0,
+            "clientOrderId": (params or {}).get("newClientOrderId"),
+            "params": params or {},
+        }
+        self.created_orders.append(order)
+        return order
+
+
 class FakeAccountExchange:
     def __init__(self, dual_side=False, leverage=10, margin_mode="cross", contracts=0, has_stop=True):
         self.dual_side = dual_side
@@ -342,6 +420,186 @@ class SafetyTests(unittest.TestCase):
                 self.assertIn("close_fill_resolved", event_types)
         finally:
             config.ORDER_EVENTS_JSONL = old_path
+            config.SYMBOL = old_symbol
+
+    def test_client_order_id_deterministic_on_retry(self):
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                cid = order_manager.client_order_id(
+                    "DOGE/USDT",
+                    "entry",
+                    epoch_ms=1770000000000,
+                    nonce8="abc12345",
+                )
+                exchange = RetryCreateExchange()
+                order, resolved_cid, duplicate = order_manager._create_order_idempotent(
+                    exchange,
+                    symbol="DOGE/USDT",
+                    type="market",
+                    side="buy",
+                    amount=2.0,
+                    intent="entry",
+                    params={"reduceOnly": False},
+                    client_order_id_value=cid,
+                )
+                self.assertFalse(duplicate)
+                self.assertEqual(resolved_cid, cid)
+                self.assertEqual(order["clientOrderId"], cid)
+                self.assertEqual(len(exchange.created_params), 2)
+                self.assertEqual(exchange.created_params[0]["newClientOrderId"], cid)
+                self.assertEqual(exchange.created_params[1]["newClientOrderId"], cid)
+                long_cid = order_manager.client_order_id(
+                    "1000PEPE/USDT",
+                    "trailing_sl",
+                    epoch_ms=1770000000000,
+                    nonce8="abc12345",
+                )
+                self.assertLessEqual(len(long_cid), 36)
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
+
+    def test_duplicate_order_id_recognized_and_reconciled(self):
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        old_symbol = config.SYMBOL
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                config.SYMBOL = "DOGE/USDT"
+                cid = order_manager.client_order_id("DOGE/USDT", "entry", epoch_ms=1770000000000, nonce8="dup12345")
+                exchange = DuplicateCreateExchange()
+                order, resolved_cid, duplicate = order_manager._create_order_idempotent(
+                    exchange,
+                    symbol="DOGE/USDT",
+                    type="market",
+                    side="buy",
+                    amount=2.0,
+                    intent="entry",
+                    client_order_id_value=cid,
+                )
+                self.assertTrue(duplicate)
+                self.assertEqual(resolved_cid, cid)
+                self.assertEqual(order["id"], "existing-order")
+                self.assertEqual(exchange.fetch_params["origClientOrderId"], cid)
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
+            config.SYMBOL = old_symbol
+
+    def test_partial_fill_abort_policy_closes_filled_only(self):
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        old_policy = getattr(config, "PARTIAL_FILL_POLICY", "abort")
+        old_symbol = config.SYMBOL
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                config.PARTIAL_FILL_POLICY = "abort"
+                config.SYMBOL = "DOGE/USDT"
+                exchange = PartialFillExchange()
+                order = {
+                    "id": "partial-entry",
+                    "clientOrderId": "entry-cid",
+                    "amount": 20.0,
+                    "filled": 12.0,
+                    "remaining": 8.0,
+                    "average": 0.50,
+                }
+                fill = order_manager._resolve_market_fill(
+                    exchange,
+                    order,
+                    fallback_price=0.50,
+                    fallback_size=20.0,
+                    context="entry",
+                    position_side="long",
+                )
+                self.assertTrue(fill.partial)
+                self.assertTrue(fill.aborted)
+                self.assertEqual(fill.filled_size, 12.0)
+                self.assertEqual(exchange.cancelled[0]["order_id"], "partial-entry")
+                self.assertEqual(exchange.created_orders[0]["side"], "sell")
+                self.assertEqual(exchange.created_orders[0]["amount"], 12.0)
+                self.assertTrue(exchange.created_orders[0]["params"]["reduceOnly"])
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
+            config.PARTIAL_FILL_POLICY = old_policy
+            config.SYMBOL = old_symbol
+
+    def test_zero_fill_does_not_fallback_to_full_size(self):
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        old_symbol = config.SYMBOL
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                config.SYMBOL = "DOGE/USDT"
+                exchange = PartialFillExchange()
+                order = {
+                    "id": "zero-fill-entry",
+                    "clientOrderId": "entry-cid",
+                    "amount": 20.0,
+                    "filled": 0.0,
+                    "remaining": 20.0,
+                    "average": 0.0,
+                }
+                fill = order_manager._resolve_market_fill(
+                    exchange,
+                    order,
+                    fallback_price=0.50,
+                    fallback_size=20.0,
+                    context="entry",
+                    position_side="long",
+                )
+                self.assertEqual(fill.filled_size, 0.0)
+                self.assertEqual(fill.remaining_size, 20.0)
+                self.assertTrue(fill.partial)
+                self.assertTrue(fill.aborted)
+                self.assertEqual(exchange.cancelled[0]["order_id"], "zero-fill-entry")
+                self.assertEqual(exchange.created_orders, [])
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
+            config.SYMBOL = old_symbol
+
+    def test_partial_fill_accept_policy_sizes_sl_to_filled(self):
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        old_policy = getattr(config, "PARTIAL_FILL_POLICY", "abort")
+        old_symbol = config.SYMBOL
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                config.PARTIAL_FILL_POLICY = "accept"
+                config.SYMBOL = "DOGE/USDT"
+                partial_exchange = PartialFillExchange()
+                order = {
+                    "id": "partial-entry",
+                    "clientOrderId": "entry-cid",
+                    "amount": 20.0,
+                    "filled": 12.0,
+                    "remaining": 8.0,
+                    "average": 0.50,
+                }
+                fill = order_manager._resolve_market_fill(
+                    partial_exchange,
+                    order,
+                    fallback_price=0.50,
+                    fallback_size=20.0,
+                    context="entry",
+                    position_side="long",
+                )
+                self.assertTrue(fill.partial)
+                self.assertFalse(fill.aborted)
+                stop_exchange = StopOrderExchange()
+                sl_order = order_manager._create_sl_order(
+                    stop_exchange,
+                    "sell",
+                    fill.filled_size,
+                    0.4999,
+                    ref_price=0.50,
+                    intent="hard_sl",
+                )
+                self.assertIsNotNone(sl_order)
+                self.assertEqual(stop_exchange.created_orders[0]["amount"], 12.0)
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
+            config.PARTIAL_FILL_POLICY = old_policy
             config.SYMBOL = old_symbol
 
     def test_exchange_filters_floor_market_amount_and_notional(self):

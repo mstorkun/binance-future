@@ -1,4 +1,8 @@
 import logging
+import secrets
+import time
+from dataclasses import dataclass
+
 import ccxt
 import account_safety
 import config
@@ -12,12 +16,185 @@ log = logging.getLogger(__name__)
 
 MIN_NOTIONAL_USDT = 100  # Binance Futures BTC min notional ~100 USDT
 
+INTENT_ALIASES = {
+    "entry": "entry",
+    "hard_sl": "hard_sl",
+    "trailing_sl": "trail_sl",
+    "trail_sl": "trail_sl",
+    "close": "close",
+    "emergency_close": "eclose",
+    "eclose": "eclose",
+}
+
+
+@dataclass(frozen=True)
+class FillResolution:
+    fill_price: float
+    filled_size: float
+    requested_size: float
+    remaining_size: float
+    partial: bool
+    aborted: bool
+    order_id: str | None = None
+    client_order_id: str | None = None
+    status: str | None = None
+
+    def __iter__(self):
+        yield self.fill_price
+        yield self.filled_size
+
 
 def signed_params(extra: dict | None = None) -> dict:
     params = {"recvWindow": int(getattr(config, "RECV_WINDOW_MS", 5000))}
     if extra:
         params.update(extra)
     return params
+
+
+def _symbol_short(symbol: str) -> str:
+    base = symbol.replace("/", "").replace(":", "").replace("-", "").upper()
+    for suffix in ("USDT", "USDC", "BUSD", "USD"):
+        if base.endswith(suffix) and len(base) > len(suffix):
+            base = base[: -len(suffix)]
+            break
+    return "".join(ch for ch in base if ch.isalnum())[:8] or "SYMBOL"
+
+
+def client_order_id(
+    symbol: str,
+    intent: str,
+    *,
+    epoch_ms: int | None = None,
+    nonce8: str | None = None,
+) -> str:
+    ts = int(epoch_ms if epoch_ms is not None else time.time() * 1000)
+    nonce = (nonce8 or secrets.token_hex(4))[:8]
+    intent_short = INTENT_ALIASES.get(intent, intent)
+    intent_short = "".join(ch for ch in intent_short if ch.isalnum() or ch == "_")[:8] or "order"
+    max_symbol_len = max(1, 36 - len(str(ts)) - len(intent_short) - len(nonce) - 3)
+    symbol_short = _symbol_short(symbol)[:max_symbol_len]
+    return f"{symbol_short}_{ts}_{intent_short}_{nonce}"
+
+
+def _client_order_id_from_order(order: dict | None) -> str | None:
+    if not order:
+        return None
+    info = order.get("info") or {}
+    return order.get("clientOrderId") or order.get("client_order_id") or info.get("clientOrderId")
+
+
+def _exchange_symbol_id(exchange: ccxt.Exchange, symbol: str) -> str:
+    try:
+        return exchange.market_id(symbol)
+    except Exception:
+        return symbol.replace("/", "")
+
+
+def _is_duplicate_client_order_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(token in msg for token in (
+        "duplicate",
+        "already exists",
+        "clientorderid",
+        "client order id",
+        "-2010",
+        "-4015",
+        "-2027",
+    ))
+
+
+def _fetch_order_by_client_id(exchange: ccxt.Exchange, client_order_id_value: str, symbol: str | None = None) -> dict:
+    symbol = symbol or config.SYMBOL
+    params = signed_params({"origClientOrderId": client_order_id_value})
+    try:
+        return exchange.fetch_order(client_order_id_value, symbol, params)
+    except Exception as first_exc:
+        raw_get_order = getattr(exchange, "fapiPrivateGetOrder", None)
+        if raw_get_order is None:
+            raise first_exc
+        raw = raw_get_order({
+            "symbol": _exchange_symbol_id(exchange, symbol),
+            "origClientOrderId": client_order_id_value,
+            **params,
+        })
+        return {"id": raw.get("orderId"), "clientOrderId": client_order_id_value, "info": raw}
+
+
+def _create_order_idempotent(
+    exchange: ccxt.Exchange,
+    *,
+    symbol: str,
+    type: str,
+    side: str,
+    amount: float,
+    intent: str,
+    params: dict | None = None,
+    client_order_id_value: str | None = None,
+) -> tuple[dict, str, bool]:
+    cid = client_order_id_value or client_order_id(symbol, intent)
+    full_params = signed_params({**(params or {}), "newClientOrderId": cid})
+    attempts = max(1, int(getattr(config, "CREATE_ORDER_MAX_RETRIES", 2)))
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            order = exchange.create_order(
+                symbol=symbol,
+                type=type,
+                side=side,
+                amount=amount,
+                params=full_params,
+            )
+            return order, cid, False
+        except (ccxt.RequestTimeout, ccxt.NetworkError) as exc:
+            last_error = exc
+            order_events.record(
+                "create_order_retry",
+                intent=intent,
+                side=side,
+                amount=amount,
+                client_order_id=cid,
+                attempt=attempt,
+                error=str(exc),
+            )
+            if attempt < attempts:
+                continue
+            try:
+                fetched = _fetch_order_by_client_id(exchange, cid, symbol)
+                order_events.record(
+                    "create_order_timeout_reconciled",
+                    intent=intent,
+                    client_order_id=cid,
+                    order=order_events.extract_order_summary(fetched),
+                )
+                return fetched, cid, True
+            except Exception as fetch_exc:
+                order_events.record(
+                    "create_order_timeout_reconcile_error",
+                    intent=intent,
+                    client_order_id=cid,
+                    error=str(fetch_exc),
+                )
+            raise
+        except ccxt.BaseError as exc:
+            if not _is_duplicate_client_order_error(exc):
+                raise
+            order_events.record(
+                "create_order_duplicate_detected",
+                intent=intent,
+                side=side,
+                amount=amount,
+                client_order_id=cid,
+                error=str(exc),
+            )
+            fetched = _fetch_order_by_client_id(exchange, cid, symbol)
+            order_events.record(
+                "create_order_duplicate_reconciled",
+                intent=intent,
+                client_order_id=cid,
+                order=order_events.extract_order_summary(fetched),
+            )
+            return fetched, cid, True
+    raise last_error or RuntimeError("create order failed without exception")
 
 
 def ensure_one_way_mode(exchange: ccxt.Exchange) -> bool:
@@ -68,18 +245,22 @@ def set_margin_mode(exchange: ccxt.Exchange) -> bool:
 def _safe_close_market(exchange: ccxt.Exchange, side: str, size: float):
     """Hata durumunda kullanılan acil kapatma."""
     close_side = "sell" if side == "long" else "buy"
-    order_events.record("emergency_close_submit", side=close_side, amount=size, reduce_only=True)
+    cid = client_order_id(config.SYMBOL, "emergency_close")
+    order_events.record("emergency_close_submit", side=close_side, amount=size, reduce_only=True, client_order_id=cid)
     try:
-        order = exchange.create_order(
+        order, resolved_cid, duplicate = _create_order_idempotent(
+            exchange,
             symbol=config.SYMBOL,
             type="market",
             side=close_side,
             amount=size,
-            params=signed_params({"reduceOnly": True}),
+            intent="emergency_close",
+            params={"reduceOnly": True},
+            client_order_id_value=cid,
         )
-        order_events.record("emergency_close_ack", order=order_events.extract_order_summary(order))
+        order_events.record("emergency_close_ack", client_order_id=resolved_cid, duplicate=duplicate, order=order_events.extract_order_summary(order))
     except Exception as e:
-        order_events.record("emergency_close_error", error=str(e))
+        order_events.record("emergency_close_error", client_order_id=cid, error=str(e))
         log.error(f"ACIL KAPATMA BAŞARISIZ: {e}")
 
 
@@ -97,6 +278,7 @@ def _create_sl_order(
     size: float,
     sl_price: float,
     ref_price: float | None = None,
+    intent: str = "hard_sl",
 ) -> dict | None:
     """SL emri oluştur — emrin id'sini döndürür."""
     filter_result = xf.validate_stop_order(
@@ -120,25 +302,30 @@ def _create_sl_order(
 
     checked_size = filter_result.amount or size
     checked_sl_price = filter_result.price or sl_price
+    cid = client_order_id(config.SYMBOL, intent)
     order_events.record(
         "stop_order_submit",
         side=sl_side,
         amount=checked_size,
         stop_price=checked_sl_price,
         ref_price=ref_price,
+        client_order_id=cid,
     )
     try:
-        order = exchange.create_order(
+        order, resolved_cid, duplicate = _create_order_idempotent(
+            exchange,
             symbol=config.SYMBOL,
             type="stop_market",
             side=sl_side,
             amount=checked_size,
-            params=signed_params(eg.exchange_stop_params(checked_sl_price)),
+            intent=intent,
+            params=eg.exchange_stop_params(checked_sl_price),
+            client_order_id_value=cid,
         )
-        order_events.record("stop_order_ack", order=order_events.extract_order_summary(order))
+        order_events.record("stop_order_ack", client_order_id=resolved_cid, duplicate=duplicate, order=order_events.extract_order_summary(order))
         return order
     except ccxt.BaseError as e:
-        order_events.record("stop_order_error", side=sl_side, amount=checked_size, stop_price=checked_sl_price, error=str(e))
+        order_events.record("stop_order_error", client_order_id=cid, side=sl_side, amount=checked_size, stop_price=checked_sl_price, error=str(e))
         log.error(f"SL emir hatası: {e}")
         return None
 
@@ -149,6 +336,14 @@ def _num(value):
     except (TypeError, ValueError):
         return None
     return out if out > 0 else None
+
+
+def _num_nonnegative(value):
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if out >= 0 else None
 
 
 def _order_avg_price(order: dict | None, fallback: float) -> float:
@@ -165,7 +360,7 @@ def _order_avg_price(order: dict | None, fallback: float) -> float:
             return value
 
     filled = _num(order.get("filled")) or _num(info.get("executedQty"))
-    cost = _num(order.get("cost")) or _num(info.get("cumQuote"))
+    cost = _num(order.get("cost")) or _num(order.get("cumQuote")) or _num(info.get("cumQuote"))
     if filled and cost:
         return cost / filled
     return fallback
@@ -175,7 +370,29 @@ def _order_filled_amount(order: dict | None, fallback: float) -> float:
     if not order:
         return fallback
     info = order.get("info") or {}
-    return _num(order.get("filled")) or _num(info.get("executedQty")) or fallback
+    for value in (order.get("filled"), order.get("executedQty"), info.get("executedQty")):
+        parsed = _num_nonnegative(value)
+        if parsed is not None:
+            return parsed
+    return fallback
+
+
+def _order_requested_amount(order: dict | None, fallback: float) -> float:
+    if not order:
+        return fallback
+    info = order.get("info") or {}
+    return _num(order.get("amount")) or _num(order.get("origQty")) or _num(info.get("origQty")) or fallback
+
+
+def _order_remaining_amount(order: dict | None, requested: float, filled: float) -> float:
+    if not order:
+        return max(requested - filled, 0.0)
+    info = order.get("info") or {}
+    for value in (order.get("remaining"), order.get("remainingQty"), info.get("remainingQty")):
+        remaining = _num_nonnegative(value)
+        if remaining is not None:
+            return max(remaining, 0.0)
+    return max(requested - filled, 0.0)
 
 
 def _resolve_market_fill(
@@ -184,37 +401,87 @@ def _resolve_market_fill(
     fallback_price: float,
     fallback_size: float,
     context: str = "market",
-) -> tuple[float, float]:
+    position_side: str | None = None,
+) -> FillResolution:
     price = _order_avg_price(order, fallback_price)
     size = _order_filled_amount(order, fallback_size)
+    requested_size = _order_requested_amount(order, fallback_size)
     order_id = order.get("id") if order else None
+    client_order_id_value = _client_order_id_from_order(order)
+    resolved_order = order
     if order_id and (price == fallback_price or size == fallback_size):
         try:
             fetched = exchange.fetch_order(order_id, config.SYMBOL, signed_params())
             order_events.record(f"{context}_order_fetch", order=order_events.extract_order_summary(fetched))
+            resolved_order = fetched
             price = _order_avg_price(fetched, price)
             size = _order_filled_amount(fetched, size)
+            requested_size = _order_requested_amount(fetched, requested_size)
+            client_order_id_value = client_order_id_value or _client_order_id_from_order(fetched)
         except Exception as e:
             order_events.record(f"{context}_order_fetch_error", order_id=order_id, error=str(e))
             log.warning(f"Market fill detayi cekilemedi, ilk order cevabi kullaniliyor: {e}")
+    remaining_size = _order_remaining_amount(resolved_order, requested_size, size)
+    partial = requested_size > 0 and (size + 1e-12 < requested_size or remaining_size > 1e-12)
+    aborted = False
+    if partial:
+        policy = str(getattr(config, "PARTIAL_FILL_POLICY", "abort")).lower()
+        if policy not in {"abort", "accept"}:
+            policy = "abort"
+        order_events.record(
+            f"{context}_partial_fill_detected",
+            order_id=order_id,
+            client_order_id=client_order_id_value,
+            requested_size=requested_size,
+            filled_size=size,
+            remaining_size=remaining_size,
+            policy=policy,
+        )
+        if order_id and remaining_size > 0:
+            _cancel_order_safe(exchange, order_id, client_order_id_value=client_order_id_value)
+        if context == "entry" and policy == "abort":
+            if position_side and size > 0:
+                _safe_close_market(exchange, position_side, size)
+            aborted = True
+            order_events.record(
+                "entry_partial_fill_aborted",
+                order_id=order_id,
+                client_order_id=client_order_id_value,
+                closed_size=size,
+            )
     order_events.record(
         f"{context}_fill_resolved",
         order_id=order_id,
+        client_order_id=client_order_id_value,
         fallback_price=fallback_price,
         fallback_size=fallback_size,
         fill_price=price,
         filled_size=size,
+        requested_size=requested_size,
+        remaining_size=remaining_size,
+        partial=partial,
+        aborted=aborted,
     )
-    return price, size
+    return FillResolution(
+        fill_price=price,
+        filled_size=size,
+        requested_size=requested_size,
+        remaining_size=remaining_size,
+        partial=partial,
+        aborted=aborted,
+        order_id=order_id,
+        client_order_id=client_order_id_value,
+        status=(resolved_order or {}).get("status") if resolved_order else None,
+    )
 
 
-def _cancel_order_safe(exchange: ccxt.Exchange, order_id: str):
-    order_events.record("order_cancel_submit", order_id=order_id)
+def _cancel_order_safe(exchange: ccxt.Exchange, order_id: str, client_order_id_value: str | None = None):
+    order_events.record("order_cancel_submit", order_id=order_id, client_order_id=client_order_id_value)
     try:
         exchange.cancel_order(order_id, config.SYMBOL, signed_params())
-        order_events.record("order_cancel_ack", order_id=order_id)
+        order_events.record("order_cancel_ack", order_id=order_id, client_order_id=client_order_id_value)
     except Exception as e:
-        order_events.record("order_cancel_error", order_id=order_id, error=str(e))
+        order_events.record("order_cancel_error", order_id=order_id, client_order_id=client_order_id_value, error=str(e))
         log.warning(f"SL iptal hatası (zaten iptal/dolu olabilir): {e}")
 
 
@@ -257,6 +524,7 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
         return None
     size = filter_result.amount or size
     notional = filter_result.notional or (size * price)
+    entry_client_order_id = client_order_id(config.SYMBOL, "entry")
 
     initial_sl, _ = r.sl_tp_prices(price, atr, side)
     hard_sl = eg.hard_stop_from_soft(initial_sl, atr, side)
@@ -280,26 +548,38 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
         ref_price=price,
         atr=atr,
         risk_pct=risk_pct,
+        client_order_id=entry_client_order_id,
     )
     try:
-        order = exchange.create_order(
+        order, resolved_cid, duplicate = _create_order_idempotent(
+            exchange,
             symbol=config.SYMBOL,
             type="market",
             side=order_side,
             amount=size,
-            params=signed_params({
+            intent="entry",
+            params={
                 "reduceOnly": False,
                 "newOrderRespType": getattr(config, "MARKET_ORDER_RESP_TYPE", "RESULT"),
-            }),
+            },
+            client_order_id_value=entry_client_order_id,
         )
-        order_events.record("entry_order_ack", order=order_events.extract_order_summary(order))
+        order_events.record("entry_order_ack", client_order_id=resolved_cid, duplicate=duplicate, order=order_events.extract_order_summary(order))
         log.info(f"Pozisyon açıldı: {side.upper()} | miktar={size} | fiyat≈{price:.2f}")
     except ccxt.BaseError as e:
-        order_events.record("entry_order_error", side=order_side, amount=size, error=str(e))
+        order_events.record("entry_order_error", client_order_id=entry_client_order_id, side=order_side, amount=size, error=str(e))
         log.error(f"Pozisyon açma hatası: {e}")
         return None
 
-    fill_price, filled_size = _resolve_market_fill(exchange, order, price, size, context="entry")
+    fill = _resolve_market_fill(exchange, order, price, size, context="entry", position_side=side)
+    if fill.aborted:
+        return None
+    if fill.filled_size <= 0:
+        order_events.record("entry_zero_fill_abort", client_order_id=fill.client_order_id, order_id=fill.order_id)
+        log.error("Market entry emri fill olmadi, pozisyon acma iptal.")
+        return None
+
+    fill_price, filled_size = fill.fill_price, fill.filled_size
     initial_sl, _ = r.sl_tp_prices(fill_price, atr, side)
     hard_sl = eg.hard_stop_from_soft(initial_sl, atr, side)
     liq_guard = liquidation.liquidation_guard_decision(fill_price, side, hard_sl, leverage=config.LEVERAGE)
@@ -318,7 +598,7 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
 
     log.info(f"Pozisyon acildi: {side.upper()} | miktar={filled_size} | fill={fill_price:.4f}")
 
-    sl_order = _create_sl_order(exchange, sl_side, filled_size, hard_sl, ref_price=fill_price)
+    sl_order = _create_sl_order(exchange, sl_side, filled_size, hard_sl, ref_price=fill_price, intent="hard_sl")
     if sl_order is None:
         order_events.record("entry_stop_missing_emergency_close", side=side, filled_size=filled_size)
         log.error("SL kurulamadı, pozisyon ACIL KAPATILIYOR.")
@@ -336,6 +616,8 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
         "liquidation_price": liq_guard.liquidation_price,
         "atr":       atr,
         "sl_order_id": sl_order.get("id"),
+        "entry_client_order_id": fill.client_order_id or entry_client_order_id,
+        "sl_client_order_id": _client_order_id_from_order(sl_order),
     }
 
 
@@ -387,7 +669,7 @@ def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: f
     hard_sl = eg.hard_stop_from_soft(new_sl, atr, side) if atr > 0 else new_sl
 
     # Önce yeni hard-stop emrini oluştur — pozisyon her an korunsun
-    new_sl_order = _create_sl_order(exchange, sl_side, size, hard_sl, ref_price=current_price)
+    new_sl_order = _create_sl_order(exchange, sl_side, size, hard_sl, ref_price=current_price, intent="trailing_sl")
     if new_sl_order is None:
         log.error("Yeni trailing SL oluşturulamadı, eski SL korunuyor.")
         return
@@ -412,21 +694,26 @@ def close_position_market(exchange: ccxt.Exchange, side: str, size: float) -> bo
         order_events.record("close_cancel_all_error", error=str(e))
         log.warning(f"Kapatma oncesi emir iptali basarisiz, market close yine denenecek: {e}")
 
-    order_events.record("close_order_submit", side=close_side, amount=size, reduce_only=True)
+    cid = client_order_id(config.SYMBOL, "close")
+    order_events.record("close_order_submit", side=close_side, amount=size, reduce_only=True, client_order_id=cid)
     try:
-        order = exchange.create_order(
+        order, resolved_cid, duplicate = _create_order_idempotent(
+            exchange,
             symbol=config.SYMBOL,
             type="market",
             side=close_side,
             amount=size,
-            params=signed_params({"reduceOnly": True}),
+            intent="close",
+            params={"reduceOnly": True},
+            client_order_id_value=cid,
         )
-        order_events.record("close_order_ack", order=order_events.extract_order_summary(order))
-        fill_price, filled_size = _resolve_market_fill(exchange, order, 0.0, size, context="close")
+        order_events.record("close_order_ack", client_order_id=resolved_cid, duplicate=duplicate, order=order_events.extract_order_summary(order))
+        fill = _resolve_market_fill(exchange, order, 0.0, size, context="close")
+        fill_price, filled_size = fill.fill_price, fill.filled_size
         log.info(f"Pozisyon kapatildi (trend exit): {side.upper()} | miktar={filled_size} | fill={fill_price:.4f}")
-        return True
+        return filled_size > 0 and not fill.partial
     except ccxt.BaseError as e:
-        order_events.record("close_order_error", side=close_side, amount=size, error=str(e))
+        order_events.record("close_order_error", client_order_id=cid, side=close_side, amount=size, error=str(e))
         log.error(f"Kapatma hatasi: {e}")
         return False
 
