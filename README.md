@@ -46,6 +46,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Critical audit: [docs/CRITICAL_AUDIT_2026_05_01.md](docs/CRITICAL_AUDIT_2026_05_01.md) records the latest no-go review and separates confirmed blockers from claims that still need evidence.
 - Audit diff: [docs/AUDIT_DIFF_2026_05_01.md](docs/AUDIT_DIFF_2026_05_01.md) merges Claude/Codex disagreements and newly surfaced P0/P1 blockers.
 - API key runbook: [docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md](docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md) defines live/testnet key scope, trusted-IP policy, and rotation.
+- Risk profile policy: [docs/RISK_PROFILE_POLICY_2026_05_01.md](docs/RISK_PROFILE_POLICY_2026_05_01.md) marks the current 10x/%4 profile as research-only and gates live mode to `balanced_live_v1`.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files

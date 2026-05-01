@@ -42,6 +42,22 @@ DYNAMIC_RISK_MIN_MULT = 0.50
 DYNAMIC_RISK_MAX_MULT = 1.25
 FINAL_RISK_MIN_MULT = 0.10
 FINAL_RISK_MAX_MULT = 1.25
+
+# --- Runtime profile guard ---
+# Current defaults are the research/paper profile, not a live profile. If
+# TESTNET=False, data.make_exchange() requires these values to match
+# LIVE_PROFILE before it will create a live exchange object.
+RUNTIME_PROFILE_NAME = "research_growth_70_compound"
+LIVE_PROFILE_GUARD_ENABLED = True
+LIVE_PROFILE = {
+    "name": "balanced_live_v1",
+    "LEVERAGE": 5,
+    "RISK_PER_TRADE_PCT": 0.03,
+    "DAILY_LOSS_LIMIT_PCT": 0.03,
+    "MAX_OPEN_POSITIONS": 2,
+    "MARGIN_MODE": "cross",
+}
+
 CALENDAR_RISK_ENABLED = True
 CALENDAR_EVENT_FILE = "event_calendar.csv"
 WEEKEND_RISK_MULT = 0.70

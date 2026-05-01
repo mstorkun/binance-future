@@ -234,13 +234,14 @@ Closed after the addendum:
 8. API key security runbook: `docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md`
    defines permission scope, trusted-IP policy, go-live checks, rotation, and
    `-2015` triage.
+9. Risk profile guard: `config.LIVE_PROFILE` defines the only allowed live
+   profile shape and `data.make_exchange()` blocks live exchange creation when
+   the runtime config still matches the research 10x/%4 profile.
 
 The remaining newly merged live blockers are:
 
 1. Decide and document WebSocket user-data stream architecture before live, or
    explicitly prove polling plus reconciliation is enough.
-2. Resolve doc/config risk-profile inconsistency before any go-live profile is
-   named.
 
 P1 additions:
 

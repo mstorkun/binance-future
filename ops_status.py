@@ -101,6 +101,7 @@ def build_status(include_exchange: bool = False) -> dict[str, Any]:
         "live_state_positions": len(live_state.get("positions") or {}),
         "live_state_updated_at": live_state.get("updated_at"),
         "live_trading_approved": bool(getattr(config, "LIVE_TRADING_APPROVED", False)),
+        "live_profile": data.live_profile_status(),
         "testnet": bool(getattr(config, "TESTNET", True)),
     }
     if include_exchange:

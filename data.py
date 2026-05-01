@@ -7,6 +7,10 @@ import flow_data
 def make_exchange() -> ccxt.Exchange:
     if not config.TESTNET and not getattr(config, "LIVE_TRADING_APPROVED", False):
         raise RuntimeError("Live trading is blocked. Set LIVE_TRADING_APPROVED=True only after all gates pass.")
+    if not config.TESTNET:
+        profile = live_profile_status()
+        if not profile["ok"]:
+            raise RuntimeError(f"Live trading is blocked by profile guard: {profile['reason']}")
 
     params = {
         "apiKey": config.API_KEY,
@@ -21,6 +25,49 @@ def make_exchange() -> ccxt.Exchange:
     if config.TESTNET:
         exchange.set_sandbox_mode(True)
     return exchange
+
+
+def live_profile_status() -> dict:
+    if not getattr(config, "LIVE_PROFILE_GUARD_ENABLED", True):
+        return {
+            "ok": True,
+            "guard_enabled": False,
+            "profile": getattr(config, "RUNTIME_PROFILE_NAME", ""),
+            "reason": "",
+            "mismatches": [],
+        }
+
+    expected = dict(getattr(config, "LIVE_PROFILE", {}) or {})
+    expected_name = expected.pop("name", "")
+    actual = {key: getattr(config, key, None) for key in expected}
+    mismatches = []
+    for key, expected_value in expected.items():
+        actual_value = actual.get(key)
+        if not _profile_value_equal(actual_value, expected_value):
+            mismatches.append({
+                "key": key,
+                "actual": actual_value,
+                "expected": expected_value,
+            })
+    return {
+        "ok": not mismatches,
+        "guard_enabled": True,
+        "runtime_profile": getattr(config, "RUNTIME_PROFILE_NAME", ""),
+        "required_live_profile": expected_name,
+        "actual": actual,
+        "expected": expected,
+        "mismatches": mismatches,
+        "reason": "" if not mismatches else "live_profile_mismatch",
+    }
+
+
+def _profile_value_equal(left, right) -> bool:
+    if isinstance(right, float) or isinstance(left, float):
+        try:
+            return abs(float(left) - float(right)) < 1e-12
+        except (TypeError, ValueError):
+            return False
+    return left == right
 
 
 def _ohlcv_to_df(raw: list) -> pd.DataFrame:

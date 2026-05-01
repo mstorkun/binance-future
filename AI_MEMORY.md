@@ -111,12 +111,13 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `69` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `71` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
   amount normalization, stale closed-bar detection, trade decision snapshot
-  persistence, and emergency kill-switch dry-run/execute paths.
+  persistence, emergency kill-switch dry-run/execute paths, and live profile
+  guard behavior.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -160,7 +161,13 @@ Other previous validation context:
 ## Key Files
 
 - `config.py`: all important safety, risk, fee, slippage, flow, and passive
-  add-on toggles.
+  add-on toggles. Current values are `RUNTIME_PROFILE_NAME =
+  "research_growth_70_compound"` and are research/paper/testnet only. Live mode
+  is guarded by `LIVE_PROFILE` (`balanced_live_v1`: 5x, 3% risk, 3% daily loss,
+  max 2 positions, cross margin).
+- `data.py`: exchange factory and live profile guard. If `TESTNET=False`,
+  `make_exchange()` requires both `LIVE_TRADING_APPROVED=True` and a runtime
+  config that matches `config.LIVE_PROFILE`.
 - `strategy.py`: main signal and exit logic. Avoid changing this unless the user
   explicitly approves a strategy change and validation is rerun.
 - `risk.py`: market, calendar, pattern, flow, and volume-profile risk
@@ -203,6 +210,9 @@ Other previous validation context:
   runbook. Live key scope is Reading + USD-M Futures trading only, no withdrawal
   or universal transfer, trusted static IPv4 only, separate testnet/live keys,
   monthly rotation, and narrow `-2015` triage.
+- `docs/RISK_PROFILE_POLICY_2026_05_01.md`: documents that 10x/%4 is the active
+  research profile, while `balanced_live_v1` is the only live profile shape that
+  can pass the exchange factory guard.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -286,9 +296,9 @@ Other previous validation context:
 - `docs/AUDIT_DIFF_2026_05_01.md`: Claude 10-agent vs Codex triage merge. It
   now marks client order idempotency, partial-fill handling, trailing-stop
   orphan cleanup, tick precision, stale-bar guard, live decision snapshots, and
-  emergency kill switch closed in code, and API key runbook closed in docs,
-  while keeping open P0 blockers for user-data stream decision and doc/config
-  risk-profile mismatch.
+  emergency kill switch closed in code, API key runbook closed in docs, and risk
+  profile mismatch closed with a live profile guard. The only remaining P0 item
+  from that audit is the user-data stream decision.
 
 ## Runtime / Worktree Notes
 

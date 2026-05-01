@@ -406,6 +406,43 @@ class SafetyTests(unittest.TestCase):
         self.assertTrue(exchange.options.get("adjustForTimeDifference"))
         self.assertEqual(exchange.options.get("recvWindow"), config.RECV_WINDOW_MS)
 
+    def test_live_profile_guard_blocks_research_profile_live_exchange(self):
+        old_values = {
+            "TESTNET": config.TESTNET,
+            "LIVE_TRADING_APPROVED": config.LIVE_TRADING_APPROVED,
+            "LEVERAGE": config.LEVERAGE,
+            "RISK_PER_TRADE_PCT": config.RISK_PER_TRADE_PCT,
+            "DAILY_LOSS_LIMIT_PCT": config.DAILY_LOSS_LIMIT_PCT,
+        }
+        try:
+            config.TESTNET = False
+            config.LIVE_TRADING_APPROVED = True
+            config.LEVERAGE = 10
+            config.RISK_PER_TRADE_PCT = 0.04
+            config.DAILY_LOSS_LIMIT_PCT = 0.06
+            with self.assertRaisesRegex(RuntimeError, "profile guard"):
+                data.make_exchange()
+        finally:
+            for key, value in old_values.items():
+                setattr(config, key, value)
+
+    def test_live_profile_status_accepts_balanced_profile(self):
+        keys = ["LEVERAGE", "RISK_PER_TRADE_PCT", "DAILY_LOSS_LIMIT_PCT", "MAX_OPEN_POSITIONS", "MARGIN_MODE"]
+        old_values = {key: getattr(config, key) for key in keys}
+        try:
+            config.LEVERAGE = 5
+            config.RISK_PER_TRADE_PCT = 0.03
+            config.DAILY_LOSS_LIMIT_PCT = 0.03
+            config.MAX_OPEN_POSITIONS = 2
+            config.MARGIN_MODE = "cross"
+            status = data.live_profile_status()
+            self.assertTrue(status["ok"])
+            self.assertEqual(status["required_live_profile"], "balanced_live_v1")
+            self.assertEqual(status["mismatches"], [])
+        finally:
+            for key, value in old_values.items():
+                setattr(config, key, value)
+
     def test_account_safety_confirms_one_way_and_leverage(self):
         old_leverage = config.LEVERAGE
         try:
