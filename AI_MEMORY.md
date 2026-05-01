@@ -22,6 +22,9 @@ strategy, risk, backtest, paper, testnet, or live-trading changes.
 - Previous active baseline was `SOL/USDT`, `ETH/USDT`, `BNB/USDT`; keep its
   results for comparison but do not assume it is still the current config.
 - Primary timeframe: `4h`.
+- Timeframe research exists in `docs/TIMEFRAME_SWEEP.md`: 2h scaled is a
+  stronger candidate on return and worst walk-forward return, but 4h remains
+  the active conservative default because drawdown/profit-factor are cleaner.
 - Current profile: `growth_70_compound`.
 - Leverage candidate: `10x`.
 - Base risk: `4%` of current portfolio equity for the first open position,
@@ -108,7 +111,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m unittest discover -s tests -v` -> `18` tests OK.
+  `python -m pytest tests/test_safety.py -q` -> `24` tests passed.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -117,6 +120,15 @@ Other previous validation context:
   with `79.54%` CAGR and `7.67%` peak DD. All top 30 rows included `TRX/USDT`,
   so this is a strong research lead but needs out-of-sample validation before
   any config change.
+- Timeframe sweep:
+  `python timeframe_sweep.py --years 3 --timeframes 1h 2h 4h --mc-iterations 2000 --block-size 5`
+  and the same command with `--scaled-params`. Raw 1h produced extreme
+  compounding (`3503.00%` CAGR) but is not fair evidence because indicator
+  horizons shrink. Scaled results: 2h `161.27%` CAGR, `10.83%` peak DD, `7/7`
+  WF positive, MC p05 ending `9472.13`; 4h `126.14%` CAGR, `5.05%` peak DD,
+  `7/7` WF positive, MC p05 ending `6319.45`; 1h `113.64%` CAGR, `14.56%`
+  peak DD, `6/7` WF positive. Do not switch to 1h. If switching to 2h, scale
+  lookback parameters or add timeframe-aware parameters and restart paper.
 
 ## Recent Commits
 
@@ -167,6 +179,8 @@ Other previous validation context:
 - `mature_bot_compare.py`: side-by-side add-on validation.
 - `portfolio_candidate_sweep.py`: searches better symbol combinations without
   changing the strategy.
+- `timeframe_sweep.py`: compares 1h/2h/4h with raw and scaled indicator
+  horizons.
 - `bias_audit.py`: lookahead/recursive indicator stability audit.
 - `docs/MATURE_BOT_ADDONS.md`: activation rules for new add-ons.
 - `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for

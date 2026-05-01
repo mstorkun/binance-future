@@ -41,6 +41,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Latest 3-year candidate sweep/backtest: about `+124.21% CAGR` with `5.05%` peak drawdown.
 - Candidate portfolio walk-forward: fixed growth profile is positive in `7/7` test periods, with `20.12%` average test return and `5.25%` worst test return.
 - Candidate Monte Carlo: block bootstrap ending-equity p05 is `6191.14` from `1000` start, ending-equity loss probability is `0%`, and peak-DD p95 is `6.25%`.
+- Timeframe research: [docs/TIMEFRAME_SWEEP.md](docs/TIMEFRAME_SWEEP.md) shows 1h is not robust after horizon scaling, while 2h is a stronger but higher-drawdown candidate than the current 4h default.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files
@@ -63,6 +64,7 @@ ops_status.py                Local paper/testnet status report
 paper_report.py              Detailed paper decision/equity/error report
 mature_bot_compare.py        Side-by-side add-on validation
 portfolio_candidate_sweep.py Search better symbol combinations
+timeframe_sweep.py           Compare 1h/2h/4h with raw and scaled indicator horizons
 paper_runner.py              No-order paper telemetry and virtual portfolio runner
 testnet_fill_probe.py        Explicitly approved testnet fill/slippage probe
 order_manager.py             Order placement, SL update, position close
@@ -91,6 +93,7 @@ python bias_audit.py --symbol LINK/USDT --years 1 --sample-step 96
 python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96
 python mature_bot_compare.py --years 3
 python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 5 --top 20
+python timeframe_sweep.py --years 3 --timeframes 1h 2h 4h --scaled-params
 python ops_status.py --json
 python paper_report.py
 python paper_runner.py --once --reset

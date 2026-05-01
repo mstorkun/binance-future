@@ -12,5 +12,9 @@ testnet_fill_probe.csv
 mature_bot_compare_results.csv
 portfolio_candidate_sweep_results.csv
 portfolio_candidate_universe.csv
+timeframe_sweep_results.csv
+timeframe_walk_forward_results.csv
+timeframe_sweep_scaled_results.csv
+timeframe_walk_forward_scaled_results.csv
 __pycache__/
 *.pyc

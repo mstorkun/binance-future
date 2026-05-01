@@ -19,6 +19,7 @@ import paper_report
 import portfolio_candidate_sweep
 import protections
 import risk
+import timeframe_sweep
 import trade_executor
 import twap_execution
 import walk_forward
@@ -375,6 +376,35 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(row["trades"], 3)
         self.assertEqual(row["final_equity"], 1500.0)
         self.assertGreater(row["cagr_pct"], 0)
+
+    def test_timeframe_sweep_bars_for_days(self):
+        self.assertEqual(timeframe_sweep.bars_for_days("1h", 1), 24)
+        self.assertEqual(timeframe_sweep.bars_for_days("2h", 1), 12)
+        self.assertEqual(timeframe_sweep.bars_for_days("4h", 1), 6)
+        self.assertEqual(timeframe_sweep.bars_for_days("1d", 7), 7)
+
+    def test_timeframe_sweep_restores_config(self):
+        old_timeframe = config.TIMEFRAME
+        old_flow_period = getattr(config, "FLOW_PERIOD", old_timeframe)
+        with timeframe_sweep.temporary_timeframe("1h"):
+            self.assertEqual(config.TIMEFRAME, "1h")
+            self.assertEqual(config.FLOW_PERIOD, "1h")
+        self.assertEqual(config.TIMEFRAME, old_timeframe)
+        self.assertEqual(config.FLOW_PERIOD, old_flow_period)
+
+    def test_timeframe_sweep_scaled_periods_restore_config(self):
+        old_donchian = config.DONCHIAN_PERIOD
+        self.assertEqual(timeframe_sweep.scale_factor_to_4h("1h"), 4)
+        self.assertEqual(timeframe_sweep.scale_factor_to_4h("2h"), 2)
+        with timeframe_sweep.temporary_scaled_periods("1h", enabled=True):
+            self.assertEqual(config.DONCHIAN_PERIOD, old_donchian * 4)
+        self.assertEqual(config.DONCHIAN_PERIOD, old_donchian)
+
+    def test_timeframe_sweep_unscaled_periods_leave_config_unchanged(self):
+        old_donchian = config.DONCHIAN_PERIOD
+        with timeframe_sweep.temporary_scaled_periods("1h", enabled=False):
+            self.assertEqual(config.DONCHIAN_PERIOD, old_donchian)
+        self.assertEqual(config.DONCHIAN_PERIOD, old_donchian)
 
 
 if __name__ == "__main__":

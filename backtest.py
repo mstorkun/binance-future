@@ -231,6 +231,7 @@ def _fetch_paginated(timeframe: str, years: int) -> pd.DataFrame:
     exchange = ccxt.binance({"options": {"defaultType": "future"}})
     tf_ms = {
         "1h": 60 * 60 * 1000,
+        "2h": 2 * 60 * 60 * 1000,
         "4h": 4 * 60 * 60 * 1000,
         "1d": 24 * 60 * 60 * 1000,
         "1w": 7 * 24 * 60 * 60 * 1000,
