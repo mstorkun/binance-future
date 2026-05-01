@@ -179,6 +179,8 @@ PAIR_UNIVERSE_MIN_ATR_PCT = 0.003
 PAIR_UNIVERSE_MAX_FUNDING_ABS = 0.0015
 PAIR_UNIVERSE_MIN_SCORE = 0.0
 
+# Research-only planner flag. This only affects twap_execution.build_twap_plan();
+# bot.py/order_manager.py do not read it or place TWAP orders.
 TWAP_ENABLED = False
 TWAP_MIN_NOTIONAL_USDT = 5_000.0
 TWAP_SLICE_NOTIONAL_USDT = 1_000.0

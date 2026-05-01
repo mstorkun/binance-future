@@ -18,12 +18,22 @@ import execution_guard as eg
 import exit_ladder
 import strategy as strat
 
+PASSIVE_ONLY = True
+LIVE_ORDER_FLOW_WIRED = False
+
 
 class ExecutorStatus(str, Enum):
     CREATED = "created"
     ACTIVE = "active"
     CLOSED = "closed"
     FAILED = "failed"
+
+
+def raise_if_live_execution_requested() -> None:
+    raise NotImplementedError(
+        "trade_executor.py is a passive lifecycle model only; it is not wired "
+        "to live/testnet order placement."
+    )
 
 
 @dataclass

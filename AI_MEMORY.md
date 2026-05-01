@@ -111,7 +111,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `80` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `83` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
@@ -119,7 +119,8 @@ Other previous validation context:
   persistence, emergency kill-switch dry-run/execute paths, live profile guard
   behavior, user-data stream live-gate behavior, and basic risk-adjusted metrics
   reporting plus correlation stress, pattern ablation, and exchange-filter cache
-  TTL helpers, paper CSV append hardening, and stale risk-code quarantine.
+  TTL helpers, paper CSV append hardening, stale risk-code quarantine, and
+  passive TWAP/executor guardrails.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -237,6 +238,8 @@ Other previous validation context:
   flush/fsync hardening.
 - `docs/STALE_RISK_CODE_QUARANTINE_2026_05_01.md`: documents the deprecated
   `risk_management.py` quarantine.
+- `docs/PASSIVE_EXECUTION_GUARDRAILS_2026_05_01.md`: documents TWAP/executor
+  passive-only guardrails and the remaining refactor gate.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -275,8 +278,10 @@ Other previous validation context:
 - `protections.py`: passive mature-bot protections.
 - `exit_ladder.py`: passive partial-TP/breakeven helper.
 - `pair_universe.py`: passive dynamic pairlist scoring.
-- `twap_execution.py`: passive TWAP slice planner.
+- `twap_execution.py`: passive TWAP slice planner. Marked `PASSIVE_ONLY`; it is
+  not wired into order flow.
 - `trade_executor.py`: passive lifecycle contract for future execution refactor.
+  Marked `PASSIVE_ONLY`; it is not wired into order flow.
 - `ops_status.py`: local paper/testnet status report.
 - `paper_report.py`: detailed paper decision/equity/error report.
 - `mature_bot_compare.py`: side-by-side add-on validation.

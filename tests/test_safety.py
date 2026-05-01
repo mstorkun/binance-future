@@ -1529,6 +1529,12 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(plan[-1].delay_seconds, 120)
         self.assertAlmostEqual(sum(item.notional for item in plan), 5_000.0)
 
+    def test_twap_planner_is_marked_passive_only(self):
+        self.assertTrue(twap_execution.PASSIVE_ONLY)
+        self.assertFalse(twap_execution.LIVE_ORDER_FLOW_WIRED)
+        with self.assertRaisesRegex(NotImplementedError, "passive slice planner"):
+            twap_execution.raise_if_live_execution_requested()
+
     def test_trade_executor_partial_step_is_passive_contract(self):
         old_enabled = getattr(config, "EXIT_LADDER_ENABLED", False)
         try:
@@ -1555,6 +1561,21 @@ class SafetyTests(unittest.TestCase):
             self.assertEqual(trade.status, trade_executor.ExecutorStatus.ACTIVE)
         finally:
             config.EXIT_LADDER_ENABLED = old_enabled
+
+    def test_trade_executor_is_marked_passive_only(self):
+        self.assertTrue(trade_executor.PASSIVE_ONLY)
+        self.assertFalse(trade_executor.LIVE_ORDER_FLOW_WIRED)
+        with self.assertRaisesRegex(NotImplementedError, "passive lifecycle model"):
+            trade_executor.raise_if_live_execution_requested()
+
+    def test_passive_execution_helpers_are_not_wired_into_order_flow(self):
+        root = Path(__file__).resolve().parents[1]
+        for filename in ("bot.py", "order_manager.py", "paper_runner.py"):
+            text = (root / filename).read_text(encoding="utf-8")
+            self.assertNotIn("import twap_execution", text, filename)
+            self.assertNotIn("from twap_execution", text, filename)
+            self.assertNotIn("import trade_executor", text, filename)
+            self.assertNotIn("from trade_executor", text, filename)
 
     def test_candidate_sweep_generates_current_combo_once(self):
         combos = portfolio_candidate_sweep.generate_combos(

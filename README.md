@@ -54,6 +54,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Exchange filter cache: [docs/EXCHANGE_FILTER_CACHE_2026_05_01.md](docs/EXCHANGE_FILTER_CACHE_2026_05_01.md) adds TTL refresh for Binance symbol filters.
 - Paper telemetry atomicity: [docs/PAPER_TELEMETRY_ATOMICITY_2026_05_01.md](docs/PAPER_TELEMETRY_ATOMICITY_2026_05_01.md) flushes/fsyncs paper CSV appends.
 - Stale risk quarantine: [docs/STALE_RISK_CODE_QUARANTINE_2026_05_01.md](docs/STALE_RISK_CODE_QUARANTINE_2026_05_01.md) makes the old `risk_management.py` helper fail loudly.
+- Passive execution guardrails: [docs/PASSIVE_EXECUTION_GUARDRAILS_2026_05_01.md](docs/PASSIVE_EXECUTION_GUARDRAILS_2026_05_01.md) marks TWAP/executor helpers as research-only and tests that they are not wired into order flow.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files

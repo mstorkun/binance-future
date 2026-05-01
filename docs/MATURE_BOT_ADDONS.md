@@ -37,12 +37,16 @@ python bias_audit.py --symbol SOL/USDT --years 1 --sample-step 96
 - `twap_execution.py`
   - Builds deterministic TWAP slice plans for larger orders.
   - Does not place orders.
+  - Marked `PASSIVE_ONLY = True`; order-flow wiring must fail explicitly until
+    a real fill-quality implementation exists.
   - Default: `config.TWAP_ENABLED = False`.
 
 - `trade_executor.py`
   - Passive lifecycle contract for future Hummingbot-style executor refactor.
   - Models activation, partial exits, breakeven, trailing, and final close.
   - Not wired into live/paper order flow.
+  - Marked `PASSIVE_ONLY = True`; it must not be treated as current execution
+    logic.
 
 - `ops_status.py`
   - Terminal status report for heartbeat, paper equity, recent decisions,

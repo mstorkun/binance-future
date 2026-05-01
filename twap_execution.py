@@ -11,6 +11,9 @@ from dataclasses import dataclass
 
 import config
 
+PASSIVE_ONLY = True
+LIVE_ORDER_FLOW_WIRED = False
+
 
 @dataclass(frozen=True)
 class TwapSlice:
@@ -18,6 +21,13 @@ class TwapSlice:
     delay_seconds: int
     notional: float
     amount: float
+
+
+def raise_if_live_execution_requested() -> None:
+    raise NotImplementedError(
+        "twap_execution.py is a passive slice planner only; it is not wired to "
+        "live/testnet order placement."
+    )
 
 
 def should_twap(notional: float, *, enabled: bool | None = None) -> bool:
