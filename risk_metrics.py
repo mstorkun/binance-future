@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from statistics import NormalDist
 from typing import Any
 
 import pandas as pd
@@ -103,8 +104,89 @@ def candidate_sweep_multiple_testing_summary(
     }
 
 
+def multiple_testing_sharpe_haircut(
+    *,
+    sharpe: float,
+    years: float,
+    test_count: int,
+    alpha: float = 0.05,
+) -> dict[str, Any]:
+    if test_count <= 0:
+        raise ValueError("test_count must be positive")
+    if years <= 0:
+        raise ValueError("years must be positive")
+    adjusted_alpha = bonferroni_alpha(alpha, test_count)
+    z_score = NormalDist().inv_cdf(1.0 - adjusted_alpha)
+    standard_error = math.sqrt((1.0 + 0.5 * float(sharpe) ** 2) / float(years))
+    haircut = z_score * standard_error
+    lower_bound = float(sharpe) - haircut
+    return {
+        "method": "bonferroni_sharpe_haircut",
+        "alpha": alpha,
+        "test_count": int(test_count),
+        "bonferroni_alpha": adjusted_alpha,
+        "years": float(years),
+        "sharpe": float(sharpe),
+        "z_score": z_score,
+        "standard_error": standard_error,
+        "haircut": haircut,
+        "deflated_sharpe_proxy": lower_bound,
+        "passes_zero_edge_after_haircut": lower_bound > 0.0,
+        "warning": "conservative_proxy_not_full_dsr",
+    }
+
+
+def walk_forward_overfit_summary(
+    results: pd.DataFrame,
+    *,
+    train_col: str = "train_return_pct",
+    test_col: str = "test_return_pct",
+) -> dict[str, Any]:
+    if results.empty:
+        return {"folds": 0, "warning": "empty_results"}
+    if train_col not in results.columns or test_col not in results.columns:
+        raise ValueError(f"missing required columns: {train_col}, {test_col}")
+
+    train = pd.to_numeric(results[train_col], errors="coerce")
+    test = pd.to_numeric(results[test_col], errors="coerce")
+    valid = pd.DataFrame({"train": train, "test": test}).dropna()
+    if valid.empty:
+        return {"folds": 0, "warning": "no_numeric_results"}
+
+    positive_train = valid["train"] > 0
+    degradation = pd.Series(0.0, index=valid.index)
+    degradation.loc[positive_train] = 1.0 - (valid.loc[positive_train, "test"] / valid.loc[positive_train, "train"])
+    severe = positive_train & (valid["test"] < valid["train"] * 0.25)
+    return {
+        "folds": int(len(valid)),
+        "positive_test_folds": int((valid["test"] > 0).sum()),
+        "negative_test_folds": int((valid["test"] <= 0).sum()),
+        "test_under_train_folds": int((valid["test"] < valid["train"]).sum()),
+        "severe_degradation_folds": int(severe.sum()),
+        "avg_train_return_pct": float(valid["train"].mean()),
+        "avg_test_return_pct": float(valid["test"].mean()),
+        "median_degradation_ratio": float(degradation.median()),
+        "pbo_proxy": float(severe.mean()),
+        "warning": "pbo_proxy_requires_full_candidate_matrix",
+    }
+
+
 def rounded_metrics(metrics: dict[str, float], digits: int = 4) -> dict[str, float]:
     return {key: round(float(value), digits) for key, value in metrics.items()}
+
+
+def rounded_nested(value: Any, digits: int = 4) -> Any:
+    if isinstance(value, dict):
+        return {key: rounded_nested(item, digits=digits) for key, item in value.items()}
+    if isinstance(value, list):
+        return [rounded_nested(item, digits=digits) for item in value]
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return round(value, digits)
+    return value
 
 
 def _equity_series(equity: pd.DataFrame | pd.Series) -> pd.Series:

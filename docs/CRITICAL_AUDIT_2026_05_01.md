@@ -249,13 +249,14 @@ runtime gates and unresolved validation work.
 
 P1 additions:
 
-- pin production dependencies or add a lock file,
-- add exchange-filter cache refresh policy,
-- make important CSV telemetry atomic or journaled,
-- refresh paper lock heartbeat,
-- quarantine stale/dead risk code,
-- either remove or complete passive TWAP/executor shells,
-- commit bias-audit summaries,
-- add pattern-weight ablation tests,
-- add correlation stress or covariance-aware risk caps,
-- add Sharpe/Sortino/DSR/PBO or equivalent conservative metrics.
+- production dependencies pinned in `requirements.txt`,
+- exchange-filter cache refresh policy added,
+- paper CSV telemetry append/fsync hardening added,
+- paper lock heartbeat refresh added,
+- stale/dead `risk_management.py` quarantined,
+- passive TWAP/executor shells marked research-only and tested as not wired,
+- pattern-risk ablation report added,
+- correlation stress report added,
+- Sharpe/Sortino plus Bonferroni Sharpe haircut and walk-forward degradation
+  proxies added,
+- bias-audit summaries still need reproducible report artifacts.

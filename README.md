@@ -57,6 +57,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Passive execution guardrails: [docs/PASSIVE_EXECUTION_GUARDRAILS_2026_05_01.md](docs/PASSIVE_EXECUTION_GUARDRAILS_2026_05_01.md) marks TWAP/executor helpers as research-only and tests that they are not wired into order flow.
 - Dependency pinning: [docs/DEPENDENCY_PINNING_2026_05_01.md](docs/DEPENDENCY_PINNING_2026_05_01.md) pins runtime packages, including `ccxt==4.5.51`.
 - Paper lock heartbeat: [docs/PAPER_LOCK_HEARTBEAT_2026_05_01.md](docs/PAPER_LOCK_HEARTBEAT_2026_05_01.md) refreshes the paper runner lock while long loops are alive.
+- Overfit controls: [docs/OVERFIT_CONTROLS_2026_05_01.md](docs/OVERFIT_CONTROLS_2026_05_01.md) adds Bonferroni Sharpe haircut and walk-forward degradation proxies.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files

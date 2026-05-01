@@ -122,6 +122,13 @@ Other previous validation context:
   TTL helpers, paper CSV append hardening, stale risk-code quarantine, and
   passive TWAP/executor guardrails, exact requirement pinning, and paper lock
   heartbeat refresh.
+- Overfit-control report:
+  `python risk_adjusted_report.py` now includes conservative proxies. Latest
+  output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
+  `0.00010989`, Sharpe haircut `5.9978`, deflated Sharpe proxy `-2.3043`, pass
+  after haircut `false`, walk-forward `7/7` positive test folds but `7/7`
+  severe train/test degradation folds and PBO proxy `1.0`. Treat this as
+  strengthened no-go evidence, not live approval.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -245,6 +252,8 @@ Other previous validation context:
   `ccxt` is pinned to `4.5.51`.
 - `docs/PAPER_LOCK_HEARTBEAT_2026_05_01.md`: documents the refreshed
   `PaperRunnerLock` heartbeat/mtime behavior.
+- `docs/OVERFIT_CONTROLS_2026_05_01.md`: documents Bonferroni Sharpe haircut
+  and walk-forward degradation/PBO proxies.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.

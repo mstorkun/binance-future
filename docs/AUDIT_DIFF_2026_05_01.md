@@ -89,7 +89,7 @@ into the backlog.
 | 24 | `risk_management.py` is stale/dead risk code | Dangerous formulas may be reused accidentally | Closed: legacy helper is quarantined and raises if called. |
 | 25 | `exchange_filters.py` cache has no refresh policy | Binance filter changes can stale cached limits | Closed: filter cache now has TTL and explicit refresh helper. |
 | 28 | Bias audit artifacts not committed as reports | Claims are hard to reproduce | Commit audit summaries for active symbols. |
-| 29 | Pattern weights are tunable and weakly justified | Hidden overfit risk | Pattern-risk ablation harness added; permutation/randomized-weight tests remain future work. |
+| 29 | Pattern weights are tunable and weakly justified | Hidden overfit risk | Pattern-risk ablation harness and conservative overfit-control report added; full candidate-matrix PBO remains future work. |
 | 30 | Correlation-aware sizing is open-count based | DOGE/LINK/TRX can be highly correlated | Correlation stress report added; covariance-aware cap still requires side-by-side validation before activation. |
 | 31 | CSV append is not atomic/fsynced | Runtime telemetry can corrupt on crash | Closed for paper telemetry: CSV appends now flush/fsync and schema rewrites still use temp+replace. |
 | 32 | Paper lock heartbeat not refreshed | Manual restart can be blocked by stale locks | Closed: lock now carries refreshed `updated_at` heartbeat and fsynced mtime updates. |
@@ -105,8 +105,9 @@ into the backlog.
 
 ## Current Priority Order
 
-1. Add DSR/PBO or equivalent conservative overfitting controls.
-2. Add DSR/PBO follow-up and remaining executor refactor decision.
+1. Commit reproducible bias-audit summaries for active symbols.
+2. Decide whether the remaining passive executor refactor should be deleted,
+   completed, or left quarantined until user-data stream work starts.
 
 ## Decision
 

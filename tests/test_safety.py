@@ -1648,20 +1648,34 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(summary["test_count"], 2)
         self.assertEqual(summary["best_symbols"], "C/USDT,D/USDT")
         self.assertEqual(summary["warning"], "multiple_testing_adjustment_required")
+        haircut = risk_metrics.multiple_testing_sharpe_haircut(sharpe=1.0, years=3.0, test_count=100)
+        self.assertLess(haircut["deflated_sharpe_proxy"], 1.0)
+        self.assertEqual(haircut["warning"], "conservative_proxy_not_full_dsr")
+
+        wf = pd.DataFrame({"train_return_pct": [100.0, 80.0], "test_return_pct": [10.0, -5.0]})
+        overfit = risk_metrics.walk_forward_overfit_summary(wf)
+        self.assertEqual(overfit["folds"], 2)
+        self.assertEqual(overfit["severe_degradation_folds"], 2)
+        self.assertGreater(overfit["pbo_proxy"], 0)
 
     def test_risk_adjusted_report_reads_equity_and_sweep(self):
         with tempfile.TemporaryDirectory() as tmp:
             equity_path = Path(tmp) / "equity.csv"
             sweep_path = Path(tmp) / "sweep.csv"
+            wf_path = Path(tmp) / "wf.csv"
             pd.DataFrame({"equity": [1000.0, 1100.0, 1050.0]}).to_csv(equity_path, index=False)
             pd.DataFrame({"symbols": ["A/USDT,B/USDT"], "cagr_pct": [10.0]}).to_csv(sweep_path, index=False)
+            pd.DataFrame({"train_return_pct": [100.0], "test_return_pct": [20.0]}).to_csv(wf_path, index=False)
             report = risk_adjusted_report.build_report(
                 equity_path=str(equity_path),
                 sweep_path=str(sweep_path),
+                walk_forward_path=str(wf_path),
                 timeframe="4h",
             )
             self.assertIn("sharpe", report["equity_metrics"])
             self.assertEqual(report["multiple_testing"]["test_count"], 1)
+            self.assertIn("sharpe_haircut", report["overfit_controls"])
+            self.assertIn("walk_forward_degradation", report["overfit_controls"])
 
     def test_correlation_stress_flags_highly_correlated_pairs(self):
         idx = pd.date_range("2026-01-01", periods=5, freq="4h")
