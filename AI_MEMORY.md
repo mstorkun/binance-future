@@ -111,7 +111,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `86` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `87` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
@@ -121,7 +121,7 @@ Other previous validation context:
   reporting plus correlation stress, pattern ablation, and exchange-filter cache
   TTL helpers, paper CSV append hardening, stale risk-code quarantine, and
   passive TWAP/executor guardrails, exact requirement pinning, and paper lock
-  heartbeat refresh, and bias-audit report serialization.
+  heartbeat refresh, bias-audit report serialization, and PBO matrix reporting.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
@@ -137,6 +137,11 @@ Other previous validation context:
   `trade_executor.py` and `twap_execution.py` remain quarantined research-only
   helpers. Do not wire them into paper/testnet/live until user-data stream,
   fill reconciliation, persistence, and A/B evidence exist.
+- PBO harness:
+  `portfolio_param_walk_forward.py --matrix-out portfolio_param_candidate_matrix.csv`
+  can now write the full candidate-by-fold matrix, and `pbo_report.py` reports
+  selected candidate OOS rank/PBO from that matrix. Full matrix run is still
+  pending because it is intentionally expensive.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -266,6 +271,8 @@ Other previous validation context:
   lookahead/recursive drift audit result for DOGE/LINK/TRX.
 - `docs/EXECUTOR_REFACTOR_DECISION_2026_05_01.md`: records the decision to keep
   passive executor/TWAP helpers quarantined.
+- `docs/PBO_MATRIX_HARNESS_2026_05_01.md`: documents the candidate-by-fold
+  matrix and `pbo_report.py` workflow.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -293,6 +300,8 @@ Other previous validation context:
 - `risk_adjusted_report.py`: reads existing equity/sweep CSV outputs and writes
   ignored `risk_adjusted_report.json` with risk-adjusted metrics and
   multiple-testing summary.
+- `pbo_report.py`: reads a candidate-by-fold matrix and reports selected
+  candidate OOS rank/PBO-style diagnostics.
 - `correlation_stress.py`: report-only pairwise symbol return correlation
   stress. It writes ignored `correlation_stress_report.json` and
   `correlation_stress_pairs.csv`; it does not change sizing behavior.
@@ -326,7 +335,8 @@ Other previous validation context:
 - `portfolio_param_walk_forward.py`: research-only portfolio walk-forward that
   selects Donchian/exit/volume/ATR-stop parameters and risk profile on the train
   window, then applies the selected candidate to the OOS test window. Use this
-  to address the "fixed parameter walk-forward" methodology gap.
+  to address the "fixed parameter walk-forward" methodology gap. It also accepts
+  `--matrix-out` for the full candidate-by-fold PBO matrix.
 - `portfolio_cost_stress.py`: research-only replay of selected walk-forward OOS
   folds under harsher fee/slippage/funding assumptions. It keeps selected
   params fixed and writes `portfolio_cost_stress_results.csv` plus fold detail.

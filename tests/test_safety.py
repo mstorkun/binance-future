@@ -35,6 +35,7 @@ import portfolio_candidate_sweep
 import portfolio_cost_stress
 import portfolio_holdout
 import portfolio_param_walk_forward
+import pbo_report
 import protections
 import risk
 import risk_adjusted_report
@@ -1690,6 +1691,19 @@ class SafetyTests(unittest.TestCase):
             self.assertEqual(report["multiple_testing"]["test_count"], 1)
             self.assertIn("sharpe_haircut", report["overfit_controls"])
             self.assertIn("walk_forward_degradation", report["overfit_controls"])
+
+    def test_pbo_report_flags_oos_underperformance(self):
+        matrix = pd.DataFrame({
+            "period": [1, 1, 1, 2, 2, 2],
+            "candidate": ["A", "B", "C", "A", "B", "C"],
+            "selected": [True, False, False, False, True, False],
+            "train_score": [3.0, 2.0, 1.0, 1.0, 3.0, 2.0],
+            "test_return_pct": [1.0, 10.0, 5.0, 10.0, 1.0, 5.0],
+        })
+        report = pbo_report.build_pbo_report(matrix)
+        self.assertEqual(report["folds"], 2)
+        self.assertEqual(report["pbo"], 1.0)
+        self.assertLess(report["avg_oos_rank_pct"], 0.5)
 
     def test_correlation_stress_flags_highly_correlated_pairs(self):
         idx = pd.date_range("2026-01-01", periods=5, freq="4h")

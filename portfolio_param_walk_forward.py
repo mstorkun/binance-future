@@ -214,6 +214,7 @@ def run_walk_forward(
     profile_names: list[str] | None = None,
     risk_capped: bool = False,
     out: str = "portfolio_param_walk_forward_results.csv",
+    matrix_out: str = "",
 ) -> pd.DataFrame:
     symbols = list(config.SYMBOLS)
     data = fetch_all_data(symbols, years=years)
@@ -222,6 +223,7 @@ def run_walk_forward(
     candidates = generate_candidates(profiles=profiles, max_param_combos=max_param_combos)
 
     rows = []
+    matrix_rows = []
     period = 1
     start = 0
     while start + train_bars + test_bars <= len(base_index):
@@ -245,7 +247,36 @@ def run_walk_forward(
 
         best = max(train_rows, key=lambda row: row["score"] if math.isfinite(row["score"]) else -1_000_000.0)
         selected: Candidate = best["candidate"]
-        test_metrics = _run_candidate(symbols, test_slice, selected, test_bars)
+        matrix_test_metrics_by_name: dict[str, dict] = {}
+        if matrix_out:
+            for train_row in train_rows:
+                candidate: Candidate = train_row["candidate"]
+                candidate_test_metrics = _run_candidate(symbols, test_slice, candidate, test_bars)
+                matrix_test_metrics_by_name[candidate.name] = candidate_test_metrics
+                p = candidate.params
+                matrix_rows.append({
+                    "period": period,
+                    "train_start": train_start,
+                    "train_end": train_end,
+                    "test_start": test_start,
+                    "test_end": test_end,
+                    "candidate": candidate.name,
+                    "selected": candidate.name == selected.name,
+                    "profile": candidate.profile["name"],
+                    "donchian": p.donchian,
+                    "donchian_exit": p.donchian_exit,
+                    "volume_mult": p.volume_mult,
+                    "sl_atr_mult": p.sl_atr_mult,
+                    "selector_mode": "risk_capped" if risk_capped else "custom_profiles" if profile_names else "all_profiles",
+                    "profile_universe": ",".join(profile["name"] for profile in profiles),
+                    "train_score": train_row["score"],
+                    **{f"train_{k}": v for k, v in train_row.items() if k not in {"candidate", "score"}},
+                    **{f"test_{k}": v for k, v in candidate_test_metrics.items()},
+                })
+
+        test_metrics = matrix_test_metrics_by_name.get(selected.name)
+        if test_metrics is None:
+            test_metrics = _run_candidate(symbols, test_slice, selected, test_bars)
 
         p = selected.params
         row = {
@@ -281,6 +312,8 @@ def run_walk_forward(
     results = pd.DataFrame(rows)
     if out:
         results.to_csv(out, index=False)
+    if matrix_out:
+        pd.DataFrame(matrix_rows).to_csv(matrix_out, index=False)
     return results
 
 
@@ -304,6 +337,11 @@ def main() -> int:
         help="Explicit profile names to include in selector universe.",
     )
     parser.add_argument("--out", default="portfolio_param_walk_forward_results.csv")
+    parser.add_argument(
+        "--matrix-out",
+        default="",
+        help="Optional candidate-by-fold matrix CSV for PBO-style analysis. Expensive: tests every candidate in every fold.",
+    )
     args = parser.parse_args()
 
     results = run_walk_forward(
@@ -316,6 +354,7 @@ def main() -> int:
         profile_names=args.profiles,
         risk_capped=args.risk_capped,
         out=args.out,
+        matrix_out=args.matrix_out,
     )
     if results.empty:
         print("No walk-forward periods completed.")

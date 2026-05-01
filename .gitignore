@@ -28,6 +28,8 @@ mature_bot_compare_results.csv
 portfolio_candidate_sweep_results.csv
 portfolio_candidate_universe.csv
 risk_adjusted_report.json
+pbo_report.json
+portfolio_param_candidate_matrix.csv
 correlation_stress_report.json
 correlation_stress_pairs.csv
 pattern_ablation_results.csv

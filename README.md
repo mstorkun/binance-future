@@ -60,6 +60,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Overfit controls: [docs/OVERFIT_CONTROLS_2026_05_01.md](docs/OVERFIT_CONTROLS_2026_05_01.md) adds Bonferroni Sharpe haircut and walk-forward degradation proxies.
 - Bias audit report: [docs/BIAS_AUDIT_REPORT_2026_05_01.md](docs/BIAS_AUDIT_REPORT_2026_05_01.md) commits reproducible lookahead/recursive drift results for DOGE/LINK/TRX.
 - Executor refactor decision: [docs/EXECUTOR_REFACTOR_DECISION_2026_05_01.md](docs/EXECUTOR_REFACTOR_DECISION_2026_05_01.md) keeps passive executor/TWAP helpers quarantined until user-data stream and fill reconciliation exist.
+- PBO matrix harness: [docs/PBO_MATRIX_HARNESS_2026_05_01.md](docs/PBO_MATRIX_HARNESS_2026_05_01.md) adds the expensive candidate-by-fold matrix path for real PBO-style analysis.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files
@@ -88,6 +89,7 @@ portfolio_candidate_sweep.py Search better symbol combinations
 timeframe_sweep.py           Compare 1h/2h/4h with raw and scaled indicator horizons
 risk_metrics.py              Risk-adjusted metric helpers
 risk_adjusted_report.py      JSON report for Sharpe/Sortino and multiple-testing visibility
+pbo_report.py                PBO-style report from candidate-by-fold matrix
 correlation_stress.py        Report-only pairwise symbol correlation stress
 pattern_ablation.py          Report-only pattern-risk on/off ablation
 portfolio_param_walk_forward.py Train-only portfolio parameter walk-forward
