@@ -59,6 +59,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Paper lock heartbeat: [docs/PAPER_LOCK_HEARTBEAT_2026_05_01.md](docs/PAPER_LOCK_HEARTBEAT_2026_05_01.md) refreshes the paper runner lock while long loops are alive.
 - Overfit controls: [docs/OVERFIT_CONTROLS_2026_05_01.md](docs/OVERFIT_CONTROLS_2026_05_01.md) adds Bonferroni Sharpe haircut and walk-forward degradation proxies.
 - Bias audit report: [docs/BIAS_AUDIT_REPORT_2026_05_01.md](docs/BIAS_AUDIT_REPORT_2026_05_01.md) commits reproducible lookahead/recursive drift results for DOGE/LINK/TRX.
+- Executor refactor decision: [docs/EXECUTOR_REFACTOR_DECISION_2026_05_01.md](docs/EXECUTOR_REFACTOR_DECISION_2026_05_01.md) keeps passive executor/TWAP helpers quarantined until user-data stream and fill reconciliation exist.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files

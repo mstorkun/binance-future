@@ -133,6 +133,10 @@ Other previous validation context:
   `python bias_audit_report.py --symbols DOGE/USDT LINK/USDT TRX/USDT --years 1 --sample-step 96 --fail-on-issue`
   wrote `docs/BIAS_AUDIT_REPORT_2026_05_01.json`; DOGE/LINK/TRX each used
   `2190` 4h rows and reported `0` issues.
+- Executor decision:
+  `trade_executor.py` and `twap_execution.py` remain quarantined research-only
+  helpers. Do not wire them into paper/testnet/live until user-data stream,
+  fill reconciliation, persistence, and A/B evidence exist.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -260,6 +264,8 @@ Other previous validation context:
   and walk-forward degradation/PBO proxies.
 - `docs/BIAS_AUDIT_REPORT_2026_05_01.md` and `.json`: committed reproducible
   lookahead/recursive drift audit result for DOGE/LINK/TRX.
+- `docs/EXECUTOR_REFACTOR_DECISION_2026_05_01.md`: records the decision to keep
+  passive executor/TWAP helpers quarantined.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.

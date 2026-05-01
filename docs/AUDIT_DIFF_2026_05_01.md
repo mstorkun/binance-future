@@ -85,7 +85,7 @@ into the backlog.
 |---:|---|---|---|
 | 20 | Requirements are unpinned | ccxt behavior can drift under the bot | Closed: runtime requirements are exactly pinned and dev requirements pin pytest. |
 | 22 | TWAP is passive shell | Dead safety feature can be misunderstood as active | Closed for current scope: marked passive-only, documented as planner-only, and tests assert it is not wired into order flow. |
-| 23 | `trade_executor.py` and duplicate trailing logic | More paths means drift and inconsistent behavior | Partially reduced: marked passive-only and tested as not wired; structural executor refactor remains deferred. |
+| 23 | `trade_executor.py` and duplicate trailing logic | More paths means drift and inconsistent behavior | Closed as decision: passive executor/TWAP helpers stay quarantined until user-data stream and fill reconciliation exist. |
 | 24 | `risk_management.py` is stale/dead risk code | Dangerous formulas may be reused accidentally | Closed: legacy helper is quarantined and raises if called. |
 | 25 | `exchange_filters.py` cache has no refresh policy | Binance filter changes can stale cached limits | Closed: filter cache now has TTL and explicit refresh helper. |
 | 28 | Bias audit artifacts not committed as reports | Claims are hard to reproduce | Closed: DOGE/LINK/TRX bias-audit JSON and summary report are committed. |
@@ -105,9 +105,9 @@ into the backlog.
 
 ## Current Priority Order
 
-1. Decide whether the remaining passive executor refactor should be deleted,
-   completed, or left quarantined until user-data stream work starts.
-2. Build the full candidate-by-fold matrix needed for real PBO.
+1. Build the full candidate-by-fold matrix needed for real PBO.
+2. Design the user-data stream implementation needed before executor work can
+   restart.
 
 ## Decision
 
