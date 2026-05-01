@@ -74,3 +74,17 @@ python paper_runner.py --once --reset
 ```
 
 After the switch, restart the paper runner so it imports the new config.
+
+## Shadow Paper Mode
+
+Use this before changing the active 4h config:
+
+```bash
+python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks --reset
+python paper_report.py --tag shadow_2h
+python ops_status.py --tag shadow_2h --json
+```
+
+The `shadow_2h` tag writes separate runtime files such as
+`paper_shadow_2h_state.json` and `paper_shadow_2h_decisions.csv`. It does not
+change active 4h paper files or live/testnet order settings.

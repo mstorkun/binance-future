@@ -62,6 +62,7 @@ trade_executor.py            Passive lifecycle contract for future execution ref
 bias_audit.py                Lookahead/recursive indicator stability audit
 ops_status.py                Local paper/testnet status report
 paper_report.py              Detailed paper decision/equity/error report
+paper_runtime.py             Tagged paper/shadow runtime isolation helpers
 mature_bot_compare.py        Side-by-side add-on validation
 portfolio_candidate_sweep.py Search better symbol combinations
 timeframe_sweep.py           Compare 1h/2h/4h with raw and scaled indicator horizons
@@ -97,6 +98,8 @@ python timeframe_sweep.py --years 3 --timeframes 1h 2h 4h --scaled-params
 python ops_status.py --json
 python paper_report.py
 python paper_runner.py --once --reset
+python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks --reset
+python paper_report.py --tag shadow_2h
 python -m unittest discover -s tests -v
 ```
 

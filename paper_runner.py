@@ -26,6 +26,7 @@ import execution_guard as eg
 import flow_data
 import indicators as ind
 import liquidation
+import paper_runtime
 import risk as r
 import strategy as strat
 
@@ -49,6 +50,11 @@ def _write_heartbeat(status: str, **extra: Any) -> None:
         "status": status,
         "updated_at": _utc_now(),
         "pid": os.getpid(),
+        "run_tag": getattr(config, "PAPER_RUN_TAG", "default"),
+        "timeframe": getattr(config, "TIMEFRAME", ""),
+        "flow_period": getattr(config, "FLOW_PERIOD", getattr(config, "TIMEFRAME", "")),
+        "scaled_lookbacks": bool(getattr(config, "PAPER_SCALED_LOOKBACKS", False)),
+        "symbols": list(getattr(config, "SYMBOLS", [])),
         **extra,
     }
     _atomic_write_json(getattr(config, "PAPER_HEARTBEAT_FILE", "paper_heartbeat.json"), payload)
@@ -100,6 +106,9 @@ def _load_state(reset: bool = False) -> dict[str, Any]:
             "wallet": float(getattr(config, "PAPER_START_BALANCE", config.CAPITAL_USDT)),
             "positions": {},
             "created_at": _utc_now(),
+            "run_tag": getattr(config, "PAPER_RUN_TAG", "default"),
+            "timeframe": getattr(config, "TIMEFRAME", ""),
+            "scaled_lookbacks": bool(getattr(config, "PAPER_SCALED_LOOKBACKS", False)),
         }
     with path.open("r", encoding="utf-8") as f:
         return json.load(f)
@@ -153,6 +162,8 @@ def _append_csv(path: str, rows: list[dict[str, Any]]) -> None:
 def _append_error(error: Exception, attempt: int | None = None) -> None:
     _append_csv(getattr(config, "PAPER_ERRORS_CSV", "paper_errors.csv"), [{
         "run_at_utc": _utc_now(),
+        "run_tag": getattr(config, "PAPER_RUN_TAG", "default"),
+        "timeframe": getattr(config, "TIMEFRAME", ""),
         "pid": os.getpid(),
         "attempt": attempt if attempt is not None else "",
         "error_type": type(error).__name__,
@@ -220,6 +231,8 @@ def _close_position(pos: dict[str, Any], exit_price: float, exit_ts, reason: str
 
     row = {
         "closed_at_utc": _utc_now(),
+        "run_tag": getattr(config, "PAPER_RUN_TAG", "default"),
+        "timeframe": getattr(config, "TIMEFRAME", ""),
         "symbol": pos["symbol"],
         "entry_time": pos["entry_time"],
         "exit_time": pd.Timestamp(exit_ts).isoformat(),
@@ -298,6 +311,9 @@ def _decision_row(
     bar = df.iloc[-2]
     return {
         "run_at_utc": _utc_now(),
+        "run_tag": getattr(config, "PAPER_RUN_TAG", "default"),
+        "timeframe": getattr(config, "TIMEFRAME", ""),
+        "scaled_lookbacks": bool(getattr(config, "PAPER_SCALED_LOOKBACKS", False)),
         "symbol": symbol,
         "bar_time": pd.Timestamp(bar.name).isoformat(),
         "action": action,
@@ -334,6 +350,10 @@ def _decision_row(
 def run_once(reset: bool = False) -> dict[str, Any]:
     exchange = _public_exchange()
     state = _load_state(reset=reset)
+    state["run_tag"] = getattr(config, "PAPER_RUN_TAG", "default")
+    state["timeframe"] = getattr(config, "TIMEFRAME", "")
+    state["scaled_lookbacks"] = bool(getattr(config, "PAPER_SCALED_LOOKBACKS", False))
+    state["symbols"] = list(getattr(config, "SYMBOLS", []))
     frames: dict[str, pd.DataFrame] = {}
     for symbol in config.SYMBOLS:
         frames[symbol] = _prepare_symbol(exchange, symbol)
@@ -413,6 +433,9 @@ def run_once(reset: bool = False) -> dict[str, Any]:
     _append_csv(config.PAPER_DECISIONS_CSV, decision_rows)
     _append_csv(config.PAPER_EQUITY_CSV, [{
         "run_at_utc": _utc_now(),
+        "run_tag": getattr(config, "PAPER_RUN_TAG", "default"),
+        "timeframe": getattr(config, "TIMEFRAME", ""),
+        "scaled_lookbacks": bool(getattr(config, "PAPER_SCALED_LOOKBACKS", False)),
         "wallet": round(wallet, 6),
         "equity": round(equity, 6),
         "unrealized": round(unrealized, 6),
@@ -461,18 +484,31 @@ def main() -> None:
     parser.add_argument("--loop", action="store_true", help="Run continuously.")
     parser.add_argument("--interval-minutes", type=float, default=60.0)
     parser.add_argument("--reset", action="store_true", help="Reset paper state before the first run.")
+    parser.add_argument("--tag", default="", help="Isolate runtime files with a run tag, e.g. shadow_2h.")
+    parser.add_argument("--timeframe", default="", help="Temporarily override config.TIMEFRAME for this runner.")
+    parser.add_argument(
+        "--scale-lookbacks",
+        action="store_true",
+        help="Scale indicator lookbacks so the run keeps roughly the current 4h calendar horizon.",
+    )
     args = parser.parse_args()
 
     if not args.once and not args.loop:
         args.once = True
 
-    with PaperRunnerLock():
+    with paper_runtime.temporary_paper_runtime(
+        tag=args.tag,
+        timeframe=args.timeframe or None,
+        scale_lookbacks=args.scale_lookbacks,
+    ), PaperRunnerLock():
         first = True
         while True:
             try:
                 result = _run_once_with_retry(reset=args.reset and first)
                 print(
                     "paper telemetry:",
+                    f"tag={getattr(config, 'PAPER_RUN_TAG', 'default')}",
+                    f"timeframe={getattr(config, 'TIMEFRAME', '')}",
                     f"equity={result['equity']:.2f}",
                     f"wallet={result['wallet']:.2f}",
                     f"open={result['open_positions']}",

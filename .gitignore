@@ -8,6 +8,13 @@ paper_equity.csv
 paper_errors.csv
 paper_heartbeat.json
 paper_runner.lock
+paper_*_state.json
+paper_*_decisions.csv
+paper_*_trades.csv
+paper_*_equity.csv
+paper_*_errors.csv
+paper_*_heartbeat.json
+paper_*_runner.lock
 testnet_fill_probe.csv
 mature_bot_compare_results.csv
 portfolio_candidate_sweep_results.csv

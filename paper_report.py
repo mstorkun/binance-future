@@ -17,6 +17,7 @@ from typing import Any
 import pandas as pd
 
 import config
+import paper_runtime
 
 
 DECISION_FIELDS = [
@@ -161,6 +162,15 @@ def build_report(decision_limit: int = 50) -> dict[str, Any]:
 
     return {
         "symbols": symbols,
+        "runtime": {
+            "run_tag": heartbeat.get("run_tag", getattr(config, "PAPER_RUN_TAG", "default")),
+            "timeframe": heartbeat.get("timeframe", getattr(config, "TIMEFRAME", "")),
+            "flow_period": heartbeat.get("flow_period", getattr(config, "FLOW_PERIOD", "")),
+            "scaled_lookbacks": heartbeat.get(
+                "scaled_lookbacks",
+                bool(getattr(config, "PAPER_SCALED_LOOKBACKS", False)),
+            ),
+        },
         "safety": {
             "testnet": bool(getattr(config, "TESTNET", True)),
             "live_trading_approved": bool(getattr(config, "LIVE_TRADING_APPROVED", False)),
@@ -202,9 +212,17 @@ def print_text(report: dict[str, Any]) -> None:
     heartbeat = report["heartbeat"]
     safety = report["safety"]
     recent = report["recent"]
+    runtime = report["runtime"]
 
     print("=== PAPER REPORT ===")
     print("symbols:", ", ".join(report["symbols"]))
+    print(
+        "runtime:",
+        f"tag={runtime['run_tag']}",
+        f"timeframe={runtime['timeframe']}",
+        f"flow={runtime['flow_period']}",
+        f"scaled={runtime['scaled_lookbacks']}",
+    )
     print(
         "heartbeat:",
         f"status={heartbeat['status']}",
@@ -254,9 +272,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Print detailed local paper telemetry report.")
     parser.add_argument("--json", action="store_true", help="Print JSON instead of text.")
     parser.add_argument("--tail", type=int, default=50, help="Number of recent rows to inspect.")
+    parser.add_argument("--tag", default="", help="Read isolated paper files for this run tag.")
     args = parser.parse_args()
 
-    report = build_report(decision_limit=args.tail)
+    with paper_runtime.temporary_paper_runtime(tag=args.tag):
+        report = build_report(decision_limit=args.tail)
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:

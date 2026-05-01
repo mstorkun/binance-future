@@ -111,7 +111,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest tests/test_safety.py -q` -> `24` tests passed.
+  `python -m pytest tests/test_safety.py -q` -> `26` tests passed.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -165,6 +165,9 @@ Other previous validation context:
 - `order_manager.py`: live/testnet order placement, one-way mode check, hard
   stop placement, reduce-only close.
 - `paper_runner.py`: no-order paper telemetry runner.
+- `paper_runtime.py`: tagged paper/shadow runtime isolation helpers for
+  separate state/decision/equity/heartbeat files and temporary timeframe
+  overrides.
 - `portfolio_backtest.py`: current primary statistical backtest.
 - `portfolio_walk_forward.py`: portfolio walk-forward validation.
 - `portfolio_monte_carlo.py`: trade-return Monte Carlo validation.
@@ -193,7 +196,18 @@ Other previous validation context:
   `1000`, open positions `0`, testnet `true`, and live trading approval
   `false`. This can go stale; verify `paper_heartbeat.json` before relying on
   it.
+- A 2h scaled shadow paper runner was started with:
+  `python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks`.
+  Last observed PID `13032`, heartbeat `ok`, equity `1000`, wallet `1000`,
+  open positions `0`, actions `{'no_signal': 6}`, warnings none. It writes
+  isolated files such as `paper_shadow_2h_state.json` and can be checked with
+  `python paper_report.py --tag shadow_2h`.
 - Runtime paper files are ignored by git.
+- Shadow paper mode is available:
+  `python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks --reset`.
+  Read it with `python paper_report.py --tag shadow_2h` or
+  `python ops_status.py --tag shadow_2h --json`. Tagged files are isolated
+  from the active 4h paper run.
 - `walk_forward_results.csv` is a known pre-existing dirty file. Do not stage,
   revert, or rewrite it unless the user specifically asks.
 - Large CSV files should not be read wholesale. Use `head`, `tail`,

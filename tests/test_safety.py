@@ -13,6 +13,7 @@ import bias_audit
 import exit_ladder
 import flow_data
 import order_manager
+import paper_runtime
 import pair_universe
 import paper_runner
 import paper_report
@@ -176,6 +177,87 @@ class SafetyTests(unittest.TestCase):
             config.PAPER_ERRORS_CSV = old_errors
             config.TESTNET = old_testnet
             config.LIVE_TRADING_APPROVED = old_live
+
+    def test_paper_runtime_tagged_files_and_scaling_restore(self):
+        old_files = {attr: getattr(config, attr) for attr in paper_runtime.PAPER_FILE_ATTRS}
+        old_timeframe = config.TIMEFRAME
+        old_flow_period = getattr(config, "FLOW_PERIOD", old_timeframe)
+        old_donchian = config.DONCHIAN_PERIOD
+        old_warmup = config.WARMUP_BARS
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for attr, value in old_files.items():
+                    setattr(config, attr, str(root / Path(value).name))
+
+                with paper_runtime.temporary_paper_runtime(
+                    tag="shadow 2h",
+                    timeframe="2h",
+                    scale_lookbacks=True,
+                ):
+                    self.assertEqual(config.PAPER_RUN_TAG, "shadow_2h")
+                    self.assertEqual(config.TIMEFRAME, "2h")
+                    self.assertEqual(config.FLOW_PERIOD, "2h")
+                    self.assertEqual(config.DONCHIAN_PERIOD, old_donchian * 2)
+                    self.assertEqual(config.WARMUP_BARS, old_warmup * 2)
+                    self.assertEqual(
+                        Path(config.PAPER_STATE_FILE).name,
+                        "paper_shadow_2h_state.json",
+                    )
+                    self.assertEqual(
+                        Path(config.PAPER_HEARTBEAT_FILE).name,
+                        "paper_shadow_2h_heartbeat.json",
+                    )
+
+                self.assertEqual(config.TIMEFRAME, old_timeframe)
+                self.assertEqual(config.FLOW_PERIOD, old_flow_period)
+                self.assertEqual(config.DONCHIAN_PERIOD, old_donchian)
+                self.assertEqual(config.WARMUP_BARS, old_warmup)
+        finally:
+            for attr, value in old_files.items():
+                setattr(config, attr, value)
+
+    def test_paper_report_reads_tagged_runtime_files(self):
+        old_files = {attr: getattr(config, attr) for attr in paper_runtime.PAPER_FILE_ATTRS}
+        old_symbols = config.SYMBOLS
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for attr, value in old_files.items():
+                    setattr(config, attr, str(root / Path(value).name))
+                config.SYMBOLS = ["DOGE/USDT"]
+
+                with paper_runtime.temporary_paper_runtime(tag="shadow_2h", timeframe="2h"):
+                    Path(config.PAPER_HEARTBEAT_FILE).write_text(json.dumps({
+                        "status": "ok",
+                        "updated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+                        "pid": 456,
+                        "run_tag": "shadow_2h",
+                        "timeframe": "2h",
+                        "flow_period": "2h",
+                        "scaled_lookbacks": True,
+                        "wallet": 1000.0,
+                        "equity": 1002.0,
+                        "open_positions": 0,
+                    }), encoding="utf-8")
+                    paper_runner._append_csv(config.PAPER_DECISIONS_CSV, [{
+                        "symbol": "DOGE/USDT",
+                        "action": "no_signal",
+                        "bar_time": "2026-01-01",
+                        "close": "0.1",
+                    }])
+
+                with paper_runtime.temporary_paper_runtime(tag="shadow_2h"):
+                    report = paper_report.build_report(decision_limit=10)
+
+                self.assertEqual(report["runtime"]["run_tag"], "shadow_2h")
+                self.assertEqual(report["runtime"]["timeframe"], "2h")
+                self.assertEqual(report["heartbeat"]["equity"], 1002.0)
+                self.assertEqual(report["recent"]["actions"]["no_signal"], 1)
+        finally:
+            config.SYMBOLS = old_symbols
+            for attr, value in old_files.items():
+                setattr(config, attr, value)
 
     def test_legacy_walk_forward_accepts_weekly_data_argument(self):
         idx = pd.date_range("2026-01-01", periods=10, freq="4h")

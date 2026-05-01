@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 
 import config
+import paper_runtime
 
 
 def _read_json(path: str) -> dict[str, Any]:
@@ -54,6 +55,13 @@ def build_status() -> dict[str, Any]:
     skips = decisions_tail["skipped_reason"].value_counts().to_dict() if "skipped_reason" in decisions_tail else {}
 
     return {
+        "run_tag": heartbeat.get("run_tag", getattr(config, "PAPER_RUN_TAG", "default")),
+        "timeframe": heartbeat.get("timeframe", getattr(config, "TIMEFRAME", "")),
+        "flow_period": heartbeat.get("flow_period", getattr(config, "FLOW_PERIOD", "")),
+        "scaled_lookbacks": heartbeat.get(
+            "scaled_lookbacks",
+            bool(getattr(config, "PAPER_SCALED_LOOKBACKS", False)),
+        ),
         "heartbeat_status": heartbeat.get("status", "missing"),
         "heartbeat_age_minutes": round(age_minutes, 2) if age_minutes is not None else None,
         "heartbeat_stale": stale,
@@ -73,8 +81,10 @@ def build_status() -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Print local paper/testnet telemetry status.")
     parser.add_argument("--json", action="store_true", help="Print JSON instead of text.")
+    parser.add_argument("--tag", default="", help="Read isolated paper files for this run tag.")
     args = parser.parse_args()
-    status = build_status()
+    with paper_runtime.temporary_paper_runtime(tag=args.tag):
+        status = build_status()
     if args.json:
         print(json.dumps(status, indent=2, sort_keys=True))
         return 0
