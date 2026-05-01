@@ -36,7 +36,7 @@ block. The remaining execution and ops issues below are still live blockers.
 | 4 | Static slippage is optimistic | Yes | Confirmed risk | Cost stress added; live fill review still needed. |
 | 5 | Funding model is weak | Yes | Confirmed risk | Adverse funding stress added; better historical validation remains open. |
 | 6 | Sharpe/Sortino missing | Yes | Confirmed | Closed for basic reporting: `risk_metrics.py`, `risk_adjusted_report.py`, and candidate sweep Sharpe/Sortino/Calmar fields added. |
-| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 77 plus 3 subtests, but strategy/risk/order tests remain thin. |
+| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 78 plus 3 subtests, but strategy/risk/order tests remain thin. |
 | 8 | Live state was RAM-only | Yes | Confirmed | Persistent state added; full exchange reconciliation remains open. |
 | 9 | Trailing SL duplicate reduce-only race risk | Yes | Confirmed risk | Extra reduce-only STOP cleanup added after trailing updates; testnet/user-data validation still needed. |
 | 10 | `recvWindow` and time sync missing | Yes | Confirmed gap | `RECV_WINDOW_MS` and ccxt time adjustment added. |
@@ -87,7 +87,7 @@ into the backlog.
 | 22 | TWAP is passive shell | Dead safety feature can be misunderstood as active | Either remove from live docs or complete integration. |
 | 23 | `trade_executor.py` and duplicate trailing logic | More paths means drift and inconsistent behavior | Refactor after live blockers are closed. |
 | 24 | `risk_management.py` is stale/dead risk code | Dangerous formulas may be reused accidentally | Delete or quarantine with documentation. |
-| 25 | `exchange_filters.py` cache has no refresh policy | Binance filter changes can stale cached limits | Add TTL refresh or startup refresh policy. |
+| 25 | `exchange_filters.py` cache has no refresh policy | Binance filter changes can stale cached limits | Closed: filter cache now has TTL and explicit refresh helper. |
 | 28 | Bias audit artifacts not committed as reports | Claims are hard to reproduce | Commit audit summaries for active symbols. |
 | 29 | Pattern weights are tunable and weakly justified | Hidden overfit risk | Pattern-risk ablation harness added; permutation/randomized-weight tests remain future work. |
 | 30 | Correlation-aware sizing is open-count based | DOGE/LINK/TRX can be highly correlated | Correlation stress report added; covariance-aware cap still requires side-by-side validation before activation. |
@@ -100,13 +100,13 @@ into the backlog.
 |---:|---|---|
 | 37 | `account_safety.py` exists | Position mode, leverage, margin mode, and hard-stop checks are now centralized. |
 | 38 | `ops_status.py --exchange` exists | Exchange safety checks can run separately from file-only status. |
-| 39 | Tests increased | Current test count is 77 plus 3 subtests, but coverage is still not enough for live funds. |
+| 39 | Tests increased | Current test count is 78 plus 3 subtests, but coverage is still not enough for live funds. |
 | 40 | Parameter WF includes Donchian exit | Exit period is now part of the selector grid. |
 
 ## Current Priority Order
 
 1. Add DSR/PBO or equivalent conservative overfitting controls.
-2. Add exchange-filter cache refresh and telemetry atomicity hardening.
+2. Add telemetry atomicity hardening.
 
 ## Decision
 

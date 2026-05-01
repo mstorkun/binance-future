@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, InvalidOperation
 from typing import Any
+
+import config
 
 
 @dataclass(frozen=True)
@@ -31,7 +34,7 @@ class SymbolFilters:
     pct_down: Decimal | None = None
 
 
-_CACHE: dict[tuple[int, str], SymbolFilters] = {}
+_CACHE: dict[tuple[int, str], tuple[SymbolFilters, float]] = {}
 
 
 def clear_cache() -> None:
@@ -191,12 +194,25 @@ def validate_with_filters(
 
 def get_symbol_filters(exchange: Any, symbol: str) -> SymbolFilters:
     key = (id(exchange), _normalize_symbol(symbol))
-    if key in _CACHE:
-        return _CACHE[key]
+    cached = _CACHE.get(key)
+    now = time.monotonic()
+    if cached is not None:
+        filters, fetched_at = cached
+        ttl = float(getattr(config, "EXCHANGE_FILTER_CACHE_TTL_SECONDS", 3600))
+        if ttl > 0 and now - fetched_at <= ttl:
+            return filters
 
     market = _fetch_exchange_info_symbol(exchange, symbol)
     filters = parse_symbol_filters(market)
-    _CACHE[key] = filters
+    _CACHE[key] = (filters, now)
+    return filters
+
+
+def refresh_symbol_filters(exchange: Any, symbol: str) -> SymbolFilters:
+    key = (id(exchange), _normalize_symbol(symbol))
+    market = _fetch_exchange_info_symbol(exchange, symbol)
+    filters = parse_symbol_filters(market)
+    _CACHE[key] = (filters, time.monotonic())
     return filters
 
 

@@ -116,6 +116,15 @@ class FakeExchangeInfo:
         }
 
 
+class CountingExchangeInfo(FakeExchangeInfo):
+    def __init__(self):
+        self.calls = 0
+
+    def fapiPublicGetExchangeInfo(self):
+        self.calls += 1
+        return super().fapiPublicGetExchangeInfo()
+
+
 class RetryCreateExchange:
     def __init__(self):
         self.created_params = []
@@ -1029,6 +1038,27 @@ class SafetyTests(unittest.TestCase):
         )
         self.assertTrue(result.ok)
         self.assertEqual(result.amount, 12.0)
+
+    def test_exchange_filters_cache_ttl_and_refresh(self):
+        old_ttl = config.EXCHANGE_FILTER_CACHE_TTL_SECONDS
+        try:
+            exchange_filters.clear_cache()
+            exchange = CountingExchangeInfo()
+            config.EXCHANGE_FILTER_CACHE_TTL_SECONDS = 3600
+            first = exchange_filters.get_symbol_filters(exchange, "DOGE/USDT")
+            second = exchange_filters.get_symbol_filters(exchange, "DOGE/USDT")
+            self.assertEqual(first, second)
+            self.assertEqual(exchange.calls, 1)
+
+            exchange_filters.refresh_symbol_filters(exchange, "DOGE/USDT")
+            self.assertEqual(exchange.calls, 2)
+
+            config.EXCHANGE_FILTER_CACHE_TTL_SECONDS = 0
+            exchange_filters.get_symbol_filters(exchange, "DOGE/USDT")
+            self.assertEqual(exchange.calls, 3)
+        finally:
+            config.EXCHANGE_FILTER_CACHE_TTL_SECONDS = old_ttl
+            exchange_filters.clear_cache()
 
     def test_hard_stop_from_soft_preserves_small_price_precision(self):
         self.assertAlmostEqual(
