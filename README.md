@@ -49,6 +49,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Risk profile policy: [docs/RISK_PROFILE_POLICY_2026_05_01.md](docs/RISK_PROFILE_POLICY_2026_05_01.md) marks the current 10x/%4 profile as research-only and gates live mode to `balanced_live_v1`.
 - User-data stream decision: [docs/USER_DATA_STREAM_DECISION_2026_05_01.md](docs/USER_DATA_STREAM_DECISION_2026_05_01.md) rejects polling-only live operation and keeps live mode blocked until stream readiness is proven.
 - Risk-adjusted metrics: [docs/RISK_ADJUSTED_METRICS_2026_05_01.md](docs/RISK_ADJUSTED_METRICS_2026_05_01.md) adds Sharpe/Sortino/Calmar reporting and Bonferroni visibility for candidate sweeps.
+- Correlation stress: [docs/CORRELATION_STRESS_2026_05_01.md](docs/CORRELATION_STRESS_2026_05_01.md) adds report-only pairwise symbol correlation stress before any covariance-aware sizing change.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files
@@ -76,6 +77,7 @@ portfolio_candidate_sweep.py Search better symbol combinations
 timeframe_sweep.py           Compare 1h/2h/4h with raw and scaled indicator horizons
 risk_metrics.py              Risk-adjusted metric helpers
 risk_adjusted_report.py      JSON report for Sharpe/Sortino and multiple-testing visibility
+correlation_stress.py        Report-only pairwise symbol correlation stress
 portfolio_param_walk_forward.py Train-only portfolio parameter walk-forward
 portfolio_cost_stress.py       Replay selected WF folds under harsher costs
 portfolio_holdout.py          Final pre-holdout selection and holdout replay
@@ -108,6 +110,7 @@ python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96
 python mature_bot_compare.py --years 3
 python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 5 --top 20
 python risk_adjusted_report.py
+python correlation_stress.py --years 3
 python timeframe_sweep.py --years 3 --timeframes 1h 2h 4h --scaled-params
 python portfolio_param_walk_forward.py --years 3 --max-param-combos 6
 python portfolio_cost_stress.py --wf-results portfolio_param_walk_forward_risk_capped_results.csv --years 3

@@ -36,7 +36,7 @@ block. The remaining execution and ops issues below are still live blockers.
 | 4 | Static slippage is optimistic | Yes | Confirmed risk | Cost stress added; live fill review still needed. |
 | 5 | Funding model is weak | Yes | Confirmed risk | Adverse funding stress added; better historical validation remains open. |
 | 6 | Sharpe/Sortino missing | Yes | Confirmed | Closed for basic reporting: `risk_metrics.py`, `risk_adjusted_report.py`, and candidate sweep Sharpe/Sortino/Calmar fields added. |
-| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 75 plus 3 subtests, but strategy/risk/order tests remain thin. |
+| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 76 plus 3 subtests, but strategy/risk/order tests remain thin. |
 | 8 | Live state was RAM-only | Yes | Confirmed | Persistent state added; full exchange reconciliation remains open. |
 | 9 | Trailing SL duplicate reduce-only race risk | Yes | Confirmed risk | Extra reduce-only STOP cleanup added after trailing updates; testnet/user-data validation still needed. |
 | 10 | `recvWindow` and time sync missing | Yes | Confirmed gap | `RECV_WINDOW_MS` and ccxt time adjustment added. |
@@ -90,7 +90,7 @@ into the backlog.
 | 25 | `exchange_filters.py` cache has no refresh policy | Binance filter changes can stale cached limits | Add TTL refresh or startup refresh policy. |
 | 28 | Bias audit artifacts not committed as reports | Claims are hard to reproduce | Commit audit summaries for active symbols. |
 | 29 | Pattern weights are tunable and weakly justified | Hidden overfit risk | Add permutation/ablation tests. |
-| 30 | Correlation-aware sizing is open-count based | DOGE/LINK/TRX can be highly correlated | Add correlation stress or covariance-aware cap. |
+| 30 | Correlation-aware sizing is open-count based | DOGE/LINK/TRX can be highly correlated | Correlation stress report added; covariance-aware cap still requires side-by-side validation before activation. |
 | 31 | CSV append is not atomic/fsynced | Runtime telemetry can corrupt on crash | Add atomic or journaled CSV write path where important. |
 | 32 | Paper lock heartbeat not refreshed | Manual restart can be blocked by stale locks | Refresh lock heartbeat or improve stale-lock detection. |
 
@@ -100,13 +100,13 @@ into the backlog.
 |---:|---|---|
 | 37 | `account_safety.py` exists | Position mode, leverage, margin mode, and hard-stop checks are now centralized. |
 | 38 | `ops_status.py --exchange` exists | Exchange safety checks can run separately from file-only status. |
-| 39 | Tests increased | Current test count is 75 plus 3 subtests, but coverage is still not enough for live funds. |
+| 39 | Tests increased | Current test count is 76 plus 3 subtests, but coverage is still not enough for live funds. |
 | 40 | Parameter WF includes Donchian exit | Exit period is now part of the selector grid. |
 
 ## Current Priority Order
 
 1. Add DSR/PBO or equivalent conservative overfitting controls.
-2. Add correlation stress and pattern-weight ablations.
+2. Add pattern-weight ablations.
 
 ## Decision
 

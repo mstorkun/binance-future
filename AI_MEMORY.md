@@ -111,14 +111,14 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `75` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `76` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
   amount normalization, stale closed-bar detection, trade decision snapshot
   persistence, emergency kill-switch dry-run/execute paths, live profile guard
   behavior, user-data stream live-gate behavior, and basic risk-adjusted metrics
-  reporting.
+  reporting plus correlation stress helpers.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -221,6 +221,9 @@ Other previous validation context:
 - `docs/RISK_ADJUSTED_METRICS_2026_05_01.md`: documents basic Sharpe/Sortino/
   Calmar reporting and Bonferroni visibility for candidate sweeps. DSR/PBO or an
   equivalent conservative overfitting report remains future work.
+- `docs/CORRELATION_STRESS_2026_05_01.md`: documents the report-only
+  correlation stress pass. A covariance-aware cap still needs side-by-side
+  validation before it can affect trading logic.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -245,6 +248,9 @@ Other previous validation context:
 - `risk_adjusted_report.py`: reads existing equity/sweep CSV outputs and writes
   ignored `risk_adjusted_report.json` with risk-adjusted metrics and
   multiple-testing summary.
+- `correlation_stress.py`: report-only pairwise symbol return correlation
+  stress. It writes ignored `correlation_stress_report.json` and
+  `correlation_stress_pairs.csv`; it does not change sizing behavior.
 - `portfolio_walk_forward.py`: portfolio walk-forward validation.
 - `portfolio_monte_carlo.py`: trade-return Monte Carlo validation.
 - `flow_data.py`: Binance public futures flow data with TTL/freshness handling.

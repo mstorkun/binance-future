@@ -12,6 +12,7 @@ import account_safety
 import alerts
 import config
 import bias_audit
+import correlation_stress
 import data
 import decision_snapshots
 import emergency_kill_switch
@@ -1571,6 +1572,20 @@ class SafetyTests(unittest.TestCase):
             )
             self.assertIn("sharpe", report["equity_metrics"])
             self.assertEqual(report["multiple_testing"]["test_count"], 1)
+
+    def test_correlation_stress_flags_highly_correlated_pairs(self):
+        idx = pd.date_range("2026-01-01", periods=5, freq="4h")
+        data_by_symbol = {
+            "DOGE/USDT": {"df": pd.DataFrame({"close": [1, 2, 3, 4, 5]}, index=idx)},
+            "LINK/USDT": {"df": pd.DataFrame({"close": [2, 4, 6, 8, 10]}, index=idx)},
+            "TRX/USDT": {"df": pd.DataFrame({"close": [5, 4, 5, 4, 5]}, index=idx)},
+        }
+        returns = correlation_stress.symbol_return_frame(data_by_symbol, ["DOGE/USDT", "LINK/USDT", "TRX/USDT"])
+        summary = correlation_stress.stress_summary(returns, high_corr_threshold=0.80)
+        self.assertGreaterEqual(summary["max_abs_correlation"], 0.80)
+        self.assertTrue(summary["high_corr_pairs"])
+        self.assertEqual(correlation_stress.suggested_risk_multiplier(0.90), 0.50)
+        self.assertEqual(correlation_stress.suggested_risk_multiplier(0.75), 0.75)
 
     def test_portfolio_param_walk_forward_restores_strategy_config(self):
         old_values = (
