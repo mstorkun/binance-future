@@ -32,11 +32,11 @@ block. The remaining execution and ops issues below are still live blockers.
 |---:|---|---|---|---|
 | 1 | Live trading must stay blocked | Yes | Confirmed | Keep `TESTNET=True`, `LIVE_TRADING_APPROVED=False`. |
 | 2 | Strategy edge was not proven enough | Yes | Confirmed | Param WF, cost stress, holdout added; still research-only. |
-| 3 | DOGE/LINK/TRX selection has cherry-pick risk | Yes | Confirmed risk | Holdout added; multiple-testing controls still open. |
+| 3 | DOGE/LINK/TRX selection has cherry-pick risk | Yes | Confirmed risk | Holdout added; candidate sweep now reports test count and Bonferroni alpha; DSR/PBO still open. |
 | 4 | Static slippage is optimistic | Yes | Confirmed risk | Cost stress added; live fill review still needed. |
 | 5 | Funding model is weak | Yes | Confirmed risk | Adverse funding stress added; better historical validation remains open. |
-| 6 | Sharpe/Sortino missing | Yes | Confirmed | P1 risk-adjusted metrics open. |
-| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 73 plus 3 subtests, but strategy/risk/order tests remain thin. |
+| 6 | Sharpe/Sortino missing | Yes | Confirmed | Closed for basic reporting: `risk_metrics.py`, `risk_adjusted_report.py`, and candidate sweep Sharpe/Sortino/Calmar fields added. |
+| 7 | Test coverage too narrow | Yes | Confirmed | Tests increased to 75 plus 3 subtests, but strategy/risk/order tests remain thin. |
 | 8 | Live state was RAM-only | Yes | Confirmed | Persistent state added; full exchange reconciliation remains open. |
 | 9 | Trailing SL duplicate reduce-only race risk | Yes | Confirmed risk | Extra reduce-only STOP cleanup added after trailing updates; testnet/user-data validation still needed. |
 | 10 | `recvWindow` and time sync missing | Yes | Confirmed gap | `RECV_WINDOW_MS` and ccxt time adjustment added. |
@@ -100,12 +100,12 @@ into the backlog.
 |---:|---|---|
 | 37 | `account_safety.py` exists | Position mode, leverage, margin mode, and hard-stop checks are now centralized. |
 | 38 | `ops_status.py --exchange` exists | Exchange safety checks can run separately from file-only status. |
-| 39 | Tests increased | Current test count is 73 plus 3 subtests, but coverage is still not enough for live funds. |
+| 39 | Tests increased | Current test count is 75 plus 3 subtests, but coverage is still not enough for live funds. |
 | 40 | Parameter WF includes Donchian exit | Exit period is now part of the selector grid. |
 
 ## Current Priority Order
 
-1. Add risk-adjusted metrics and multiple-testing controls.
+1. Add DSR/PBO or equivalent conservative overfitting controls.
 2. Add correlation stress and pattern-weight ablations.
 
 ## Decision

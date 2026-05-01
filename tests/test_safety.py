@@ -33,6 +33,8 @@ import portfolio_holdout
 import portfolio_param_walk_forward
 import protections
 import risk
+import risk_adjusted_report
+import risk_metrics
 import timeframe_sweep
 import trade_executor
 import twap_execution
@@ -1535,6 +1537,40 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(row["trades"], 3)
         self.assertEqual(row["final_equity"], 1500.0)
         self.assertGreater(row["cagr_pct"], 0)
+        self.assertIn("sharpe", row)
+        self.assertIn("sortino", row)
+        self.assertIn("calmar", row)
+
+    def test_risk_metrics_equity_and_multiple_testing_summary(self):
+        equity = pd.DataFrame({"equity": [1000.0, 1100.0, 1050.0, 1250.0]})
+        metrics = risk_metrics.equity_metrics(equity, start_balance=1000.0, timeframe="4h")
+        self.assertGreater(metrics["total_return_pct"], 0)
+        self.assertGreater(metrics["max_dd_pct"], 0)
+        self.assertIn("sharpe", metrics)
+        self.assertAlmostEqual(risk_metrics.bonferroni_alpha(0.05, 100), 0.0005)
+
+        sweep = pd.DataFrame({
+            "symbols": ["A/USDT,B/USDT", "C/USDT,D/USDT"],
+            "cagr_pct": [10.0, 25.0],
+        })
+        summary = risk_metrics.candidate_sweep_multiple_testing_summary(sweep)
+        self.assertEqual(summary["test_count"], 2)
+        self.assertEqual(summary["best_symbols"], "C/USDT,D/USDT")
+        self.assertEqual(summary["warning"], "multiple_testing_adjustment_required")
+
+    def test_risk_adjusted_report_reads_equity_and_sweep(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            equity_path = Path(tmp) / "equity.csv"
+            sweep_path = Path(tmp) / "sweep.csv"
+            pd.DataFrame({"equity": [1000.0, 1100.0, 1050.0]}).to_csv(equity_path, index=False)
+            pd.DataFrame({"symbols": ["A/USDT,B/USDT"], "cagr_pct": [10.0]}).to_csv(sweep_path, index=False)
+            report = risk_adjusted_report.build_report(
+                equity_path=str(equity_path),
+                sweep_path=str(sweep_path),
+                timeframe="4h",
+            )
+            self.assertIn("sharpe", report["equity_metrics"])
+            self.assertEqual(report["multiple_testing"]["test_count"], 1)
 
     def test_portfolio_param_walk_forward_restores_strategy_config(self):
         old_values = (

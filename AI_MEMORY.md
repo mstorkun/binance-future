@@ -111,13 +111,14 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `73` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `75` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
   amount normalization, stale closed-bar detection, trade decision snapshot
   persistence, emergency kill-switch dry-run/execute paths, live profile guard
-  behavior, and user-data stream live-gate behavior.
+  behavior, user-data stream live-gate behavior, and basic risk-adjusted metrics
+  reporting.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -217,6 +218,9 @@ Other previous validation context:
   REST polling is insufficient for live funds. Live exchange creation is blocked
   until a real testnet-proven USD-M Futures user-data stream implementation is
   ready.
+- `docs/RISK_ADJUSTED_METRICS_2026_05_01.md`: documents basic Sharpe/Sortino/
+  Calmar reporting and Bonferroni visibility for candidate sweeps. DSR/PBO or an
+  equivalent conservative overfitting report remains future work.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -235,6 +239,12 @@ Other previous validation context:
   separate state/decision/equity/heartbeat files and temporary timeframe
   overrides.
 - `portfolio_backtest.py`: current primary statistical backtest.
+- `risk_metrics.py`: equity-path metrics and multiple-testing helpers. Provides
+  annualized volatility, Sharpe, Sortino, Calmar, max drawdown, and Bonferroni
+  alpha helpers.
+- `risk_adjusted_report.py`: reads existing equity/sweep CSV outputs and writes
+  ignored `risk_adjusted_report.json` with risk-adjusted metrics and
+  multiple-testing summary.
 - `portfolio_walk_forward.py`: portfolio walk-forward validation.
 - `portfolio_monte_carlo.py`: trade-return Monte Carlo validation.
 - `flow_data.py`: Binance public futures flow data with TTL/freshness handling.

@@ -17,6 +17,7 @@ import pandas as pd
 import config
 import pair_universe
 import portfolio_backtest as pb
+import risk_metrics
 
 
 DEFAULT_CANDIDATES = [
@@ -113,6 +114,11 @@ def summarize_combo(
         gross_win = float(trades.loc[trades["pnl"] > 0, "pnl"].sum())
         gross_loss = abs(float(trades.loc[trades["pnl"] <= 0, "pnl"].sum()))
         profit_factor = gross_win / gross_loss if gross_loss > 0 else None
+    risk_adj = risk_metrics.equity_metrics(
+        equity,
+        start_balance=config.CAPITAL_USDT,
+        timeframe=config.TIMEFRAME,
+    )
 
     return {
         "symbols": ",".join(symbols),
@@ -123,6 +129,10 @@ def summarize_combo(
         "total_return_pct": round(total_return, 2),
         "cagr_pct": round(cagr, 2),
         "peak_dd_pct": round(peak_dd_pct, 2),
+        "annual_vol_pct": round(risk_adj["annual_vol_pct"], 2),
+        "sharpe": round(risk_adj["sharpe"], 4),
+        "sortino": round(risk_adj["sortino"], 4),
+        "calmar": round(risk_adj["calmar"], 4),
         "profit_factor": round(profit_factor, 4) if profit_factor is not None else "",
         "commission": round(float(trades["commission"].sum()), 2) if not trades.empty else 0.0,
         "slippage": round(float(trades["slippage"].sum()), 2) if not trades.empty else 0.0,
@@ -213,6 +223,16 @@ def main() -> int:
     if not skipped.empty:
         print("\n=== SKIPPED ===")
         print(skipped.to_string(index=False))
+
+    if not results.empty:
+        mt = risk_metrics.candidate_sweep_multiple_testing_summary(results)
+        print("\n=== MULTIPLE TESTING CONTROL ===")
+        print(
+            f"tested_combos={mt['test_count']} "
+            f"best={mt['best_symbols']} "
+            f"best_{mt['best_metric']}={mt['best_metric_value']:.4f} "
+            f"bonferroni_alpha_5pct={mt['bonferroni_alpha']:.8f}"
+        )
 
     print("\n=== TOP CANDIDATES ===")
     if results.empty:
