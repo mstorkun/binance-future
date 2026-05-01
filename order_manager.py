@@ -5,6 +5,7 @@ import config
 import execution_guard as eg
 import exchange_filters as xf
 import liquidation
+import order_events
 import risk as r
 
 log = logging.getLogger(__name__)
@@ -43,15 +44,18 @@ def set_leverage(exchange: ccxt.Exchange) -> bool:
 def _safe_close_market(exchange: ccxt.Exchange, side: str, size: float):
     """Hata durumunda kullanılan acil kapatma."""
     close_side = "sell" if side == "long" else "buy"
+    order_events.record("emergency_close_submit", side=close_side, amount=size, reduce_only=True)
     try:
-        exchange.create_order(
+        order = exchange.create_order(
             symbol=config.SYMBOL,
             type="market",
             side=close_side,
             amount=size,
             params={"reduceOnly": True},
         )
+        order_events.record("emergency_close_ack", order=order_events.extract_order_summary(order))
     except Exception as e:
+        order_events.record("emergency_close_error", error=str(e))
         log.error(f"ACIL KAPATMA BAŞARISIZ: {e}")
 
 
@@ -80,11 +84,25 @@ def _create_sl_order(
         ref_price=ref_price or sl_price,
     )
     if not filter_result.ok:
+        order_events.record(
+            "stop_order_filter_block",
+            side=sl_side,
+            amount=size,
+            stop_price=sl_price,
+            reason=filter_result.reason,
+        )
         log.error(f"SL emir filtre hatasi: {filter_result.reason}")
         return None
 
     checked_size = filter_result.amount or size
     checked_sl_price = filter_result.price or sl_price
+    order_events.record(
+        "stop_order_submit",
+        side=sl_side,
+        amount=checked_size,
+        stop_price=checked_sl_price,
+        ref_price=ref_price,
+    )
     try:
         order = exchange.create_order(
             symbol=config.SYMBOL,
@@ -93,8 +111,10 @@ def _create_sl_order(
             amount=checked_size,
             params=eg.exchange_stop_params(checked_sl_price),
         )
+        order_events.record("stop_order_ack", order=order_events.extract_order_summary(order))
         return order
     except ccxt.BaseError as e:
+        order_events.record("stop_order_error", side=sl_side, amount=checked_size, stop_price=checked_sl_price, error=str(e))
         log.error(f"SL emir hatası: {e}")
         return None
 
@@ -134,24 +154,43 @@ def _order_filled_amount(order: dict | None, fallback: float) -> float:
     return _num(order.get("filled")) or _num(info.get("executedQty")) or fallback
 
 
-def _resolve_market_fill(exchange: ccxt.Exchange, order: dict | None, fallback_price: float, fallback_size: float) -> tuple[float, float]:
+def _resolve_market_fill(
+    exchange: ccxt.Exchange,
+    order: dict | None,
+    fallback_price: float,
+    fallback_size: float,
+    context: str = "market",
+) -> tuple[float, float]:
     price = _order_avg_price(order, fallback_price)
     size = _order_filled_amount(order, fallback_size)
     order_id = order.get("id") if order else None
     if order_id and (price == fallback_price or size == fallback_size):
         try:
             fetched = exchange.fetch_order(order_id, config.SYMBOL)
+            order_events.record(f"{context}_order_fetch", order=order_events.extract_order_summary(fetched))
             price = _order_avg_price(fetched, price)
             size = _order_filled_amount(fetched, size)
         except Exception as e:
+            order_events.record(f"{context}_order_fetch_error", order_id=order_id, error=str(e))
             log.warning(f"Market fill detayi cekilemedi, ilk order cevabi kullaniliyor: {e}")
+    order_events.record(
+        f"{context}_fill_resolved",
+        order_id=order_id,
+        fallback_price=fallback_price,
+        fallback_size=fallback_size,
+        fill_price=price,
+        filled_size=size,
+    )
     return price, size
 
 
 def _cancel_order_safe(exchange: ccxt.Exchange, order_id: str):
+    order_events.record("order_cancel_submit", order_id=order_id)
     try:
         exchange.cancel_order(order_id, config.SYMBOL)
+        order_events.record("order_cancel_ack", order_id=order_id)
     except Exception as e:
+        order_events.record("order_cancel_error", order_id=order_id, error=str(e))
         log.warning(f"SL iptal hatası (zaten iptal/dolu olabilir): {e}")
 
 
@@ -179,6 +218,13 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
 
     filter_result = xf.validate_entry_order(exchange, config.SYMBOL, order_side, size, price)
     if not filter_result.ok:
+        order_events.record(
+            "entry_order_filter_block",
+            side=order_side,
+            amount=size,
+            ref_price=price,
+            reason=filter_result.reason,
+        )
         log.warning(f"Exchange filtreleri pozisyonu blokladi: {filter_result.reason}")
         return None
     size = filter_result.amount or size
@@ -193,9 +239,20 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
 
     guard = eg.pre_trade_liquidity_check(exchange, config.SYMBOL, side, notional, price)
     if not guard.ok:
+        order_events.record("entry_order_guard_block", side=order_side, amount=size, notional=notional, reason=guard.reason)
         log.warning(f"Likidite/spread guard pozisyonu blokladi: {guard.reason}")
         return None
 
+    order_events.record(
+        "entry_order_submit",
+        side=order_side,
+        strategy_side=side,
+        amount=size,
+        notional=notional,
+        ref_price=price,
+        atr=atr,
+        risk_pct=risk_pct,
+    )
     try:
         order = exchange.create_order(
             symbol=config.SYMBOL,
@@ -207,16 +264,26 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
                 "newOrderRespType": getattr(config, "MARKET_ORDER_RESP_TYPE", "RESULT"),
             },
         )
+        order_events.record("entry_order_ack", order=order_events.extract_order_summary(order))
         log.info(f"Pozisyon açıldı: {side.upper()} | miktar={size} | fiyat≈{price:.2f}")
     except ccxt.BaseError as e:
+        order_events.record("entry_order_error", side=order_side, amount=size, error=str(e))
         log.error(f"Pozisyon açma hatası: {e}")
         return None
 
-    fill_price, filled_size = _resolve_market_fill(exchange, order, price, size)
+    fill_price, filled_size = _resolve_market_fill(exchange, order, price, size, context="entry")
     initial_sl, _ = r.sl_tp_prices(fill_price, atr, side)
     hard_sl = eg.hard_stop_from_soft(initial_sl, atr, side)
     liq_guard = liquidation.liquidation_guard_decision(fill_price, side, hard_sl, leverage=config.LEVERAGE)
     if not liq_guard.ok:
+        order_events.record(
+            "post_fill_liquidation_guard_block",
+            side=side,
+            fill_price=fill_price,
+            filled_size=filled_size,
+            hard_sl=hard_sl,
+            reason=liq_guard.reason,
+        )
         log.error(f"Fill sonrasi likidasyon guard bozuldu, pozisyon kapatiliyor: {liq_guard.reason}")
         _safe_close_market(exchange, side, filled_size)
         return None
@@ -225,6 +292,7 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
 
     sl_order = _create_sl_order(exchange, sl_side, filled_size, hard_sl, ref_price=fill_price)
     if sl_order is None:
+        order_events.record("entry_stop_missing_emergency_close", side=side, filled_size=filled_size)
         log.error("SL kurulamadı, pozisyon ACIL KAPATILIYOR.")
         _safe_close_market(exchange, side, filled_size)
         return None
@@ -311,9 +379,12 @@ def close_position_market(exchange: ccxt.Exchange, side: str, size: float) -> bo
     close_side = "sell" if side == "long" else "buy"
     try:
         exchange.cancel_all_orders(config.SYMBOL)
+        order_events.record("close_cancel_all_ack")
     except ccxt.BaseError as e:
+        order_events.record("close_cancel_all_error", error=str(e))
         log.warning(f"Kapatma oncesi emir iptali basarisiz, market close yine denenecek: {e}")
 
+    order_events.record("close_order_submit", side=close_side, amount=size, reduce_only=True)
     try:
         order = exchange.create_order(
             symbol=config.SYMBOL,
@@ -322,10 +393,12 @@ def close_position_market(exchange: ccxt.Exchange, side: str, size: float) -> bo
             amount=size,
             params={"reduceOnly": True},
         )
-        fill_price, filled_size = _resolve_market_fill(exchange, order, 0.0, size)
+        order_events.record("close_order_ack", order=order_events.extract_order_summary(order))
+        fill_price, filled_size = _resolve_market_fill(exchange, order, 0.0, size, context="close")
         log.info(f"Pozisyon kapatildi (trend exit): {side.upper()} | miktar={filled_size} | fill={fill_price:.4f}")
         return True
     except ccxt.BaseError as e:
+        order_events.record("close_order_error", side=close_side, amount=size, error=str(e))
         log.error(f"Kapatma hatasi: {e}")
         return False
 

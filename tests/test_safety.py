@@ -15,6 +15,7 @@ import exit_ladder
 import exchange_filters
 import flow_data
 import order_manager
+import order_events
 import paper_runtime
 import pair_universe
 import paper_runner
@@ -156,6 +157,41 @@ class SafetyTests(unittest.TestCase):
         finally:
             ops_status._exchange_safety_status = original
 
+    def test_order_events_append_jsonl(self):
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "events.jsonl"
+                config.ORDER_EVENTS_JSONL = str(path)
+                order_events.record("unit_test_event", nested={"value": 1})
+                rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0]["event_type"], "unit_test_event")
+                self.assertEqual(rows[0]["nested"]["value"], 1)
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
+
+    def test_close_position_records_order_events(self):
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        old_symbol = config.SYMBOL
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "events.jsonl"
+                config.ORDER_EVENTS_JSONL = str(path)
+                config.SYMBOL = "SOL/USDT"
+                exchange = FakeExchange()
+                ok = order_manager.close_position_market(exchange, "long", 1.25)
+                self.assertTrue(ok)
+                rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+                event_types = [row["event_type"] for row in rows]
+                self.assertIn("close_cancel_all_error", event_types)
+                self.assertIn("close_order_submit", event_types)
+                self.assertIn("close_order_ack", event_types)
+                self.assertIn("close_fill_resolved", event_types)
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
+            config.SYMBOL = old_symbol
+
     def test_exchange_filters_floor_market_amount_and_notional(self):
         exchange_filters.clear_cache()
         result = exchange_filters.validate_entry_order(
@@ -219,16 +255,20 @@ class SafetyTests(unittest.TestCase):
 
     def test_market_close_still_runs_when_cancel_fails(self):
         old_symbol = config.SYMBOL
+        old_events = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
         try:
-            config.SYMBOL = "SOL/USDT"
-            exchange = FakeExchange()
-            ok = order_manager.close_position_market(exchange, "long", 1.25)
-            self.assertTrue(ok)
-            self.assertEqual(len(exchange.created_orders), 1)
-            self.assertEqual(exchange.created_orders[0]["side"], "sell")
-            self.assertTrue(exchange.created_orders[0]["params"]["reduceOnly"])
+            with tempfile.TemporaryDirectory() as tmp:
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                config.SYMBOL = "SOL/USDT"
+                exchange = FakeExchange()
+                ok = order_manager.close_position_market(exchange, "long", 1.25)
+                self.assertTrue(ok)
+                self.assertEqual(len(exchange.created_orders), 1)
+                self.assertEqual(exchange.created_orders[0]["side"], "sell")
+                self.assertTrue(exchange.created_orders[0]["params"]["reduceOnly"])
         finally:
             config.SYMBOL = old_symbol
+            config.ORDER_EVENTS_JSONL = old_events
 
     def test_flow_ttl_marks_old_bucket_stale(self):
         old_max_age = getattr(config, "FLOW_MAX_AGE_MINUTES", 300)

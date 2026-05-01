@@ -184,6 +184,7 @@ PAPER_RETRY_BASE_SECONDS = 5
 PAPER_ERROR_SLEEP_SECONDS = 300
 PAPER_LOCK_STALE_MINUTES = 240
 TESTNET_FILL_PROBE_NOTIONAL_USDT = 110.0
+ORDER_EVENTS_JSONL = "order_events.jsonl"
 
 # --- Trend takip indikatörleri (eski mantık, bazı yardımcılar hala kullanılıyor) ---
 EMA_FAST   = 21

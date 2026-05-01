@@ -34,6 +34,19 @@ def _csv_tail(path: str, n: int = 5) -> pd.DataFrame:
     return pd.read_csv(p).tail(n)
 
 
+def _jsonl_tail(path: str, n: int = 20) -> list[dict[str, Any]]:
+    p = Path(path)
+    if not p.exists() or p.stat().st_size == 0:
+        return []
+    rows = []
+    for line in p.read_text(encoding="utf-8").splitlines()[-n:]:
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
+
+
 def build_status(include_exchange: bool = False) -> dict[str, Any]:
     heartbeat = _read_json(getattr(config, "PAPER_HEARTBEAT_FILE", "paper_heartbeat.json"))
     now = pd.Timestamp.now(tz="UTC")
@@ -51,10 +64,16 @@ def build_status(include_exchange: bool = False) -> dict[str, Any]:
     decisions_tail = _csv_tail(getattr(config, "PAPER_DECISIONS_CSV", "paper_decisions.csv"), 20)
     trades_tail = _csv_tail(getattr(config, "PAPER_TRADES_CSV", "paper_trades.csv"), 20)
     errors_tail = _csv_tail(getattr(config, "PAPER_ERRORS_CSV", "paper_errors.csv"), 20)
+    order_events_tail = _jsonl_tail(getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl"), 20)
 
     last_equity = equity_tail.iloc[-1].to_dict() if not equity_tail.empty else {}
     actions = decisions_tail["action"].value_counts().to_dict() if "action" in decisions_tail else {}
     skips = decisions_tail["skipped_reason"].value_counts().to_dict() if "skipped_reason" in decisions_tail else {}
+    order_event_counts: dict[str, int] = {}
+    for row in order_events_tail:
+        event_type = str(row.get("event_type") or "")
+        if event_type:
+            order_event_counts[event_type] = order_event_counts.get(event_type, 0) + 1
 
     status = {
         "run_tag": heartbeat.get("run_tag", getattr(config, "PAPER_RUN_TAG", "default")),
@@ -75,6 +94,8 @@ def build_status(include_exchange: bool = False) -> dict[str, Any]:
         "recent_skips": {k: v for k, v in skips.items() if str(k) and str(k) != "nan"},
         "recent_closed_trades": int(len(trades_tail)),
         "recent_errors": int(len(errors_tail)),
+        "recent_order_events": order_event_counts,
+        "latest_order_event": order_events_tail[-1] if order_events_tail else {},
         "live_trading_approved": bool(getattr(config, "LIVE_TRADING_APPROVED", False)),
         "testnet": bool(getattr(config, "TESTNET", True)),
     }

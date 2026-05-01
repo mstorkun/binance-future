@@ -168,6 +168,10 @@ Other previous validation context:
   command.
 - `order_manager.py`: live/testnet order placement, one-way mode check, hard
   stop placement, reduce-only close.
+- `order_events.py`: append-only JSONL telemetry for live/testnet order
+  lifecycle events. `order_manager.py` records entry, stop, close, emergency
+  close, cancel, order ack/error, and fill-resolution events. Runtime output is
+  `order_events.jsonl` and is ignored by git.
 - `exchange_filters.py`: Binance Futures `exchangeInfo` filter validation for
   entry and stop orders. It validates tick size, step size, market lot size,
   minimum notional, percent-price bounds, and symbol trading status before
