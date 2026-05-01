@@ -227,6 +227,8 @@ Closed after the addendum:
    close/emergency-close amounts are normalized through market-lot filters.
 5. Stale-bar guard: `bot.py` skips symbol processing when the last closed bar is
    older than `MAX_CLOSED_BAR_AGE_MULT` times the active timeframe.
+6. Trade decision snapshots: entry candidates, risk blocks, successful opens,
+   and failed opens are persisted to ignored `trade_decisions.jsonl`.
 
 The remaining newly merged live blockers are:
 
@@ -234,9 +236,8 @@ The remaining newly merged live blockers are:
    explicitly prove polling plus reconciliation is enough.
 2. Resolve doc/config risk-profile inconsistency before any go-live profile is
    named.
-3. Persist live trade decision snapshots for forensic review.
-4. Add a one-command emergency kill switch.
-5. Document API permission scope and IP whitelist requirements.
+3. Add a one-command emergency kill switch.
+4. Document API permission scope and IP whitelist requirements.
 
 P1 additions:
 

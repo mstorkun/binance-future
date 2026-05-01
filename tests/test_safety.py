@@ -13,6 +13,7 @@ import alerts
 import config
 import bias_audit
 import data
+import decision_snapshots
 import execution_guard
 import exit_ladder
 import exchange_filters
@@ -479,6 +480,62 @@ class SafetyTests(unittest.TestCase):
             self.assertEqual(count, 1)
             self.assertEqual(rows[0]["code"], "unit_alert")
             self.assertEqual(rows[0]["details"]["value"], 1)
+
+    def test_decision_snapshot_writes_trade_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "trade_decisions.jsonl"
+            bar = pd.Series(
+                {
+                    "open": 1.0,
+                    "high": 1.2,
+                    "low": 0.9,
+                    "close": 1.1,
+                    "volume": 1000.0,
+                    "volume_ma": 900.0,
+                    "atr": 0.05,
+                    "rsi": 55.0,
+                    "adx": 30.0,
+                    "regime": "trend",
+                    "daily_trend": 1,
+                    "weekly_trend": 1,
+                    "flow_fresh": True,
+                },
+                name=pd.Timestamp("2026-05-01 04:00:00"),
+            )
+            snapshot = decision_snapshots.build_entry_snapshot(
+                symbol="DOGE/USDT",
+                timeframe="4h",
+                signal="long",
+                bar=bar,
+                equity=1000.0,
+                free_balance=900.0,
+                risk_base_balance=1000.0,
+                global_open_count=0,
+                max_open_positions=2,
+                base_risk=0.04,
+                effective_risk=0.03,
+                risk_multiplier=0.75,
+                risk_reasons=("weekly_open",),
+                price=1.1,
+                atr=0.05,
+            )
+            out = decision_snapshots.attach_order_result(snapshot, {
+                "side": "long",
+                "entry": 1.1,
+                "size": 12,
+                "sl": 1.0,
+                "hard_sl": 0.95,
+                "sl_order_id": "sl-1",
+                "entry_client_order_id": "entry-cid",
+                "sl_client_order_id": "sl-cid",
+            })
+            decision_snapshots.write_snapshot(out, str(path))
+            rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(rows[0]["status"], "opened")
+            self.assertEqual(rows[0]["symbol"], "DOGE/USDT")
+            self.assertEqual(rows[0]["bar"]["rsi"], 55.0)
+            self.assertEqual(rows[0]["risk_reasons"], ["weekly_open"])
+            self.assertEqual(rows[0]["result"]["entry_client_order_id"], "entry-cid")
 
     def test_order_events_append_jsonl(self):
         old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")

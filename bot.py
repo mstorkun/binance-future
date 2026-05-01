@@ -24,6 +24,7 @@ import schedule
 
 import config
 import data
+import decision_snapshots
 import flow_data
 import indicators as ind
 import strategy as strat
@@ -247,14 +248,33 @@ def run():
                 atr   = float(df["atr"].iloc[-2])
                 signal_bar = df.iloc[-2]
                 risk_decision = r.entry_risk_decision(signal_bar, signal, ts=signal_bar.name)
+                base_risk = r.correlation_aware_risk(global_open_count, config.RISK_PER_TRADE_PCT)
+                effective_risk = base_risk * risk_decision.multiplier
+                decision_snapshot = decision_snapshots.build_entry_snapshot(
+                    symbol=sym,
+                    timeframe=config.TIMEFRAME,
+                    signal=signal,
+                    bar=signal_bar,
+                    equity=equity,
+                    free_balance=balance,
+                    risk_base_balance=risk_base_balance,
+                    global_open_count=global_open_count,
+                    max_open_positions=config.MAX_OPEN_POSITIONS,
+                    base_risk=base_risk,
+                    effective_risk=effective_risk,
+                    risk_multiplier=risk_decision.multiplier,
+                    risk_reasons=risk_decision.reasons,
+                    price=price,
+                    atr=atr,
+                )
                 if risk_decision.block_new_entries:
                     log.warning(
                         f"[{sym}] Risk takvimi/haber olayi nedeniyle yeni pozisyon bloklandi: "
                         f"{', '.join(risk_decision.reasons)}"
                     )
+                    decision_snapshot["status"] = "risk_blocked"
+                    decision_snapshots.write_snapshot(decision_snapshot)
                     continue
-                base_risk = r.correlation_aware_risk(global_open_count, config.RISK_PER_TRADE_PCT)
-                effective_risk = base_risk * risk_decision.multiplier
                 log.info(
                     f"[{sym}] Risk: base={config.RISK_PER_TRADE_PCT*100:.2f}% "
                     f"corr={base_risk*100:.2f}% "
@@ -266,6 +286,9 @@ def run():
                 result = om.open_position(
                     exchange, signal, risk_base_balance, atr, price,
                     risk_pct=effective_risk,
+                )
+                decision_snapshots.write_snapshot(
+                    decision_snapshots.attach_order_result(decision_snapshot, result)
                 )
                 if result:
                     global_open_count += 1
