@@ -25,6 +25,7 @@ import paper_runner
 import paper_report
 import ops_status
 import portfolio_candidate_sweep
+import portfolio_param_walk_forward
 import protections
 import risk
 import timeframe_sweep
@@ -821,6 +822,35 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(row["trades"], 3)
         self.assertEqual(row["final_equity"], 1500.0)
         self.assertGreater(row["cagr_pct"], 0)
+
+    def test_portfolio_param_walk_forward_restores_strategy_config(self):
+        old_values = (
+            config.DONCHIAN_PERIOD,
+            config.DONCHIAN_EXIT,
+            config.VOLUME_MULT,
+            config.SL_ATR_MULT,
+        )
+        params = portfolio_param_walk_forward.StrategyParams(15, 8, 1.2, 1.5)
+        with portfolio_param_walk_forward.temporary_strategy_params(params):
+            self.assertEqual(config.DONCHIAN_PERIOD, 15)
+            self.assertEqual(config.DONCHIAN_EXIT, 8)
+            self.assertEqual(config.VOLUME_MULT, 1.2)
+            self.assertEqual(config.SL_ATR_MULT, 1.5)
+        self.assertEqual(
+            (
+                config.DONCHIAN_PERIOD,
+                config.DONCHIAN_EXIT,
+                config.VOLUME_MULT,
+                config.SL_ATR_MULT,
+            ),
+            old_values,
+        )
+
+    def test_portfolio_param_walk_forward_grid_filters_invalid_exit(self):
+        grid = portfolio_param_walk_forward.generate_param_grid()
+        self.assertTrue(grid)
+        self.assertTrue(all(row.donchian_exit < row.donchian for row in grid))
+        self.assertEqual(portfolio_param_walk_forward.generate_param_grid(max_combos=2), grid[:2])
 
     def test_timeframe_sweep_bars_for_days(self):
         self.assertEqual(timeframe_sweep.bars_for_days("1h", 1), 24)

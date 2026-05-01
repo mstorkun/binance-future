@@ -206,6 +206,10 @@ Other previous validation context:
   changing the strategy.
 - `timeframe_sweep.py`: compares 1h/2h/4h with raw and scaled indicator
   horizons.
+- `portfolio_param_walk_forward.py`: research-only portfolio walk-forward that
+  selects Donchian/exit/volume/ATR-stop parameters and risk profile on the train
+  window, then applies the selected candidate to the OOS test window. Use this
+  to address the "fixed parameter walk-forward" methodology gap.
 - `bias_audit.py`: lookahead/recursive indicator stability audit.
 - `docs/MATURE_BOT_ADDONS.md`: activation rules for new add-ons.
 - `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for
