@@ -173,6 +173,14 @@ def run():
                 if len(df) < 3:
                     log.warning(f"[{sym}] Yeterli mum yok.")
                     continue
+                bar_age = eg.closed_bar_age_decision(df, config.TIMEFRAME)
+                if not bar_age.ok:
+                    log.warning(
+                        f"[{sym}] Kapali mum taze degil, sembol atlandi: "
+                        f"{bar_age.reason} age={bar_age.age_minutes:.1f}m "
+                        f"max={bar_age.max_age_minutes:.1f}m close={bar_age.bar_close_time}"
+                    )
+                    continue
 
                 # 3. Borsa pozisyon state'i
                 live_pos = _has_open_position()

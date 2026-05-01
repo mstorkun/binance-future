@@ -225,6 +225,8 @@ Closed after the addendum:
 4. Tick precision audit: hard stops no longer use 2-decimal rounding, stop
    orders are normalized through exchange tick filters, and reduce-only
    close/emergency-close amounts are normalized through market-lot filters.
+5. Stale-bar guard: `bot.py` skips symbol processing when the last closed bar is
+   older than `MAX_CLOSED_BAR_AGE_MULT` times the active timeframe.
 
 The remaining newly merged live blockers are:
 
@@ -232,11 +234,9 @@ The remaining newly merged live blockers are:
    explicitly prove polling plus reconciliation is enough.
 2. Resolve doc/config risk-profile inconsistency before any go-live profile is
    named.
-3. Add bar-age guard before using `df.iloc[-2]` for live decisions after
-   downtime.
-4. Persist live trade decision snapshots for forensic review.
-5. Add a one-command emergency kill switch.
-6. Document API permission scope and IP whitelist requirements.
+3. Persist live trade decision snapshots for forensic review.
+4. Add a one-command emergency kill switch.
+5. Document API permission scope and IP whitelist requirements.
 
 P1 additions:
 

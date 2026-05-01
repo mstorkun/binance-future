@@ -831,6 +831,42 @@ class SafetyTests(unittest.TestCase):
             places=9,
         )
 
+    def test_timeframe_to_timedelta(self):
+        self.assertEqual(execution_guard.timeframe_to_timedelta("15m").total_seconds(), 900)
+        self.assertEqual(execution_guard.timeframe_to_timedelta("2h").total_seconds(), 7200)
+        self.assertEqual(execution_guard.timeframe_to_timedelta("1d").total_seconds(), 86400)
+
+    def test_closed_bar_age_guard_accepts_recent_closed_bar(self):
+        idx = pd.to_datetime([
+            "2026-05-01 00:00:00",
+            "2026-05-01 04:00:00",
+            "2026-05-01 08:00:00",
+        ])
+        df = pd.DataFrame({"close": [1, 2, 3]}, index=idx)
+        decision = execution_guard.closed_bar_age_decision(
+            df,
+            "4h",
+            now=pd.Timestamp("2026-05-01 08:30:00", tz="UTC"),
+        )
+        self.assertTrue(decision.ok)
+        self.assertEqual(decision.age_minutes, 30.0)
+
+    def test_closed_bar_age_guard_blocks_stale_closed_bar(self):
+        idx = pd.to_datetime([
+            "2026-05-01 00:00:00",
+            "2026-05-01 04:00:00",
+            "2026-05-01 08:00:00",
+        ])
+        df = pd.DataFrame({"close": [1, 2, 3]}, index=idx)
+        decision = execution_guard.closed_bar_age_decision(
+            df,
+            "4h",
+            now=pd.Timestamp("2026-05-01 14:30:00", tz="UTC"),
+        )
+        self.assertFalse(decision.ok)
+        self.assertEqual(decision.reason, "closed_bar_stale")
+        self.assertEqual(decision.max_age_minutes, 300.0)
+
     def test_reduce_only_close_amount_uses_market_lot_step(self):
         old_symbol = config.SYMBOL
         old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")

@@ -8,7 +8,10 @@ The key split is:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
+
+import pandas as pd
 
 import config
 
@@ -24,6 +27,16 @@ class StopDecision:
     hit: bool
     reason: str = ""
     price: float | None = None
+
+
+@dataclass(frozen=True)
+class BarAgeDecision:
+    ok: bool
+    reason: str = ""
+    bar_open_time: str = ""
+    bar_close_time: str = ""
+    age_minutes: float = 0.0
+    max_age_minutes: float = 0.0
 
 
 def hard_stop_from_soft(soft_sl: float, atr: float, side: str) -> float:
@@ -119,6 +132,71 @@ def stop_decision(position: dict, bar) -> StopDecision:
             return StopDecision(True, "hard_sl", hard_sl)
 
     return StopDecision(False, "")
+
+
+def timeframe_to_timedelta(timeframe: str) -> timedelta:
+    unit = timeframe[-1].lower()
+    value = int(timeframe[:-1])
+    if value <= 0:
+        raise ValueError(f"bad_timeframe:{timeframe}")
+    if unit == "m":
+        return timedelta(minutes=value)
+    if unit == "h":
+        return timedelta(hours=value)
+    if unit == "d":
+        return timedelta(days=value)
+    if unit == "w":
+        return timedelta(weeks=value)
+    raise ValueError(f"bad_timeframe:{timeframe}")
+
+
+def closed_bar_age_decision(df, timeframe: str, now=None) -> BarAgeDecision:
+    if not getattr(config, "BAR_AGE_GUARD_ENABLED", True):
+        return BarAgeDecision(True)
+    if df is None or len(df) < 3:
+        return BarAgeDecision(False, "insufficient_bars")
+
+    frame_delta = timeframe_to_timedelta(timeframe)
+    max_age = frame_delta * float(getattr(config, "MAX_CLOSED_BAR_AGE_MULT", 1.25))
+    bar_open = pd.Timestamp(df.index[-2])
+    if bar_open.tzinfo is None:
+        bar_open = bar_open.tz_localize("UTC")
+    else:
+        bar_open = bar_open.tz_convert("UTC")
+    bar_close = bar_open + frame_delta
+    now_ts = pd.Timestamp.now(tz="UTC") if now is None else pd.Timestamp(now)
+    if now_ts.tzinfo is None:
+        now_ts = now_ts.tz_localize("UTC")
+    else:
+        now_ts = now_ts.tz_convert("UTC")
+
+    age = now_ts - bar_close
+    if age < -timedelta(minutes=1):
+        return BarAgeDecision(
+            False,
+            "closed_bar_in_future",
+            bar_open_time=bar_open.isoformat(),
+            bar_close_time=bar_close.isoformat(),
+            age_minutes=age.total_seconds() / 60,
+            max_age_minutes=max_age.total_seconds() / 60,
+        )
+    if age > max_age:
+        return BarAgeDecision(
+            False,
+            "closed_bar_stale",
+            bar_open_time=bar_open.isoformat(),
+            bar_close_time=bar_close.isoformat(),
+            age_minutes=age.total_seconds() / 60,
+            max_age_minutes=max_age.total_seconds() / 60,
+        )
+    return BarAgeDecision(
+        True,
+        "",
+        bar_open_time=bar_open.isoformat(),
+        bar_close_time=bar_close.isoformat(),
+        age_minutes=max(age.total_seconds() / 60, 0.0),
+        max_age_minutes=max_age.total_seconds() / 60,
+    )
 
 
 def pre_trade_liquidity_check(exchange, symbol: str, side: str, notional: float, ref_price: float) -> GuardDecision:

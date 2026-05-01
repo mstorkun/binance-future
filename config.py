@@ -16,6 +16,8 @@ RECV_WINDOW_MS = 5000
 ADJUST_FOR_TIME_DIFFERENCE = True
 CREATE_ORDER_MAX_RETRIES = 2
 PARTIAL_FILL_POLICY = "abort"  # "abort" or "accept"
+BAR_AGE_GUARD_ENABLED = True
+MAX_CLOSED_BAR_AGE_MULT = 1.25
 TESTNET    = True   # False = canlı işlem
 
 # --- Piyasa ---
