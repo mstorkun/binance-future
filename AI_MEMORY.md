@@ -111,9 +111,11 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `59` tests passed plus `3` subtests after the
-  Claude follow-up fixes for client order id duplicate classification,
-  fetch-by-client-id behavior, partial-fill handling, and trailing stop cleanup.
+  `python -m pytest -q` -> `63` tests passed plus `3` subtests after the
+  Claude follow-up fixes and tick precision audit. Covered areas include client
+  order id duplicate classification, fetch-by-client-id behavior, partial-fill
+  handling, trailing stop cleanup, hard-stop precision, and reduce-only market
+  amount normalization.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -163,7 +165,8 @@ Other previous validation context:
 - `risk.py`: market, calendar, pattern, flow, and volume-profile risk
   multipliers.
 - `execution_guard.py`: wick/spike, hard-stop, mark-price stop, and orderbook
-  guard logic.
+  guard logic. `hard_stop_from_soft()` must not round prices to fixed decimal
+  places; exchange tick normalization belongs in `exchange_filters.py`.
 - `account_safety.py`: shared account safety checks for one-way position mode
   per-symbol leverage confirmation, margin-mode confirmation, and hard-stop
   presence for open positions. `ops_status.py --exchange` can query this
@@ -194,9 +197,10 @@ Other previous validation context:
   status payload and `--emit-alerts` writes runtime output to ignored
   `alerts.jsonl`.
 - `exchange_filters.py`: Binance Futures `exchangeInfo` filter validation for
-  entry and stop orders. It validates tick size, step size, market lot size,
-  minimum notional, percent-price bounds, and symbol trading status before
-  testnet/live order submission.
+  entry, stop, and reduce-only market close sizing. It validates tick size,
+  step size, market lot size, minimum notional for entries/stops,
+  percent-price bounds, and symbol trading status before testnet/live order
+  submission.
 - `paper_runner.py`: no-order paper telemetry runner.
 - `paper_runtime.py`: tagged paper/shadow runtime isolation helpers for
   separate state/decision/equity/heartbeat files and temporary timeframe
@@ -265,9 +269,9 @@ Other previous validation context:
 - `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for
   symbol portfolio search.
 - `docs/AUDIT_DIFF_2026_05_01.md`: Claude 10-agent vs Codex triage merge. It
-  now marks client order idempotency, partial-fill handling, and trailing-stop
-  orphan cleanup closed in code, while keeping open P0 blockers for tick
-  precision, user-data stream decision, doc/config risk-profile mismatch,
+  now marks client order idempotency, partial-fill handling, trailing-stop
+  orphan cleanup, and tick precision closed in code, while keeping open P0
+  blockers for user-data stream decision, doc/config risk-profile mismatch,
   stale-bar guard, live decision snapshots, kill switch, and API-key runbook.
 
 ## Runtime / Worktree Notes

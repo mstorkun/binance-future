@@ -29,8 +29,8 @@ class StopDecision:
 def hard_stop_from_soft(soft_sl: float, atr: float, side: str) -> float:
     extra = atr * getattr(config, "HARD_STOP_EXTRA_ATR", 1.0)
     if side == "long":
-        return round(soft_sl - extra, 2)
-    return round(soft_sl + extra, 2)
+        return soft_sl - extra
+    return soft_sl + extra
 
 
 def exchange_stop_params(stop_price: float) -> dict:

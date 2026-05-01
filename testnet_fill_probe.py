@@ -42,6 +42,23 @@ class SimulatedPartialExchange:
     def cancel_order(self, order_id, symbol, params=None):
         self.cancelled.append({"order_id": order_id, "symbol": symbol, "params": params or {}})
 
+    def fapiPublicGetExchangeInfo(self):
+        return {
+            "symbols": [
+                {
+                    "symbol": "DOGEUSDT",
+                    "status": "TRADING",
+                    "filters": [
+                        {"filterType": "PRICE_FILTER", "minPrice": "0.00001", "maxPrice": "1000", "tickSize": "0.00010"},
+                        {"filterType": "LOT_SIZE", "minQty": "1", "maxQty": "10000000", "stepSize": "1"},
+                        {"filterType": "MARKET_LOT_SIZE", "minQty": "1", "maxQty": "10000000", "stepSize": "1"},
+                        {"filterType": "MIN_NOTIONAL", "notional": "5"},
+                        {"filterType": "PERCENT_PRICE", "multiplierUp": "1.1500", "multiplierDown": "0.8500"},
+                    ],
+                }
+            ]
+        }
+
     def fetch_order(self, order_id, symbol, params=None):
         return self.orders[order_id]
 

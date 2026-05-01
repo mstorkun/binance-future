@@ -222,20 +222,21 @@ Closed after the addendum:
 3. Trailing-SL orphan cleanup after cancel failure: same-side reduce-only STOP
    orders are reconciled after each trailing update, keeping the newly created
    protected stop and canceling extras.
+4. Tick precision audit: hard stops no longer use 2-decimal rounding, stop
+   orders are normalized through exchange tick filters, and reduce-only
+   close/emergency-close amounts are normalized through market-lot filters.
 
 The remaining newly merged live blockers are:
 
-1. Audit tick-size precision end to end; every live stop, trailing stop, and
-   close price must pass exchange filters.
-2. Decide and document WebSocket user-data stream architecture before live, or
+1. Decide and document WebSocket user-data stream architecture before live, or
    explicitly prove polling plus reconciliation is enough.
-3. Resolve doc/config risk-profile inconsistency before any go-live profile is
+2. Resolve doc/config risk-profile inconsistency before any go-live profile is
    named.
-4. Add bar-age guard before using `df.iloc[-2]` for live decisions after
+3. Add bar-age guard before using `df.iloc[-2]` for live decisions after
    downtime.
-5. Persist live trade decision snapshots for forensic review.
-6. Add a one-command emergency kill switch.
-7. Document API permission scope and IP whitelist requirements.
+4. Persist live trade decision snapshots for forensic review.
+5. Add a one-command emergency kill switch.
+6. Document API permission scope and IP whitelist requirements.
 
 P1 additions:
 

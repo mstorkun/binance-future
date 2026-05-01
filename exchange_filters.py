@@ -86,6 +86,29 @@ def validate_stop_order(
     )
 
 
+def normalize_market_amount(exchange: Any, symbol: str, amount: float) -> FilterResult:
+    try:
+        filters = get_symbol_filters(exchange, symbol)
+    except Exception as exc:
+        return FilterResult(False, f"exchange_filters_unavailable:{exc}")
+
+    amount_d = _to_decimal(amount)
+    if amount_d is None or amount_d <= 0:
+        return FilterResult(False, "bad_amount")
+
+    step = filters.market_lot_step or filters.lot_step
+    min_qty = filters.market_min_qty or filters.min_qty
+    max_qty = filters.market_max_qty or filters.max_qty
+    normalized_amount = _floor_to_step(amount_d, step)
+    if normalized_amount is None or normalized_amount <= 0:
+        return FilterResult(False, "amount_below_step")
+    if min_qty is not None and normalized_amount < min_qty:
+        return FilterResult(False, f"min_qty:{normalized_amount}<{min_qty}", float(normalized_amount))
+    if max_qty is not None and normalized_amount > max_qty:
+        return FilterResult(False, f"max_qty:{normalized_amount}>{max_qty}", float(normalized_amount))
+    return FilterResult(True, "", float(normalized_amount))
+
+
 def validate_with_filters(
     filters: SymbolFilters,
     *,

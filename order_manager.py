@@ -247,15 +247,19 @@ def set_margin_mode(exchange: ccxt.Exchange) -> bool:
 def _safe_close_market(exchange: ccxt.Exchange, side: str, size: float):
     """Hata durumunda kullanılan acil kapatma."""
     close_side = "sell" if side == "long" else "buy"
+    checked_size = _reduce_only_market_amount(exchange, size, "emergency_close")
+    if checked_size is None:
+        log.error("Acil kapatma miktari exchange filtrelerinden gecemedi.")
+        return
     cid = client_order_id(config.SYMBOL, "emergency_close")
-    order_events.record("emergency_close_submit", side=close_side, amount=size, reduce_only=True, client_order_id=cid)
+    order_events.record("emergency_close_submit", side=close_side, amount=checked_size, requested_amount=size, reduce_only=True, client_order_id=cid)
     try:
         order, resolved_cid, duplicate = _create_order_idempotent(
             exchange,
             symbol=config.SYMBOL,
             type="market",
             side=close_side,
-            amount=size,
+            amount=checked_size,
             intent="emergency_close",
             params={"reduceOnly": True},
             client_order_id_value=cid,
@@ -272,6 +276,18 @@ def _amount_to_precision(exchange: ccxt.Exchange, size: float) -> float:
         return float(exchange.amount_to_precision(config.SYMBOL, size))
     except Exception:
         return round(size, 4)
+
+
+def _reduce_only_market_amount(exchange: ccxt.Exchange, size: float, context: str) -> float | None:
+    filter_result = xf.normalize_market_amount(exchange, config.SYMBOL, size)
+    if not filter_result.ok:
+        order_events.record(
+            f"{context}_amount_filter_block",
+            amount=size,
+            reason=filter_result.reason,
+        )
+        return None
+    return filter_result.amount or size
 
 
 def _create_sl_order(
@@ -758,21 +774,26 @@ def close_position_market(exchange: ccxt.Exchange, side: str, size: float) -> bo
         order_events.record("close_cancel_all_error", error=str(e))
         log.warning(f"Kapatma oncesi emir iptali basarisiz, market close yine denenecek: {e}")
 
+    checked_size = _reduce_only_market_amount(exchange, size, "close")
+    if checked_size is None:
+        log.error("Kapatma miktari exchange filtrelerinden gecemedi.")
+        return False
+
     cid = client_order_id(config.SYMBOL, "close")
-    order_events.record("close_order_submit", side=close_side, amount=size, reduce_only=True, client_order_id=cid)
+    order_events.record("close_order_submit", side=close_side, amount=checked_size, requested_amount=size, reduce_only=True, client_order_id=cid)
     try:
         order, resolved_cid, duplicate = _create_order_idempotent(
             exchange,
             symbol=config.SYMBOL,
             type="market",
             side=close_side,
-            amount=size,
+            amount=checked_size,
             intent="close",
             params={"reduceOnly": True},
             client_order_id_value=cid,
         )
         order_events.record("close_order_ack", client_order_id=resolved_cid, duplicate=duplicate, order=order_events.extract_order_summary(order))
-        fill = _resolve_market_fill(exchange, order, 0.0, size, context="close")
+        fill = _resolve_market_fill(exchange, order, 0.0, checked_size, context="close")
         fill_price, filled_size = fill.fill_price, fill.filled_size
         log.info(f"Pozisyon kapatildi (trend exit): {side.upper()} | miktar={filled_size} | fill={fill_price:.4f}")
         return filled_size > 0 and not fill.partial

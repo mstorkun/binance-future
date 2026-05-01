@@ -13,6 +13,7 @@ import alerts
 import config
 import bias_audit
 import data
+import execution_guard
 import exit_ladder
 import exchange_filters
 import flow_data
@@ -41,6 +42,14 @@ class FakeExchange:
         self.created_orders = []
         self.cancel_all_params = []
 
+    def fapiPublicGetExchangeInfo(self):
+        return {
+            "symbols": [
+                _fake_symbol_info("DOGEUSDT", price_tick="0.00010", step="1", min_qty="1"),
+                _fake_symbol_info("SOLUSDT", price_tick="0.01000", step="0.01", min_qty="0.01"),
+            ]
+        }
+
     def cancel_all_orders(self, symbol, params=None):
         self.cancel_all_params.append(params or {})
         raise ccxt.ExchangeError("cancel failed")
@@ -59,40 +68,44 @@ class FakeExchange:
         return order
 
 
+def _fake_symbol_info(symbol, *, price_tick="0.00010", step="1", min_qty="1"):
+    return {
+        "symbol": symbol,
+        "status": "TRADING",
+        "filters": [
+            {
+                "filterType": "PRICE_FILTER",
+                "minPrice": "0.00001",
+                "maxPrice": "1000",
+                "tickSize": price_tick,
+            },
+            {
+                "filterType": "LOT_SIZE",
+                "minQty": min_qty,
+                "maxQty": "10000000",
+                "stepSize": step,
+            },
+            {
+                "filterType": "MARKET_LOT_SIZE",
+                "minQty": min_qty,
+                "maxQty": "10000000",
+                "stepSize": step,
+            },
+            {"filterType": "MIN_NOTIONAL", "notional": "5"},
+            {
+                "filterType": "PERCENT_PRICE",
+                "multiplierUp": "1.1500",
+                "multiplierDown": "0.8500",
+            },
+        ],
+    }
+
+
 class FakeExchangeInfo:
     def fapiPublicGetExchangeInfo(self):
         return {
             "symbols": [
-                {
-                    "symbol": "DOGEUSDT",
-                    "status": "TRADING",
-                    "filters": [
-                        {
-                            "filterType": "PRICE_FILTER",
-                            "minPrice": "0.00001",
-                            "maxPrice": "1000",
-                            "tickSize": "0.00010",
-                        },
-                        {
-                            "filterType": "LOT_SIZE",
-                            "minQty": "1",
-                            "maxQty": "10000000",
-                            "stepSize": "1",
-                        },
-                        {
-                            "filterType": "MARKET_LOT_SIZE",
-                            "minQty": "1",
-                            "maxQty": "10000000",
-                            "stepSize": "1",
-                        },
-                        {"filterType": "MIN_NOTIONAL", "notional": "5"},
-                        {
-                            "filterType": "PERCENT_PRICE",
-                            "multiplierUp": "1.1500",
-                            "multiplierDown": "0.8500",
-                        },
-                    ],
-                }
+                _fake_symbol_info("DOGEUSDT", price_tick="0.00010", step="1", min_qty="1")
             ]
         }
 
@@ -176,7 +189,7 @@ class RejectCodeExchange:
         return {}
 
 
-class PartialFillExchange:
+class PartialFillExchange(FakeExchangeInfo):
     def __init__(self):
         self.cancelled = []
         self.created_orders = []
@@ -795,6 +808,57 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(sell_result.price, 0.4999)
         self.assertTrue(buy_result.ok)
         self.assertEqual(buy_result.price, 0.5001)
+
+    def test_exchange_filters_normalize_market_amount_to_step(self):
+        exchange_filters.clear_cache()
+        result = exchange_filters.normalize_market_amount(
+            FakeExchangeInfo(),
+            "DOGE/USDT",
+            12.9,
+        )
+        self.assertTrue(result.ok)
+        self.assertEqual(result.amount, 12.0)
+
+    def test_hard_stop_from_soft_preserves_small_price_precision(self):
+        self.assertAlmostEqual(
+            execution_guard.hard_stop_from_soft(0.123456, 0.000321, "long"),
+            0.123135,
+            places=9,
+        )
+        self.assertAlmostEqual(
+            execution_guard.hard_stop_from_soft(0.123456, 0.000321, "short"),
+            0.123777,
+            places=9,
+        )
+
+    def test_reduce_only_close_amount_uses_market_lot_step(self):
+        old_symbol = config.SYMBOL
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                config.SYMBOL = "DOGE/USDT"
+                exchange = FakeExchange()
+                ok = order_manager.close_position_market(exchange, "long", 12.9)
+                self.assertTrue(ok)
+                self.assertEqual(exchange.created_orders[0]["amount"], 12.0)
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
+            config.SYMBOL = old_symbol
+
+    def test_emergency_close_amount_uses_market_lot_step(self):
+        old_symbol = config.SYMBOL
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                config.SYMBOL = "DOGE/USDT"
+                exchange = PartialFillExchange()
+                order_manager._safe_close_market(exchange, "long", 12.9)
+                self.assertEqual(exchange.created_orders[0]["amount"], 12.0)
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
+            config.SYMBOL = old_symbol
 
     def test_exchange_filters_block_percent_price_outlier(self):
         exchange_filters.clear_cache()
