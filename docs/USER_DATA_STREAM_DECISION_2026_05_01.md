@@ -38,6 +38,8 @@ First implementation layer added:
 - [USER_STREAM_EVENT_PARSER_2026_05_01.md](USER_STREAM_EVENT_PARSER_2026_05_01.md)
   parses `ORDER_TRADE_UPDATE` payloads and records them into local
   `order_events.jsonl` telemetry.
+- [USER_STREAM_RECONCILE_2026_05_01.md](USER_STREAM_RECONCILE_2026_05_01.md)
+  adds conservative local position reconciliation decisions for parsed events.
 
 The stream runner, keepalive loop, reconnect handling, and live-state
 reconciliation are still missing.

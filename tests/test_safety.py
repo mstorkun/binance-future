@@ -46,6 +46,7 @@ import trade_executor
 import twap_execution
 import user_stream_client
 import user_stream_events
+import user_stream_reconcile
 import walk_forward
 
 
@@ -614,6 +615,59 @@ class SafetyTests(unittest.TestCase):
         self.assertTrue(state.should_keepalive(now=created + pd.Timedelta(minutes=30)))
         self.assertFalse(state.should_reconnect(now=created + pd.Timedelta(hours=22)))
         self.assertTrue(state.should_reconnect(now=created + pd.Timedelta(hours=23)))
+
+    def test_user_stream_reconcile_removes_reduce_only_filled_position(self):
+        update = user_stream_events.parse_order_trade_update({
+            "e": "ORDER_TRADE_UPDATE",
+            "E": 1,
+            "T": 2,
+            "o": {
+                "s": "DOGEUSDT",
+                "c": "hard-sl",
+                "S": "SELL",
+                "o": "STOP_MARKET",
+                "ot": "STOP_MARKET",
+                "x": "TRADE",
+                "X": "FILLED",
+                "i": 1,
+                "q": "100",
+                "z": "100",
+                "R": True,
+            },
+        })
+        positions, decision = user_stream_reconcile.apply_order_update_to_positions(
+            {"DOGE/USDT": {"side": "long", "size": 100}},
+            update,
+        )
+        self.assertNotIn("DOGE/USDT", positions)
+        self.assertEqual(decision["action"], "remove_position")
+
+    def test_user_stream_reconcile_marks_partial_entry_without_removing(self):
+        update = user_stream_events.parse_order_trade_update({
+            "e": "ORDER_TRADE_UPDATE",
+            "E": 1,
+            "T": 2,
+            "o": {
+                "s": "LINKUSDT",
+                "c": "entry",
+                "S": "BUY",
+                "o": "MARKET",
+                "x": "TRADE",
+                "X": "PARTIALLY_FILLED",
+                "i": 2,
+                "q": "10",
+                "z": "4",
+                "R": False,
+            },
+        })
+        positions, decision = user_stream_reconcile.apply_order_update_to_positions(
+            {"LINK/USDT": {"side": "long", "size": 10}},
+            update,
+        )
+        self.assertIn("LINK/USDT", positions)
+        self.assertEqual(decision["action"], "mark_position")
+        self.assertEqual(positions["LINK/USDT"]["last_user_stream_order_status"], "PARTIALLY_FILLED")
+        self.assertEqual(positions["LINK/USDT"]["last_user_stream_filled_qty"], 4.0)
 
     def test_account_safety_confirms_one_way_and_leverage(self):
         old_leverage = config.LEVERAGE

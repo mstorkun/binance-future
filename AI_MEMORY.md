@@ -111,7 +111,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `91` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `93` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
@@ -122,7 +122,8 @@ Other previous validation context:
   TTL helpers, paper CSV append hardening, stale risk-code quarantine, and
   passive TWAP/executor guardrails, exact requirement pinning, and paper lock
   heartbeat refresh, bias-audit report serialization, PBO matrix reporting, and
-  Binance user-stream order-update parsing, and listenKey lifecycle helpers.
+  Binance user-stream order-update parsing, listenKey lifecycle helpers, and
+  conservative user-stream reconciliation decisions.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
@@ -153,6 +154,11 @@ Other previous validation context:
   `user_stream_client.py` adds start/keepalive helpers, private websocket URL
   construction, and `ListenKeyState` keepalive/reconnect timing. It does not open
   a websocket and is not wired into `bot.py`.
+- User-stream reconcile:
+  `user_stream_reconcile.py` applies parsed order updates to local positions
+  conservatively. It removes state on reduce-only filled stops or
+  liquidation/ADL, and marks partial/non-terminal updates. It is not wired into
+  live_state yet.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -288,6 +294,8 @@ Other previous validation context:
   first layer for Binance user data stream events.
 - `docs/USER_STREAM_LISTEN_KEY_2026_05_01.md`: documents listenKey lifecycle
   helpers for the future user-data stream runner.
+- `docs/USER_STREAM_RECONCILE_2026_05_01.md`: documents conservative
+  local-position decisions from parsed user-stream events.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -321,6 +329,8 @@ Other previous validation context:
   `ORDER_TRADE_UPDATE` events; no websocket connection yet.
 - `user_stream_client.py`: listenKey lifecycle and websocket URL helpers; no
   websocket connection yet.
+- `user_stream_reconcile.py`: conservative position-state decisions from parsed
+  user-stream order updates; not wired into live runtime yet.
 - `correlation_stress.py`: report-only pairwise symbol return correlation
   stress. It writes ignored `correlation_stress_report.json` and
   `correlation_stress_pairs.csv`; it does not change sizing behavior.
