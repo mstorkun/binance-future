@@ -39,6 +39,40 @@ Output:
 portfolio_param_walk_forward_results.csv
 ```
 
+## Latest Smoke Result
+
+Command:
+
+```bash
+python portfolio_param_walk_forward.py --years 3 --max-param-combos 6
+```
+
+Runtime: about 10 minutes on this Windows workstation.
+
+Result:
+
+| Metric | Value |
+|---|---:|
+| OOS periods | 7 |
+| Positive OOS periods | 7/7 |
+| Average OOS return | +80.04% |
+| Worst OOS peak drawdown | 14.88% |
+| Selected profile | `extreme_11pct` in all periods |
+| Selected Donchian entry | 15 in all periods |
+| Selected Donchian exit | 8 in all periods |
+| Selected volume multiplier | 1.2 in all periods |
+| Selected SL ATR multiplier | 1.5 or 2.0 |
+
+Output committed:
+
+```text
+portfolio_param_walk_forward_results.csv
+```
+
+Important caveat: the selector repeatedly chose `extreme_11pct`. That means the
+current scoring function still rewards aggressive leverage/risk too strongly.
+Treat this as a methodology smoke pass, not as a live-trading approval.
+
 ## Interpretation
 
 This result should be treated as more meaningful than a fixed-profile
@@ -46,3 +80,13 @@ walk-forward because the selected strategy parameters are chosen only from the
 train segment. It still does not prove live edge by itself. The next checks are
 holdout testing, slippage sensitivity, funding stress, and paper/testnet fill
 review.
+
+## Next Fix
+
+Add a risk-capped selector mode before relying on this result:
+
+- cap selectable profiles to `conservative`, `balanced`, and current
+  `growth_70_compound`, or
+- penalize train candidates when OOS-style drawdown proxy exceeds the user's
+  acceptable risk band, and
+- report both uncapped and capped selection side by side.

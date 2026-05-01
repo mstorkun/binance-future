@@ -210,6 +210,13 @@ Other previous validation context:
   selects Donchian/exit/volume/ATR-stop parameters and risk profile on the train
   window, then applies the selected candidate to the OOS test window. Use this
   to address the "fixed parameter walk-forward" methodology gap.
+- Latest smoke:
+  `python portfolio_param_walk_forward.py --years 3 --max-param-combos 6`
+  completed in about 10 minutes, produced `7/7` positive OOS periods, average
+  OOS return `80.04%`, worst OOS peak DD `14.88%`, and wrote
+  `portfolio_param_walk_forward_results.csv`. Caveat: every fold selected
+  `extreme_11pct`, so this is not live-approval evidence. Next improvement is
+  capped/penalized profile selection.
 - `bias_audit.py`: lookahead/recursive indicator stability audit.
 - `docs/MATURE_BOT_ADDONS.md`: activation rules for new add-ons.
 - `docs/PORTFOLIO_CANDIDATE_SWEEP.md`: usage and latest smoke result for
