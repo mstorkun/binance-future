@@ -1219,6 +1219,13 @@ class SafetyTests(unittest.TestCase):
             self.assertIn("flow_fresh", pd.read_csv(csv_path).columns)
             self.assertEqual(rows[-1]["flow_fresh"], True)
 
+    def test_paper_csv_append_creates_parent_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "nested" / "paper.csv"
+            paper_runner._append_csv(str(csv_path), [{"symbol": "SOL/USDT", "action": "no_signal"}])
+            self.assertTrue(csv_path.exists())
+            self.assertEqual(pd.read_csv(csv_path).iloc[0]["symbol"], "SOL/USDT")
+
     def test_paper_report_latest_decision_by_symbol(self):
         rows = [
             {"symbol": "DOGE/USDT", "action": "no_signal", "bar_time": "old", "close": "1.0"},

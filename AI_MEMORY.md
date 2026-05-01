@@ -111,7 +111,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `78` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `79` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
@@ -119,7 +119,7 @@ Other previous validation context:
   persistence, emergency kill-switch dry-run/execute paths, live profile guard
   behavior, user-data stream live-gate behavior, and basic risk-adjusted metrics
   reporting plus correlation stress, pattern ablation, and exchange-filter cache
-  TTL helpers.
+  TTL helpers, plus paper CSV append hardening.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -230,6 +230,8 @@ Other previous validation context:
   future work.
 - `docs/EXCHANGE_FILTER_CACHE_2026_05_01.md`: documents the exchange filter
   cache TTL and manual refresh helper.
+- `docs/PAPER_TELEMETRY_ATOMICITY_2026_05_01.md`: documents paper CSV telemetry
+  flush/fsync hardening.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -244,7 +246,9 @@ Other previous validation context:
   percent-price bounds, and symbol trading status before testnet/live order
   submission. Cache entries expire after `EXCHANGE_FILTER_CACHE_TTL_SECONDS`;
   `refresh_symbol_filters()` forces a fresh fetch.
-- `paper_runner.py`: no-order paper telemetry runner.
+- `paper_runner.py`: no-order paper telemetry runner. `_append_csv()` creates
+  parent directories and flushes/fsyncs paper CSV appends; schema-expanding
+  rewrites use temp+replace.
 - `paper_runtime.py`: tagged paper/shadow runtime isolation helpers for
   separate state/decision/equity/heartbeat files and temporary timeframe
   overrides.

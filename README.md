@@ -52,6 +52,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Correlation stress: [docs/CORRELATION_STRESS_2026_05_01.md](docs/CORRELATION_STRESS_2026_05_01.md) adds report-only pairwise symbol correlation stress before any covariance-aware sizing change.
 - Pattern ablation: [docs/PATTERN_ABLATION_2026_05_01.md](docs/PATTERN_ABLATION_2026_05_01.md) adds report-only pattern-risk on/off comparison before any pattern-weight claim.
 - Exchange filter cache: [docs/EXCHANGE_FILTER_CACHE_2026_05_01.md](docs/EXCHANGE_FILTER_CACHE_2026_05_01.md) adds TTL refresh for Binance symbol filters.
+- Paper telemetry atomicity: [docs/PAPER_TELEMETRY_ATOMICITY_2026_05_01.md](docs/PAPER_TELEMETRY_ATOMICITY_2026_05_01.md) flushes/fsyncs paper CSV appends.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files

@@ -45,6 +45,11 @@ def _atomic_write_json(path: str | Path, payload: dict[str, Any]) -> None:
     os.replace(tmp, target)
 
 
+def _fsync_file(handle) -> None:
+    handle.flush()
+    os.fsync(handle.fileno())
+
+
 def _write_heartbeat(status: str, **extra: Any) -> None:
     payload = {
         "status": status,
@@ -150,11 +155,14 @@ def _append_csv(path: str, rows: list[dict[str, Any]]) -> None:
         output_rows = rows
         target_path = file_path
 
+    if file_path.parent and str(file_path.parent) != ".":
+        file_path.parent.mkdir(parents=True, exist_ok=True)
     with target_path.open(mode, newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         if mode == "w":
             writer.writeheader()
         writer.writerows(output_rows)
+        _fsync_file(f)
     if target_path != file_path:
         os.replace(target_path, file_path)
 
