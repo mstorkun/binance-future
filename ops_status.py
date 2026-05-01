@@ -15,6 +15,7 @@ from typing import Any
 import pandas as pd
 
 import account_safety
+import alerts
 import config
 import data
 import paper_runtime
@@ -104,6 +105,8 @@ def build_status(include_exchange: bool = False) -> dict[str, Any]:
     }
     if include_exchange:
         status["exchange_safety"] = _exchange_safety_status()
+    status["alerts"] = alerts.build_alerts(status)
+    status["alert_count"] = len(status["alerts"])
     return status
 
 
@@ -123,17 +126,20 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Print JSON instead of text.")
     parser.add_argument("--tag", default="", help="Read isolated paper files for this run tag.")
     parser.add_argument("--exchange", action="store_true", help="Query Binance/testnet account safety state.")
+    parser.add_argument("--emit-alerts", action="store_true", help="Append generated alerts to alerts JSONL.")
     args = parser.parse_args()
     with paper_runtime.temporary_paper_runtime(tag=args.tag):
         status = build_status(include_exchange=args.exchange)
+        if args.emit_alerts:
+            alerts.write_alerts(status.get("alerts", []))
     if args.json:
         print(json.dumps(status, indent=2, sort_keys=True))
-        return 0
+        return 1 if any(row.get("severity") == "critical" for row in status.get("alerts", [])) else 0
 
     print("=== OPS STATUS ===")
     for key, value in status.items():
         print(f"{key}: {value}")
-    return 1 if status.get("heartbeat_stale") else 0
+    return 1 if any(row.get("severity") == "critical" for row in status.get("alerts", [])) else 0
 
 
 if __name__ == "__main__":

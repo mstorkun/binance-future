@@ -178,6 +178,10 @@ Other previous validation context:
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
   Runtime output is `live_state.json` and is ignored by git.
+- `alerts.py`: deterministic alert generation and append-only JSONL sink for
+  local paper/testnet operations. `ops_status.py` attaches alerts to every
+  status payload and `--emit-alerts` writes runtime output to ignored
+  `alerts.jsonl`.
 - `exchange_filters.py`: Binance Futures `exchangeInfo` filter validation for
   entry and stop orders. It validates tick size, step size, market lot size,
   minimum notional, percent-price bounds, and symbol trading status before

@@ -9,6 +9,7 @@ import ccxt
 import pandas as pd
 
 import account_safety
+import alerts
 import config
 import bias_audit
 import data
@@ -264,8 +265,46 @@ class SafetyTests(unittest.TestCase):
             status = ops_status.build_status(include_exchange=True)
             self.assertTrue(status["exchange_safety"]["ok"])
             self.assertEqual(status["exchange_safety"]["position_mode"]["mode"], "one_way")
+            self.assertIn("alerts", status)
+            self.assertIn("alert_count", status)
         finally:
             ops_status._exchange_safety_status = original
+
+    def test_alerts_detect_stale_heartbeat_and_errors(self):
+        rows = alerts.build_alerts({
+            "run_tag": "unit",
+            "heartbeat_status": "ok",
+            "heartbeat_stale": True,
+            "heartbeat_age_minutes": 999,
+            "recent_errors": 2,
+            "open_positions": 0,
+            "live_state_positions": 0,
+            "testnet": True,
+            "live_trading_approved": False,
+        })
+        codes = {row["code"] for row in rows}
+        severities = {row["code"]: row["severity"] for row in rows}
+        self.assertIn("heartbeat_stale", codes)
+        self.assertIn("recent_runtime_errors", codes)
+        self.assertEqual(severities["heartbeat_stale"], "critical")
+        self.assertEqual(severities["recent_runtime_errors"], "warning")
+
+    def test_alerts_write_jsonl(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "alerts.jsonl"
+            count = alerts.write_alerts([
+                {
+                    "code": "unit_alert",
+                    "severity": "warning",
+                    "message": "Unit alert.",
+                    "run_tag": "unit",
+                    "details": {"value": 1},
+                }
+            ], str(path))
+            rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(count, 1)
+            self.assertEqual(rows[0]["code"], "unit_alert")
+            self.assertEqual(rows[0]["details"]["value"], 1)
 
     def test_order_events_append_jsonl(self):
         old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
