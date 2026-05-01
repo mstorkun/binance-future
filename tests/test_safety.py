@@ -36,6 +36,7 @@ import portfolio_param_walk_forward
 import protections
 import risk
 import risk_adjusted_report
+import risk_management
 import risk_metrics
 import timeframe_sweep
 import trade_executor
@@ -1200,6 +1201,10 @@ class SafetyTests(unittest.TestCase):
         )
         self.assertEqual(decision.multiplier, 1.0)
         self.assertIn("flow:stale", decision.reasons)
+
+    def test_legacy_risk_management_is_quarantined(self):
+        with self.assertRaisesRegex(RuntimeError, "deprecated"):
+            risk_management.calculate_position_size(1000, 0.1, 5, 50000)
 
     def test_paper_runner_lock_blocks_second_instance(self):
         with tempfile.TemporaryDirectory() as tmp:

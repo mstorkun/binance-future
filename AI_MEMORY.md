@@ -111,7 +111,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `79` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `80` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
@@ -119,7 +119,7 @@ Other previous validation context:
   persistence, emergency kill-switch dry-run/execute paths, live profile guard
   behavior, user-data stream live-gate behavior, and basic risk-adjusted metrics
   reporting plus correlation stress, pattern ablation, and exchange-filter cache
-  TTL helpers, plus paper CSV append hardening.
+  TTL helpers, paper CSV append hardening, and stale risk-code quarantine.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -174,6 +174,9 @@ Other previous validation context:
   explicitly approves a strategy change and validation is rerun.
 - `risk.py`: market, calendar, pattern, flow, and volume-profile risk
   multipliers.
+- `risk_management.py`: deprecated quarantine marker. Its legacy
+  `calculate_position_size()` now raises; use `risk.position_size()` and the
+  portfolio risk path instead.
 - `execution_guard.py`: wick/spike, hard-stop, mark-price stop, and orderbook
   guard logic. `hard_stop_from_soft()` must not round prices to fixed decimal
   places; exchange tick normalization belongs in `exchange_filters.py`. It also
@@ -232,6 +235,8 @@ Other previous validation context:
   cache TTL and manual refresh helper.
 - `docs/PAPER_TELEMETRY_ATOMICITY_2026_05_01.md`: documents paper CSV telemetry
   flush/fsync hardening.
+- `docs/STALE_RISK_CODE_QUARANTINE_2026_05_01.md`: documents the deprecated
+  `risk_management.py` quarantine.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
