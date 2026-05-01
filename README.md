@@ -61,6 +61,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Bias audit report: [docs/BIAS_AUDIT_REPORT_2026_05_01.md](docs/BIAS_AUDIT_REPORT_2026_05_01.md) commits reproducible lookahead/recursive drift results for DOGE/LINK/TRX.
 - Executor refactor decision: [docs/EXECUTOR_REFACTOR_DECISION_2026_05_01.md](docs/EXECUTOR_REFACTOR_DECISION_2026_05_01.md) keeps passive executor/TWAP helpers quarantined until user-data stream and fill reconciliation exist.
 - PBO matrix harness: [docs/PBO_MATRIX_HARNESS_2026_05_01.md](docs/PBO_MATRIX_HARNESS_2026_05_01.md) adds the expensive candidate-by-fold matrix path for real PBO-style analysis.
+- User-stream parser: [docs/USER_STREAM_EVENT_PARSER_2026_05_01.md](docs/USER_STREAM_EVENT_PARSER_2026_05_01.md) parses Binance `ORDER_TRADE_UPDATE` events into local order-event telemetry.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files
@@ -82,6 +83,7 @@ bias_audit.py                Lookahead/recursive indicator stability audit
 bias_audit_report.py         Reproducible multi-symbol bias-audit artifact writer
 ops_status.py                Local paper/testnet status report
 emergency_kill_switch.py     Dry-run-first emergency cancel/close CLI
+user_stream_events.py        Binance user-stream ORDER_TRADE_UPDATE parser
 paper_report.py              Detailed paper decision/equity/error report
 paper_runtime.py             Tagged paper/shadow runtime isolation helpers
 mature_bot_compare.py        Side-by-side add-on validation

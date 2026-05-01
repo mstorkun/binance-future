@@ -44,6 +44,7 @@ import risk_metrics
 import timeframe_sweep
 import trade_executor
 import twap_execution
+import user_stream_events
 import walk_forward
 
 
@@ -501,6 +502,80 @@ class SafetyTests(unittest.TestCase):
         finally:
             config.USER_DATA_STREAM_REQUIRED_FOR_LIVE = old_required
             config.USER_DATA_STREAM_READY = old_ready
+
+    def test_user_stream_order_trade_update_parser_flags_reduce_only_fill(self):
+        event = {
+            "e": "ORDER_TRADE_UPDATE",
+            "E": 1568879465651,
+            "T": 1568879465650,
+            "o": {
+                "s": "DOGEUSDT",
+                "c": "DOGE_1770000000000_hard_sl_abc12345",
+                "S": "SELL",
+                "o": "STOP_MARKET",
+                "ot": "STOP_MARKET",
+                "q": "100",
+                "ap": "0.25",
+                "sp": "0.24",
+                "x": "TRADE",
+                "X": "FILLED",
+                "i": 8886774,
+                "l": "100",
+                "z": "100",
+                "L": "0.24",
+                "N": "USDT",
+                "n": "0.01",
+                "T": 1568879465650,
+                "t": 123,
+                "R": True,
+                "ps": "BOTH",
+                "rp": "-2.5",
+                "pP": True,
+                "er": "0",
+            },
+        }
+        update = user_stream_events.parse_order_trade_update(event)
+        self.assertEqual(update.symbol, "DOGE/USDT")
+        self.assertEqual(update.status, "FILLED")
+        self.assertTrue(update.terminal)
+        self.assertTrue(update.reduce_only)
+        self.assertTrue(update.requires_immediate_reconcile)
+        self.assertAlmostEqual(update.accumulated_filled_qty, 100.0)
+        self.assertAlmostEqual(update.realized_profit, -2.5)
+
+    def test_user_stream_order_trade_update_records_jsonl(self):
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                update = user_stream_events.record_order_trade_update({
+                    "e": "ORDER_TRADE_UPDATE",
+                    "E": 1,
+                    "T": 2,
+                    "o": {
+                        "s": "TRXUSDT",
+                        "c": "adl_autoclose",
+                        "S": "SELL",
+                        "o": "LIQUIDATION",
+                        "x": "CALCULATED",
+                        "X": "NEW",
+                        "i": 1,
+                        "q": "1",
+                        "z": "0",
+                        "R": False,
+                    },
+                })
+                self.assertTrue(update.liquidation_or_adl)
+                rows = [
+                    json.loads(line)
+                    for line in Path(config.ORDER_EVENTS_JSONL).read_text(encoding="utf-8").splitlines()
+                ]
+                self.assertEqual(rows[0]["event_type"], "user_stream_order_update")
+                self.assertEqual(rows[0]["symbol"], "TRX/USDT")
+                self.assertTrue(rows[0]["liquidation_or_adl"])
+                self.assertTrue(rows[0]["requires_immediate_reconcile"])
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
 
     def test_account_safety_confirms_one_way_and_leverage(self):
         old_leverage = config.LEVERAGE
