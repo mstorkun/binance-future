@@ -79,19 +79,110 @@ def leverage_status(exchange: Any, symbols: list[str] | None = None) -> dict[str
     }
 
 
+def margin_mode_status(exchange: Any, symbols: list[str] | None = None) -> dict[str, Any]:
+    symbols = symbols or list(getattr(config, "SYMBOLS", [getattr(config, "SYMBOL", "")]))
+    desired = str(getattr(config, "MARGIN_MODE", "cross")).lower()
+    try:
+        positions = exchange.fetch_positions(symbols)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "desired": desired,
+            "symbols": [],
+            "reason": f"margin_mode_unavailable:{exc}",
+        }
+
+    rows = []
+    for symbol in symbols:
+        pos = _find_position(positions, symbol)
+        mode = _extract_margin_mode(pos)
+        ok = mode == desired if mode is not None else False
+        rows.append({
+            "symbol": symbol,
+            "margin_mode": mode,
+            "ok": ok,
+            "reason": "" if ok else ("margin_mode_missing" if mode is None else f"margin_mode_mismatch:{mode}!={desired}"),
+        })
+
+    bad = [row for row in rows if not row["ok"]]
+    return {
+        "ok": not bad,
+        "desired": desired,
+        "symbols": rows,
+        "reason": "" if not bad else "symbol_margin_mode_not_confirmed",
+    }
+
+
+def hard_stop_status(exchange: Any, symbols: list[str] | None = None) -> dict[str, Any]:
+    symbols = symbols or list(getattr(config, "SYMBOLS", [getattr(config, "SYMBOL", "")]))
+    try:
+        positions = exchange.fetch_positions(symbols)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "symbols": [],
+            "reason": f"positions_unavailable:{exc}",
+        }
+
+    rows = []
+    for symbol in symbols:
+        pos = _find_position(positions, symbol)
+        contracts = _contracts(pos)
+        if contracts == 0:
+            continue
+        try:
+            orders = exchange.fetch_open_orders(symbol)
+        except Exception as exc:
+            rows.append({
+                "symbol": symbol,
+                "contracts": contracts,
+                "has_reduce_only_stop": False,
+                "stop_order_id": None,
+                "reason": f"open_orders_unavailable:{exc}",
+                "ok": False,
+            })
+            continue
+
+        stop = _find_reduce_only_stop(orders)
+        rows.append({
+            "symbol": symbol,
+            "contracts": contracts,
+            "has_reduce_only_stop": stop is not None,
+            "stop_order_id": stop.get("id") if stop else None,
+            "reason": "" if stop else "missing_reduce_only_stop",
+            "ok": stop is not None,
+        })
+
+    bad = [row for row in rows if not row["ok"]]
+    return {
+        "ok": not bad,
+        "symbols": rows,
+        "reason": "" if not bad else "open_position_without_hard_stop",
+    }
+
+
 def account_safety_status(exchange: Any, symbols: list[str] | None = None) -> dict[str, Any]:
     mode = position_mode_status(exchange)
     leverage = leverage_status(exchange, symbols)
+    margin = margin_mode_status(exchange, symbols)
+    hard_stop = hard_stop_status(exchange, symbols)
     return {
-        "ok": bool(mode["ok"] and leverage["ok"]),
+        "ok": bool(mode["ok"] and leverage["ok"] and margin["ok"] and hard_stop["ok"]),
         "position_mode": mode,
         "leverage": leverage,
+        "margin_mode": margin,
+        "hard_stop": hard_stop,
     }
 
 
 def confirm_set_leverage_response(response: Any, desired: int) -> bool:
     leverage = _extract_leverage(response)
     return True if leverage is None else leverage == int(desired)
+
+
+def confirm_set_margin_mode_response(response: Any, desired: str) -> bool:
+    mode = _extract_margin_mode(response)
+    return True if mode is None else mode == str(desired).lower()
 
 
 def _find_position(positions: list[dict[str, Any]], symbol: str) -> dict[str, Any] | None:
@@ -122,8 +213,57 @@ def _extract_leverage(value: Any) -> int | None:
     return None
 
 
+def _extract_margin_mode(value: Any) -> str | None:
+    if not value or not isinstance(value, dict):
+        return None
+    for key in ("marginMode", "marginType"):
+        out = _modeish(value.get(key))
+        if out:
+            return out
+    isolated = _boolish(value.get("isolated"))
+    if isolated is not None:
+        return "isolated" if isolated else "cross"
+    info = value.get("info") or {}
+    for key in ("marginMode", "marginType"):
+        out = _modeish(info.get(key))
+        if out:
+            return out
+    isolated = _boolish(info.get("isolated"))
+    if isolated is not None:
+        return "isolated" if isolated else "cross"
+    return None
+
+
+def _find_reduce_only_stop(orders: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for order in orders:
+        info = order.get("info") or {}
+        order_type = str(order.get("type") or info.get("type") or info.get("origType") or "").lower()
+        reduce_only = _boolish(order.get("reduceOnly", info.get("reduceOnly")))
+        if reduce_only and "stop" in order_type:
+            return order
+    return None
+
+
+def _contracts(pos: dict[str, Any] | None) -> float:
+    if not pos:
+        return 0.0
+    try:
+        return abs(float(pos.get("contracts") or pos.get("positionAmt") or (pos.get("info") or {}).get("positionAmt") or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _normalize_symbol(symbol: str) -> str:
     return symbol.replace("/", "").split(":")[0].upper()
+
+
+def _modeish(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    if text in {"cross", "crossed"}:
+        return "cross"
+    if text == "isolated":
+        return "isolated"
+    return None
 
 
 def _boolish(value: Any) -> bool | None:

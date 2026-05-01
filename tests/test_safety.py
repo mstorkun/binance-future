@@ -91,9 +91,12 @@ class FakeExchangeInfo:
 
 
 class FakeAccountExchange:
-    def __init__(self, dual_side=False, leverage=10):
+    def __init__(self, dual_side=False, leverage=10, margin_mode="cross", contracts=0, has_stop=True):
         self.dual_side = dual_side
         self.leverage = leverage
+        self.margin_mode = margin_mode
+        self.contracts = contracts
+        self.has_stop = has_stop
 
     def fapiPrivateGetPositionSideDual(self):
         return {"dualSidePosition": self.dual_side}
@@ -102,7 +105,14 @@ class FakeAccountExchange:
         return [
             {
                 "symbol": symbol,
-                "info": {"symbol": symbol.replace("/", ""), "leverage": str(self.leverage)},
+                "contracts": self.contracts,
+                "marginMode": self.margin_mode,
+                "info": {
+                    "symbol": symbol.replace("/", ""),
+                    "leverage": str(self.leverage),
+                    "marginType": self.margin_mode,
+                    "positionAmt": str(self.contracts),
+                },
                 "leverage": self.leverage,
             }
             for symbol in symbols
@@ -110,6 +120,14 @@ class FakeAccountExchange:
 
     def set_leverage(self, leverage, symbol):
         return {"symbol": symbol.replace("/", ""), "leverage": leverage}
+
+    def set_margin_mode(self, margin_mode, symbol):
+        return {"symbol": symbol.replace("/", ""), "marginMode": margin_mode}
+
+    def fetch_open_orders(self, symbol):
+        if not self.has_stop:
+            return []
+        return [{"id": "stop-1", "type": "stop_market", "reduceOnly": True}]
 
 
 class SafetyTests(unittest.TestCase):
@@ -159,6 +177,8 @@ class SafetyTests(unittest.TestCase):
             self.assertTrue(status["ok"])
             self.assertEqual(status["position_mode"]["mode"], "one_way")
             self.assertTrue(all(row["ok"] for row in status["leverage"]["symbols"]))
+            self.assertTrue(status["margin_mode"]["ok"])
+            self.assertTrue(status["hard_stop"]["ok"])
         finally:
             config.LEVERAGE = old_leverage
 
@@ -169,6 +189,41 @@ class SafetyTests(unittest.TestCase):
         )
         self.assertFalse(status["ok"])
         self.assertEqual(status["position_mode"]["reason"], "hedge_mode_enabled")
+
+    def test_account_safety_reports_margin_mode_mismatch(self):
+        status = account_safety.account_safety_status(
+            FakeAccountExchange(dual_side=False, leverage=config.LEVERAGE, margin_mode="isolated"),
+            ["DOGE/USDT"],
+        )
+        self.assertFalse(status["ok"])
+        self.assertEqual(status["margin_mode"]["reason"], "symbol_margin_mode_not_confirmed")
+
+    def test_account_safety_reports_missing_hard_stop_for_open_position(self):
+        status = account_safety.account_safety_status(
+            FakeAccountExchange(
+                dual_side=False,
+                leverage=config.LEVERAGE,
+                margin_mode=config.MARGIN_MODE,
+                contracts=10,
+                has_stop=False,
+            ),
+            ["DOGE/USDT"],
+        )
+        self.assertFalse(status["ok"])
+        self.assertEqual(status["hard_stop"]["reason"], "open_position_without_hard_stop")
+
+    def test_set_margin_mode_rejects_mismatched_confirmation(self):
+        old_symbol = config.SYMBOL
+        old_margin = config.MARGIN_MODE
+        try:
+            config.SYMBOL = "DOGE/USDT"
+            config.MARGIN_MODE = "cross"
+            exchange = FakeAccountExchange()
+            exchange.set_margin_mode = lambda margin_mode, symbol: {"symbol": "DOGEUSDT", "marginMode": "isolated"}
+            self.assertFalse(order_manager.set_margin_mode(exchange))
+        finally:
+            config.SYMBOL = old_symbol
+            config.MARGIN_MODE = old_margin
 
     def test_set_leverage_rejects_mismatched_confirmation(self):
         old_leverage = config.LEVERAGE

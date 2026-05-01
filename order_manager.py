@@ -41,6 +41,23 @@ def set_leverage(exchange: ccxt.Exchange) -> bool:
         return False
 
 
+def set_margin_mode(exchange: ccxt.Exchange) -> bool:
+    """Margin mode'u config ile uyumlu hale getir. Basarisizsa pozisyon acma iptal edilir."""
+    desired = getattr(config, "MARGIN_MODE", "cross")
+    try:
+        response = exchange.set_margin_mode(desired, config.SYMBOL)
+        if not account_safety.confirm_set_margin_mode_response(response, desired):
+            log.error(f"Margin mode cevabi hedefle uyusmuyor: hedef={desired}, cevap={response}")
+            return False
+        return True
+    except ccxt.BaseError as e:
+        msg = str(e).lower()
+        if "no need" in msg or "not modified" in msg or "already" in msg:
+            return True
+        log.error(f"Margin mode ayarlanamadi: {e}")
+        return False
+
+
 def _safe_close_market(exchange: ccxt.Exchange, side: str, size: float):
     """Hata durumunda kullanılan acil kapatma."""
     close_side = "sell" if side == "long" else "buy"
@@ -204,6 +221,10 @@ def open_position(exchange: ccxt.Exchange, side: str, balance: float, atr: float
     4. Initial SL kur — başarısız olursa pozisyonu hemen kapat
     """
     if not ensure_one_way_mode(exchange):
+        return None
+
+    if not set_margin_mode(exchange):
+        log.error("Margin mode dogrulanamadi, pozisyon acma iptal edildi.")
         return None
 
     if not set_leverage(exchange):

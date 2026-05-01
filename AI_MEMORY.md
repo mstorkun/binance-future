@@ -163,11 +163,12 @@ Other previous validation context:
 - `execution_guard.py`: wick/spike, hard-stop, mark-price stop, and orderbook
   guard logic.
 - `account_safety.py`: shared account safety checks for one-way position mode
-  and per-symbol leverage confirmation. `ops_status.py --exchange` can query
-  this against Binance/testnet without changing the normal file-only status
-  command.
+  per-symbol leverage confirmation, margin-mode confirmation, and hard-stop
+  presence for open positions. `ops_status.py --exchange` can query this
+  against Binance/testnet without changing the normal file-only status command.
 - `order_manager.py`: live/testnet order placement, one-way mode check, hard
-  stop placement, reduce-only close.
+  stop placement, reduce-only close. It now attempts margin-mode confirmation
+  before leverage and entry order submission.
 - `order_events.py`: append-only JSONL telemetry for live/testnet order
   lifecycle events. `order_manager.py` records entry, stop, close, emergency
   close, cancel, order ack/error, and fill-resolution events. Runtime output is
