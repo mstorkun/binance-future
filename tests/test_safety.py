@@ -1577,6 +1577,16 @@ class SafetyTests(unittest.TestCase):
             self.assertNotIn("import trade_executor", text, filename)
             self.assertNotIn("from trade_executor", text, filename)
 
+    def test_requirements_are_exactly_pinned(self):
+        root = Path(__file__).resolve().parents[1]
+        for filename in ("requirements.txt", "requirements-dev.txt"):
+            for line in (root / filename).read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or line.startswith("-r "):
+                    continue
+                self.assertIn("==", line, f"{filename}: {line}")
+                self.assertNotIn(">=", line, f"{filename}: {line}")
+
     def test_candidate_sweep_generates_current_combo_once(self):
         combos = portfolio_candidate_sweep.generate_combos(
             ["SOL/USDT", "ETH/USDT", "BNB/USDT"],

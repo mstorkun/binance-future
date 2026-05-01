@@ -55,6 +55,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Paper telemetry atomicity: [docs/PAPER_TELEMETRY_ATOMICITY_2026_05_01.md](docs/PAPER_TELEMETRY_ATOMICITY_2026_05_01.md) flushes/fsyncs paper CSV appends.
 - Stale risk quarantine: [docs/STALE_RISK_CODE_QUARANTINE_2026_05_01.md](docs/STALE_RISK_CODE_QUARANTINE_2026_05_01.md) makes the old `risk_management.py` helper fail loudly.
 - Passive execution guardrails: [docs/PASSIVE_EXECUTION_GUARDRAILS_2026_05_01.md](docs/PASSIVE_EXECUTION_GUARDRAILS_2026_05_01.md) marks TWAP/executor helpers as research-only and tests that they are not wired into order flow.
+- Dependency pinning: [docs/DEPENDENCY_PINNING_2026_05_01.md](docs/DEPENDENCY_PINNING_2026_05_01.md) pins runtime packages, including `ccxt==4.5.51`.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files
@@ -103,7 +104,7 @@ docs/                        Review and result reports
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 cp .env.example .env
 python backtest.py
 python walk_forward.py
