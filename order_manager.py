@@ -1,5 +1,6 @@
 import logging
 import ccxt
+import account_safety
 import config
 import execution_guard as eg
 import exchange_filters as xf
@@ -15,15 +16,9 @@ def ensure_one_way_mode(exchange: ccxt.Exchange) -> bool:
     """Bot reduceOnly stop logic assumes Binance one-way position mode."""
     if not getattr(config, "REQUIRE_ONE_WAY_MODE", True):
         return True
-    try:
-        response = exchange.fapiPrivateGetPositionSideDual()
-    except Exception as e:
-        log.error(f"Pozisyon modu dogrulanamadi, pozisyon acma iptal: {e}")
-        return False
-
-    dual = str(response.get("dualSidePosition", "")).lower() == "true"
-    if dual:
-        log.error("Hedge Mode aktif gorunuyor. Bot one-way mode gerektirir; pozisyon acma iptal.")
+    status = account_safety.position_mode_status(exchange)
+    if not status["ok"]:
+        log.error(f"Pozisyon modu uygun degil, pozisyon acma iptal: {status['reason']}")
         return False
     return True
 
@@ -31,7 +26,10 @@ def ensure_one_way_mode(exchange: ccxt.Exchange) -> bool:
 def set_leverage(exchange: ccxt.Exchange) -> bool:
     """Kaldıracı ayarla. Başarısızsa False döner — pozisyon açma iptal edilmeli."""
     try:
-        exchange.set_leverage(config.LEVERAGE, config.SYMBOL)
+        response = exchange.set_leverage(config.LEVERAGE, config.SYMBOL)
+        if not account_safety.confirm_set_leverage_response(response, config.LEVERAGE):
+            log.error(f"Kaldirac cevabi hedefle uyusmuyor: hedef={config.LEVERAGE}, cevap={response}")
+            return False
         return True
     except ccxt.BaseError as e:
         msg = str(e).lower()

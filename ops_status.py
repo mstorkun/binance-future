@@ -14,7 +14,9 @@ from typing import Any
 
 import pandas as pd
 
+import account_safety
 import config
+import data
 import paper_runtime
 
 
@@ -32,7 +34,7 @@ def _csv_tail(path: str, n: int = 5) -> pd.DataFrame:
     return pd.read_csv(p).tail(n)
 
 
-def build_status() -> dict[str, Any]:
+def build_status(include_exchange: bool = False) -> dict[str, Any]:
     heartbeat = _read_json(getattr(config, "PAPER_HEARTBEAT_FILE", "paper_heartbeat.json"))
     now = pd.Timestamp.now(tz="UTC")
     updated_at = heartbeat.get("updated_at")
@@ -54,7 +56,7 @@ def build_status() -> dict[str, Any]:
     actions = decisions_tail["action"].value_counts().to_dict() if "action" in decisions_tail else {}
     skips = decisions_tail["skipped_reason"].value_counts().to_dict() if "skipped_reason" in decisions_tail else {}
 
-    return {
+    status = {
         "run_tag": heartbeat.get("run_tag", getattr(config, "PAPER_RUN_TAG", "default")),
         "timeframe": heartbeat.get("timeframe", getattr(config, "TIMEFRAME", "")),
         "flow_period": heartbeat.get("flow_period", getattr(config, "FLOW_PERIOD", "")),
@@ -76,15 +78,30 @@ def build_status() -> dict[str, Any]:
         "live_trading_approved": bool(getattr(config, "LIVE_TRADING_APPROVED", False)),
         "testnet": bool(getattr(config, "TESTNET", True)),
     }
+    if include_exchange:
+        status["exchange_safety"] = _exchange_safety_status()
+    return status
+
+
+def _exchange_safety_status() -> dict[str, Any]:
+    try:
+        exchange = data.make_exchange()
+        return account_safety.account_safety_status(exchange, list(getattr(config, "SYMBOLS", [])))
+    except Exception as exc:
+        return {
+            "ok": False,
+            "reason": f"exchange_safety_unavailable:{exc}",
+        }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Print local paper/testnet telemetry status.")
     parser.add_argument("--json", action="store_true", help="Print JSON instead of text.")
     parser.add_argument("--tag", default="", help="Read isolated paper files for this run tag.")
+    parser.add_argument("--exchange", action="store_true", help="Query Binance/testnet account safety state.")
     args = parser.parse_args()
     with paper_runtime.temporary_paper_runtime(tag=args.tag):
-        status = build_status()
+        status = build_status(include_exchange=args.exchange)
     if args.json:
         print(json.dumps(status, indent=2, sort_keys=True))
         return 0

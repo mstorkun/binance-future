@@ -8,6 +8,7 @@ from pathlib import Path
 import ccxt
 import pandas as pd
 
+import account_safety
 import config
 import bias_audit
 import exit_ladder
@@ -18,6 +19,7 @@ import paper_runtime
 import pair_universe
 import paper_runner
 import paper_report
+import ops_status
 import portfolio_candidate_sweep
 import protections
 import risk
@@ -86,7 +88,74 @@ class FakeExchangeInfo:
         }
 
 
+class FakeAccountExchange:
+    def __init__(self, dual_side=False, leverage=10):
+        self.dual_side = dual_side
+        self.leverage = leverage
+
+    def fapiPrivateGetPositionSideDual(self):
+        return {"dualSidePosition": self.dual_side}
+
+    def fetch_positions(self, symbols):
+        return [
+            {
+                "symbol": symbol,
+                "info": {"symbol": symbol.replace("/", ""), "leverage": str(self.leverage)},
+                "leverage": self.leverage,
+            }
+            for symbol in symbols
+        ]
+
+    def set_leverage(self, leverage, symbol):
+        return {"symbol": symbol.replace("/", ""), "leverage": leverage}
+
+
 class SafetyTests(unittest.TestCase):
+    def test_account_safety_confirms_one_way_and_leverage(self):
+        old_leverage = config.LEVERAGE
+        try:
+            config.LEVERAGE = 10
+            status = account_safety.account_safety_status(
+                FakeAccountExchange(dual_side=False, leverage=10),
+                ["DOGE/USDT", "LINK/USDT"],
+            )
+            self.assertTrue(status["ok"])
+            self.assertEqual(status["position_mode"]["mode"], "one_way")
+            self.assertTrue(all(row["ok"] for row in status["leverage"]["symbols"]))
+        finally:
+            config.LEVERAGE = old_leverage
+
+    def test_account_safety_blocks_hedge_mode(self):
+        status = account_safety.account_safety_status(
+            FakeAccountExchange(dual_side=True, leverage=config.LEVERAGE),
+            ["DOGE/USDT"],
+        )
+        self.assertFalse(status["ok"])
+        self.assertEqual(status["position_mode"]["reason"], "hedge_mode_enabled")
+
+    def test_set_leverage_rejects_mismatched_confirmation(self):
+        old_leverage = config.LEVERAGE
+        old_symbol = config.SYMBOL
+        try:
+            config.LEVERAGE = 10
+            config.SYMBOL = "DOGE/USDT"
+            exchange = FakeAccountExchange(dual_side=False, leverage=5)
+            exchange.set_leverage = lambda leverage, symbol: {"symbol": "DOGEUSDT", "leverage": 5}
+            self.assertFalse(order_manager.set_leverage(exchange))
+        finally:
+            config.LEVERAGE = old_leverage
+            config.SYMBOL = old_symbol
+
+    def test_ops_status_can_include_exchange_safety(self):
+        original = ops_status._exchange_safety_status
+        try:
+            ops_status._exchange_safety_status = lambda: {"ok": True, "position_mode": {"mode": "one_way"}}
+            status = ops_status.build_status(include_exchange=True)
+            self.assertTrue(status["exchange_safety"]["ok"])
+            self.assertEqual(status["exchange_safety"]["position_mode"]["mode"], "one_way")
+        finally:
+            ops_status._exchange_safety_status = original
+
     def test_exchange_filters_floor_market_amount_and_notional(self):
         exchange_filters.clear_cache()
         result = exchange_filters.validate_entry_order(

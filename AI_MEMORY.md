@@ -162,6 +162,10 @@ Other previous validation context:
   multipliers.
 - `execution_guard.py`: wick/spike, hard-stop, mark-price stop, and orderbook
   guard logic.
+- `account_safety.py`: shared account safety checks for one-way position mode
+  and per-symbol leverage confirmation. `ops_status.py --exchange` can query
+  this against Binance/testnet without changing the normal file-only status
+  command.
 - `order_manager.py`: live/testnet order placement, one-way mode check, hard
   stop placement, reduce-only close.
 - `exchange_filters.py`: Binance Futures `exchangeInfo` filter validation for
