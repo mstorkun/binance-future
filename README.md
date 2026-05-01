@@ -60,6 +60,7 @@ twap_execution.py            Passive TWAP slice planner
 trade_executor.py            Passive lifecycle contract for future execution refactor
 bias_audit.py                Lookahead/recursive indicator stability audit
 ops_status.py                Local paper/testnet status report
+paper_report.py              Detailed paper decision/equity/error report
 mature_bot_compare.py        Side-by-side add-on validation
 portfolio_candidate_sweep.py Search better symbol combinations
 paper_runner.py              No-order paper telemetry and virtual portfolio runner
@@ -91,6 +92,7 @@ python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96
 python mature_bot_compare.py --years 3
 python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 5 --top 20
 python ops_status.py --json
+python paper_report.py
 python paper_runner.py --once --reset
 python -m unittest discover -s tests -v
 ```

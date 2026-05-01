@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ import flow_data
 import order_manager
 import pair_universe
 import paper_runner
+import paper_report
 import portfolio_candidate_sweep
 import protections
 import risk
@@ -103,6 +105,76 @@ class SafetyTests(unittest.TestCase):
             rows = list(pd.read_csv(csv_path).to_dict("records"))
             self.assertIn("flow_fresh", pd.read_csv(csv_path).columns)
             self.assertEqual(rows[-1]["flow_fresh"], True)
+
+    def test_paper_report_latest_decision_by_symbol(self):
+        rows = [
+            {"symbol": "DOGE/USDT", "action": "no_signal", "bar_time": "old", "close": "1.0"},
+            {"symbol": "LINK/USDT", "action": "skip", "bar_time": "latest", "close": "2.0"},
+            {"symbol": "DOGE/USDT", "action": "paper_open", "bar_time": "latest", "close": "1.5"},
+        ]
+        latest = paper_report.latest_decisions_by_symbol(rows, ["DOGE/USDT", "LINK/USDT"])
+        self.assertEqual([row["symbol"] for row in latest], ["DOGE/USDT", "LINK/USDT"])
+        self.assertEqual(latest[0]["action"], "paper_open")
+        self.assertEqual(latest[0]["close"], 1.5)
+
+    def test_paper_report_builds_from_runtime_files(self):
+        old_symbols = config.SYMBOLS
+        old_heartbeat = getattr(config, "PAPER_HEARTBEAT_FILE", "paper_heartbeat.json")
+        old_decisions = getattr(config, "PAPER_DECISIONS_CSV", "paper_decisions.csv")
+        old_equity = getattr(config, "PAPER_EQUITY_CSV", "paper_equity.csv")
+        old_trades = getattr(config, "PAPER_TRADES_CSV", "paper_trades.csv")
+        old_errors = getattr(config, "PAPER_ERRORS_CSV", "paper_errors.csv")
+        old_testnet = config.TESTNET
+        old_live = config.LIVE_TRADING_APPROVED
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                config.SYMBOLS = ["DOGE/USDT", "LINK/USDT"]
+                config.TESTNET = True
+                config.LIVE_TRADING_APPROVED = False
+                config.PAPER_HEARTBEAT_FILE = str(root / "heartbeat.json")
+                config.PAPER_DECISIONS_CSV = str(root / "decisions.csv")
+                config.PAPER_EQUITY_CSV = str(root / "equity.csv")
+                config.PAPER_TRADES_CSV = str(root / "trades.csv")
+                config.PAPER_ERRORS_CSV = str(root / "errors.csv")
+
+                heartbeat = {
+                    "status": "ok",
+                    "updated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+                    "pid": 123,
+                    "wallet": 1000.0,
+                    "equity": 1001.0,
+                    "open_positions": 0,
+                }
+                (root / "heartbeat.json").write_text(json.dumps(heartbeat), encoding="utf-8")
+                paper_runner._append_csv(config.PAPER_DECISIONS_CSV, [
+                    {"symbol": "DOGE/USDT", "action": "no_signal", "bar_time": "2026-01-01", "risk_mult": "1.0"},
+                    {
+                        "symbol": "LINK/USDT",
+                        "action": "skip",
+                        "bar_time": "2026-01-01",
+                        "skipped_reason": "risk_block",
+                    },
+                ])
+                paper_runner._append_csv(config.PAPER_EQUITY_CSV, [
+                    {"wallet": 1000.0, "equity": 1001.0, "open_positions": 0}
+                ])
+
+                report = paper_report.build_report(decision_limit=10)
+                self.assertEqual(report["heartbeat"]["status"], "ok")
+                self.assertEqual(report["recent"]["actions"]["no_signal"], 1)
+                self.assertEqual(report["recent"]["actions"]["skip"], 1)
+                self.assertEqual(report["recent"]["skips"]["risk_block"], 1)
+                self.assertEqual(report["warnings"], [])
+        finally:
+            config.SYMBOLS = old_symbols
+            config.PAPER_HEARTBEAT_FILE = old_heartbeat
+            config.PAPER_DECISIONS_CSV = old_decisions
+            config.PAPER_EQUITY_CSV = old_equity
+            config.PAPER_TRADES_CSV = old_trades
+            config.PAPER_ERRORS_CSV = old_errors
+            config.TESTNET = old_testnet
+            config.LIVE_TRADING_APPROVED = old_live
 
     def test_legacy_walk_forward_accepts_weekly_data_argument(self):
         idx = pd.date_range("2026-01-01", periods=10, freq="4h")

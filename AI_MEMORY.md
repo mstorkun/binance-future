@@ -163,6 +163,7 @@ Other previous validation context:
 - `twap_execution.py`: passive TWAP slice planner.
 - `trade_executor.py`: passive lifecycle contract for future execution refactor.
 - `ops_status.py`: local paper/testnet status report.
+- `paper_report.py`: detailed paper decision/equity/error report.
 - `mature_bot_compare.py`: side-by-side add-on validation.
 - `portfolio_candidate_sweep.py`: searches better symbol combinations without
   changing the strategy.
@@ -188,13 +189,16 @@ Other previous validation context:
 
 1. Run `python portfolio_backtest.py` and unit tests after any active config
    change.
-2. Restart paper/testnet runners only after checking `ops_status.py --json`;
+2. Monitor paper behavior with `python ops_status.py --json` and
+   `python paper_report.py`; the latter shows latest per-symbol decisions,
+   action counts, skips, flow freshness, risk multipliers, and runtime warnings.
+3. Restart paper/testnet runners only after checking `ops_status.py --json`;
    already-running Python processes may still use the old imported config.
-3. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
+4. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
    mode; current parameters reduce CAGR.
-4. Add a real executor-backed paper implementation only after a net-positive
+5. Add a real executor-backed paper implementation only after a net-positive
    side-by-side report.
-5. Only after net-positive evidence and real fill review, consider live-trading
+6. Only after net-positive evidence and real fill review, consider live-trading
    gates.
 
 ## Do Not Do Without Explicit Approval
