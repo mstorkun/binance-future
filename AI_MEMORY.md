@@ -111,7 +111,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `84` tests passed plus `3` subtests after the
+  `python -m pytest -q` -> `85` tests passed plus `3` subtests after the
   Claude follow-up fixes and tick precision audit. Covered areas include client
   order id duplicate classification, fetch-by-client-id behavior, partial-fill
   handling, trailing stop cleanup, hard-stop precision, reduce-only market
@@ -120,7 +120,8 @@ Other previous validation context:
   behavior, user-data stream live-gate behavior, and basic risk-adjusted metrics
   reporting plus correlation stress, pattern ablation, and exchange-filter cache
   TTL helpers, paper CSV append hardening, stale risk-code quarantine, and
-  passive TWAP/executor guardrails, and exact requirement pinning.
+  passive TWAP/executor guardrails, exact requirement pinning, and paper lock
+  heartbeat refresh.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -242,6 +243,8 @@ Other previous validation context:
   passive-only guardrails and the remaining refactor gate.
 - `docs/DEPENDENCY_PINNING_2026_05_01.md`: documents exact runtime/dev pins;
   `ccxt` is pinned to `4.5.51`.
+- `docs/PAPER_LOCK_HEARTBEAT_2026_05_01.md`: documents the refreshed
+  `PaperRunnerLock` heartbeat/mtime behavior.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.

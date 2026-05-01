@@ -80,6 +80,7 @@ class PaperRunnerLock:
     def __init__(self, path: str | Path | None = None):
         self.path = Path(path or getattr(config, "PAPER_LOCK_FILE", "paper_runner.lock"))
         self.fd: int | None = None
+        self.created_at: str | None = None
 
     def __enter__(self):
         stale_after = float(getattr(config, "PAPER_LOCK_STALE_MINUTES", 240))
@@ -91,8 +92,22 @@ class PaperRunnerLock:
 
         flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
         self.fd = os.open(str(self.path), flags)
-        os.write(self.fd, json.dumps({"pid": os.getpid(), "created_at": _utc_now()}).encode("utf-8"))
+        self.created_at = _utc_now()
+        self.refresh()
         return self
+
+    def refresh(self) -> None:
+        if self.fd is None:
+            raise RuntimeError("paper runner lock is not held")
+        payload = {
+            "pid": os.getpid(),
+            "created_at": self.created_at or _utc_now(),
+            "updated_at": _utc_now(),
+        }
+        os.lseek(self.fd, 0, os.SEEK_SET)
+        os.ftruncate(self.fd, 0)
+        os.write(self.fd, json.dumps(payload, sort_keys=True).encode("utf-8"))
+        os.fsync(self.fd)
 
     def __exit__(self, exc_type, exc, tb):
         if self.fd is not None:
@@ -508,11 +523,12 @@ def main() -> None:
         tag=args.tag,
         timeframe=args.timeframe or None,
         scale_lookbacks=args.scale_lookbacks,
-    ), PaperRunnerLock():
+    ), PaperRunnerLock() as lock:
         first = True
         while True:
             try:
                 result = _run_once_with_retry(reset=args.reset and first)
+                lock.refresh()
                 print(
                     "paper telemetry:",
                     f"tag={getattr(config, 'PAPER_RUN_TAG', 'default')}",
@@ -529,6 +545,7 @@ def main() -> None:
                     raise
                 sleep_seconds = float(getattr(config, "PAPER_ERROR_SLEEP_SECONDS", 300))
                 print(f"paper telemetry error: {type(exc).__name__}: {exc}; sleeping {sleep_seconds:.0f}s", flush=True)
+                lock.refresh()
                 time.sleep(sleep_seconds)
                 first = False
                 continue
@@ -536,6 +553,7 @@ def main() -> None:
             if args.once:
                 break
             first = False
+            lock.refresh()
             time.sleep(max(args.interval_minutes, 1.0) * 60)
 
 

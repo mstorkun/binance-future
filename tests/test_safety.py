@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -1213,6 +1214,21 @@ class SafetyTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     with paper_runner.PaperRunnerLock(lock_path):
                         pass
+            self.assertFalse(lock_path.exists())
+
+    def test_paper_runner_lock_refresh_updates_heartbeat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock_path = Path(tmp) / "paper.lock"
+            with paper_runner.PaperRunnerLock(lock_path) as lock:
+                first = json.loads(lock_path.read_text(encoding="utf-8"))
+                first_mtime = lock_path.stat().st_mtime_ns
+                time.sleep(0.01)
+                lock.refresh()
+                second = json.loads(lock_path.read_text(encoding="utf-8"))
+                second_mtime = lock_path.stat().st_mtime_ns
+                self.assertEqual(second["created_at"], first["created_at"])
+                self.assertNotEqual(second["updated_at"], first["updated_at"])
+                self.assertGreater(second_mtime, first_mtime)
             self.assertFalse(lock_path.exists())
 
     def test_paper_csv_append_expands_header(self):

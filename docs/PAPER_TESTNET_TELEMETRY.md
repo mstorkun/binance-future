@@ -39,6 +39,8 @@ These files are ignored by git.
 Runtime protections:
 
 - single-instance lock prevents two paper runners from writing the same state;
+- the lock file now carries a refreshed `updated_at` heartbeat while the runner
+  is alive;
 - state writes are atomic;
 - CSV append rewrites headers if new telemetry columns are added;
 - network/API errors are retried and logged to `paper_errors.csv`;
