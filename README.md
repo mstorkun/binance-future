@@ -37,10 +37,10 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 
 ## Current Findings
 
-- The current candidate is the SOL/ETH/BNB `growth_70_compound` portfolio profile.
-- Latest corrected 3-year portfolio backtest: about `+79.54% CAGR` with `7.67%` peak drawdown.
-- Portfolio walk-forward: fixed growth profile is positive in `7/7` test periods.
-- Monte Carlo remains the live gate: bootstrap/block paths still show meaningful drawdown risk even when ending-equity loss probability is zero in this trade set.
+- The current candidate is the DOGE/LINK/TRX `growth_70_compound` portfolio profile.
+- Latest 3-year candidate sweep/backtest: about `+124.21% CAGR` with `5.05%` peak drawdown.
+- Candidate portfolio walk-forward: fixed growth profile is positive in `7/7` test periods, with `20.12%` average test return and `5.25%` worst test return.
+- Candidate Monte Carlo: block bootstrap ending-equity p05 is `6191.14` from `1000` start, ending-equity loss probability is `0%`, and peak-DD p95 is `6.25%`.
 - Verdict: testnet/paper only. Live trading remains blocked until real fills, order-book guard logs, futures-flow logs, and news-event controls are reviewed.
 
 ## Files
@@ -85,7 +85,9 @@ python walk_forward.py
 python multi_symbol_backtest.py
 python multi_symbol_walk_forward.py
 python monte_carlo.py --trades backtest_results.csv
-python bias_audit.py --symbol SOL/USDT --years 1 --sample-step 96
+python bias_audit.py --symbol DOGE/USDT --years 1 --sample-step 96
+python bias_audit.py --symbol LINK/USDT --years 1 --sample-step 96
+python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96
 python mature_bot_compare.py --years 3
 python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 5 --top 20
 python ops_status.py --json

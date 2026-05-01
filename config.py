@@ -15,7 +15,7 @@ MARKET_ORDER_RESP_TYPE = "RESULT"
 TESTNET    = True   # False = canlı işlem
 
 # --- Piyasa ---
-SYMBOLS         = ["SOL/USDT", "ETH/USDT", "BNB/USDT"]
+SYMBOLS         = ["DOGE/USDT", "LINK/USDT", "TRX/USDT"]
 SYMBOL          = "BTC/USDT"
 TIMEFRAME       = "4h"
 DAILY_TIMEFRAME = "1d"          # Yüksek TF trend filtresi

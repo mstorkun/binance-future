@@ -18,10 +18,9 @@ strategy, risk, backtest, paper, testnet, or live-trading changes.
 
 ## Current Strategy
 
-- Active portfolio candidate: `SOL/USDT`, `ETH/USDT`, `BNB/USDT`.
-- Research-only stronger candidate from the latest 3-year sweep:
-  `DOGE/USDT`, `LINK/USDT`, `TRX/USDT`. Do not activate it until
-  walk-forward and Monte Carlo pass.
+- Active portfolio candidate: `DOGE/USDT`, `LINK/USDT`, `TRX/USDT`.
+- Previous active baseline was `SOL/USDT`, `ETH/USDT`, `BNB/USDT`; keep its
+  results for comparison but do not assume it is still the current config.
 - Primary timeframe: `4h`.
 - Current profile: `growth_70_compound`.
 - Leverage candidate: `10x`.
@@ -65,24 +64,35 @@ report proves they are net-positive.
 
 ## Latest Validated Results
 
-Most recent validated portfolio backtest after passive mature-bot add-ons:
+Most recent validated active portfolio candidate:
 
-- command: `python portfolio_backtest.py`
-- trades: `244`
-- win rate: `82.0%`
-- final equity: `5786.96 USDT`
-- total return: `+478.70% / 3 years`
-- CAGR: `+79.54%/year`
-- peak drawdown: `7.7%`
-- commission included: `566.17`
-- slippage included: `1061.56`
-- funding included: `+33.48`
+- symbols: `DOGE/USDT`, `LINK/USDT`, `TRX/USDT`
+- source command:
+  `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
+- confirmed command after config activation: `python portfolio_backtest.py`
+- trades: `264`
+- win rate: `83.33%`
+- final equity: `11271.76 USDT`
+- total return: `+1027.18% / 3 years`
+- CAGR: `+124.21%/year`
+- peak drawdown: `5.05%`
+- profit factor: `10.1688`
+- commission included: `1186.01`
+- slippage included: `2223.78`
+- funding included: `+166.62`
 
 Other previous validation context:
 
-- Portfolio walk-forward fixed growth profile was positive in `7/7` windows.
-- Monte Carlo remained acceptable on the current trade set, but bootstrap/block
-  drawdown is still a required live gate.
+- Previous `SOL/USDT,ETH/USDT,BNB/USDT` baseline:
+  `244` trades, `81.97%` win rate, `5786.96` final equity, `79.54%` CAGR,
+  `7.67%` peak DD, and rank `303` in the 455-combination 3-symbol sweep.
+- Candidate portfolio walk-forward for `DOGE/USDT,LINK/USDT,TRX/USDT`:
+  `7/7` fixed-profile windows positive, average test return `20.12%`, worst
+  test return `5.25%`, worst peak DD `5.05%`, total test trades `155`.
+- Candidate Monte Carlo for `DOGE/USDT,LINK/USDT,TRX/USDT`, profile
+  `growth_70_compound`, `5000` iterations, block size `5`:
+  block-bootstrap ending p05 `6191.14`, p50 `10685.20`, p95 `20594.79`,
+  loss probability `0.00%`, peak-DD p95 `6.25%`, peak-DD max `11.77%`.
 - Mature bot side-by-side compare:
   `python mature_bot_compare.py --years 3`
   showed baseline still best on CAGR. Current results:
@@ -91,6 +101,11 @@ Other previous validation context:
   Do not enable protections/exit ladder/all_addons with current parameters.
 - Bias audit on SOL 1-year data passed:
   `python bias_audit.py --symbol SOL/USDT --years 1 --sample-step 96`
+  returned `OK - no indicator drift detected`.
+- Bias audit on active candidate symbols passed:
+  `python bias_audit.py --symbol DOGE/USDT --years 1 --sample-step 96`,
+  `python bias_audit.py --symbol LINK/USDT --years 1 --sample-step 96`, and
+  `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
   `python -m unittest discover -s tests -v` -> `18` tests OK.
@@ -105,6 +120,8 @@ Other previous validation context:
 
 ## Recent Commits
 
+- `28e5d43 Document candidate sweep results`
+  - Added the first full 3-year candidate sweep evidence to repo notes.
 - `7778a1b Add portfolio candidate sweep`
   - Added `portfolio_candidate_sweep.py`.
   - Added `docs/PORTFOLIO_CANDIDATE_SWEEP.md`.
@@ -157,8 +174,10 @@ Other previous validation context:
 ## Runtime / Worktree Notes
 
 - A paper runner was last observed healthy with PID `11284`, status `ok`,
-  equity `1000`, wallet `1000`, open positions `0`. This can go stale; verify
-  `paper_heartbeat.json` before relying on it.
+  equity `1000`, wallet `1000`, open positions `0`, testnet `true`, and
+  live trading approval `false`. It started before the active symbol change, so
+  restart it before expecting DOGE/LINK/TRX paper decisions. This can go stale;
+  verify `paper_heartbeat.json` before relying on it.
 - Runtime paper files are ignored by git.
 - `walk_forward_results.csv` is a known pre-existing dirty file. Do not stage,
   revert, or rewrite it unless the user specifically asks.
@@ -167,16 +186,16 @@ Other previous validation context:
 
 ## Safe Next Steps
 
-1. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
+1. Run `python portfolio_backtest.py` and unit tests after any active config
+   change.
+2. Restart paper/testnet runners only after checking `ops_status.py --json`;
+   already-running Python processes may still use the old imported config.
+3. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
    mode; current parameters reduce CAGR.
-2. Run portfolio walk-forward for `DOGE/USDT,LINK/USDT,TRX/USDT`; it is the
-   latest best research candidate but not yet approved for activation.
-3. Run Monte Carlo bootstrap/block for the candidate trade set.
-4. If the candidate passes, compare it side-by-side against the active baseline
-   before editing `config.SYMBOLS`.
-5. Add a real executor-backed paper implementation only after a net-positive
+4. Add a real executor-backed paper implementation only after a net-positive
    side-by-side report.
-6. Only after net-positive evidence, consider paper/testnet wiring.
+5. Only after net-positive evidence and real fill review, consider live-trading
+   gates.
 
 ## Do Not Do Without Explicit Approval
 

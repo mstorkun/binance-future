@@ -424,7 +424,7 @@ def fetch_all_data(symbols: list[str], years: int = 3) -> dict:
 
 
 if __name__ == "__main__":
-    SYMBOLS = ["SOL/USDT", "ETH/USDT", "BNB/USDT"]
+    SYMBOLS = list(config.SYMBOLS)
     print("Veri yukleniyor...")
     data = fetch_all_data(SYMBOLS, years=3)
 

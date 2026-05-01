@@ -62,11 +62,48 @@ Delta of best candidate vs current baseline:
 - Final equity: `+5484.80`.
 - Trades: `+20`.
 
-Important caveat: all top 30 rows included `TRX/USDT`. Treat this as a strong
-research lead, not as activation evidence. Before changing `config.SYMBOLS`,
-run portfolio walk-forward and Monte Carlo on the candidate portfolio and check
-whether the TRX contribution survives out-of-sample windows and return
-resampling.
+Important sweep caveat: all top 30 rows included `TRX/USDT`. The sweep alone
+was not activation evidence; the follow-up validation below was required before
+changing `config.SYMBOLS`.
+
+## Candidate Validation Follow-Up
+
+Candidate:
+
+```text
+DOGE/USDT,LINK/USDT,TRX/USDT
+```
+
+Validation was run with `config.SYMBOLS` overridden in memory and CSV writes
+guarded, so tracked result CSVs were not overwritten.
+
+Walk-forward result:
+
+| Periods | Positive fixed periods | Avg test return | Worst test return | Worst peak DD | Test trades |
+|---:|---:|---:|---:|---:|---:|
+| 7 | 7/7 | 20.12% | 5.25% | 5.05% | 155 |
+
+Monte Carlo result, `growth_70_compound`, `5000` iterations, block size `5`:
+
+| Method | Ending p05 | Ending p50 | Ending p95 | Loss probability | Peak DD p95 | Peak DD max |
+|---|---:|---:|---:|---:|---:|---:|
+| Shuffle | 11301.80 | 11301.80 | 11301.80 | 0.00% | 5.97% | 9.37% |
+| Bootstrap | 6742.37 | 11061.41 | 20447.74 | 0.00% | 6.58% | 19.87% |
+| Block bootstrap | 6191.14 | 10685.20 | 20594.79 | 0.00% | 6.25% | 11.77% |
+
+Bias audit:
+
+```bash
+python bias_audit.py --symbol DOGE/USDT --years 1 --sample-step 96
+python bias_audit.py --symbol LINK/USDT --years 1 --sample-step 96
+python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96
+```
+
+All three returned `OK - no indicator drift detected`.
+
+Decision: `config.SYMBOLS` uses `DOGE/USDT`, `LINK/USDT`, `TRX/USDT` as the
+paper/testnet candidate. Live trading remains blocked by `TESTNET = True` and
+`LIVE_TRADING_APPROVED = False`.
 
 ## Rules
 
