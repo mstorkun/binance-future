@@ -3,6 +3,10 @@
 Status: closes the current P1 "DSR/PBO or equivalent conservative overfit
 controls" item with conservative proxy metrics.
 
+Update 2026-05-02: the full candidate-by-fold matrix run is now recorded in
+[PBO_FULL_RESULT_2026_05_02.md](PBO_FULL_RESULT_2026_05_02.md). That full run is
+stronger evidence than the selected-row proxy below.
+
 ## Why
 
 The candidate portfolio was selected from many symbol combinations and later
@@ -51,6 +55,11 @@ This does not prove the strategy has no edge. It says the current evidence is
 not strong enough after penalizing the amount of search. Live trading remains
 blocked, and further strategy claims should be based on holdout and full
 candidate-matrix PBO rather than the best historical run.
+
+The later full candidate-matrix PBO result improved this specific overfit
+concern: PBO `0.1429`, selected candidates OOS top-half in `6/7` folds. Live
+trading still remains blocked by execution, fill-quality, and stream-readiness
+gates.
 
 ## Verification
 

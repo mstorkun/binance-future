@@ -89,7 +89,7 @@ into the backlog.
 | 24 | `risk_management.py` is stale/dead risk code | Dangerous formulas may be reused accidentally | Closed: legacy helper is quarantined and raises if called. |
 | 25 | `exchange_filters.py` cache has no refresh policy | Binance filter changes can stale cached limits | Closed: filter cache now has TTL and explicit refresh helper. |
 | 28 | Bias audit artifacts not committed as reports | Claims are hard to reproduce | Closed: DOGE/LINK/TRX bias-audit JSON and summary report are committed. |
-| 29 | Pattern weights are tunable and weakly justified | Hidden overfit risk | Pattern-risk ablation, conservative overfit controls, and candidate-by-fold PBO matrix harness added; full matrix run remains future work. |
+| 29 | Pattern weights are tunable and weakly justified | Hidden overfit risk | Full candidate-by-fold PBO matrix completed: PBO `0.1429`, selected candidates OOS top-half in `6/7` folds. |
 | 30 | Correlation-aware sizing is open-count based | DOGE/LINK/TRX can be highly correlated | Correlation stress report added; covariance-aware cap still requires side-by-side validation before activation. |
 | 31 | CSV append is not atomic/fsynced | Runtime telemetry can corrupt on crash | Closed for paper telemetry: CSV appends now flush/fsync and schema rewrites still use temp+replace. |
 | 32 | Paper lock heartbeat not refreshed | Manual restart can be blocked by stale locks | Closed: lock now carries refreshed `updated_at` heartbeat and fsynced mtime updates. |
@@ -105,10 +105,11 @@ into the backlog.
 
 ## Current Priority Order
 
-1. Run the full candidate-by-fold PBO matrix job and review results.
-2. Add websocket runner/event ordering for the user-data stream; listenKey,
+1. Add websocket runner/event ordering for the user-data stream; listenKey,
    parser, reconciliation decisions, and single-message live_state handler are
    now present.
+2. Stress the PBO-positive candidate under harsher fill/liquidity/funding
+   assumptions before any live-profile discussion.
 
 ## Decision
 

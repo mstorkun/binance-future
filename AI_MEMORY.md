@@ -143,8 +143,17 @@ Other previous validation context:
 - PBO harness:
   `portfolio_param_walk_forward.py --matrix-out portfolio_param_candidate_matrix.csv`
   can now write the full candidate-by-fold matrix, and `pbo_report.py` reports
-  selected candidate OOS rank/PBO from that matrix. Full matrix run is still
-  pending because it is intentionally expensive.
+  selected candidate OOS rank/PBO from that matrix.
+- Full PBO result:
+  On 2026-05-02,
+  `python portfolio_param_walk_forward.py --years 3 --train-bars 3000 --test-bars 500 --roll-bars 500 --risk-capped --out pbo_full_wf.csv --matrix-out portfolio_param_candidate_matrix.csv`
+  took about 61.5 minutes. `python pbo_report.py --matrix portfolio_param_candidate_matrix.csv --out pbo_report.json`
+  produced PBO `0.1429`, average OOS rank percentile `0.8764`, median OOS rank
+  percentile `0.9860`, selected candidates OOS top-half in `6/7` folds, and
+  positive selected test folds `7/7`. Artifacts are committed under
+  `docs/PBO_FULL_RESULT_2026_05_02.md`, `docs/PBO_FULL_REPORT_2026_05_02.json`,
+  `docs/PBO_SELECTED_WF_2026_05_02.csv`, and
+  `docs/PBO_CANDIDATE_MATRIX_2026_05_02.csv`.
 - User-stream parser:
   `user_stream_events.py` parses Binance USD-M Futures `ORDER_TRADE_UPDATE`
   events, records them through `order_events.record()`, and flags terminal,
@@ -296,6 +305,8 @@ Other previous validation context:
   passive executor/TWAP helpers quarantined.
 - `docs/PBO_MATRIX_HARNESS_2026_05_01.md`: documents the candidate-by-fold
   matrix and `pbo_report.py` workflow.
+- `docs/PBO_FULL_RESULT_2026_05_02.md`: documents the first full PBO matrix
+  result and links committed JSON/CSV artifacts.
 - `docs/USER_STREAM_EVENT_PARSER_2026_05_01.md`: documents the parser-only
   first layer for Binance user data stream events.
 - `docs/USER_STREAM_LISTEN_KEY_2026_05_01.md`: documents listenKey lifecycle

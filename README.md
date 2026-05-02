@@ -40,6 +40,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - The current candidate is the DOGE/LINK/TRX `growth_70_compound` portfolio profile.
 - Latest 3-year candidate sweep/backtest: about `+124.21% CAGR` with `5.05%` peak drawdown.
 - Candidate portfolio walk-forward: fixed growth profile is positive in `7/7` test periods, with `20.12%` average test return and `5.25%` worst test return.
+- Full PBO matrix: [docs/PBO_FULL_RESULT_2026_05_02.md](docs/PBO_FULL_RESULT_2026_05_02.md) tested `216` candidates per fold; PBO is `0.1429`, selected candidates were OOS top-half in `6/7` folds, and selected test folds were positive in `7/7`.
 - Candidate Monte Carlo: block bootstrap ending-equity p05 is `6191.14` from `1000` start, ending-equity loss probability is `0%`, and peak-DD p95 is `6.25%`.
 - Timeframe research: [docs/TIMEFRAME_SWEEP.md](docs/TIMEFRAME_SWEEP.md) shows 1h is not robust after horizon scaling, while 2h is a stronger but higher-drawdown candidate than the current 4h default.
 - Stability references: [docs/REFERENCE_REVIEW.md](docs/REFERENCE_REVIEW.md) maps Binance/Freqtrade/NautilusTrader/TradingView/GitHub references to concrete safety and validation work while paper tests run.
@@ -60,7 +61,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Overfit controls: [docs/OVERFIT_CONTROLS_2026_05_01.md](docs/OVERFIT_CONTROLS_2026_05_01.md) adds Bonferroni Sharpe haircut and walk-forward degradation proxies.
 - Bias audit report: [docs/BIAS_AUDIT_REPORT_2026_05_01.md](docs/BIAS_AUDIT_REPORT_2026_05_01.md) commits reproducible lookahead/recursive drift results for DOGE/LINK/TRX.
 - Executor refactor decision: [docs/EXECUTOR_REFACTOR_DECISION_2026_05_01.md](docs/EXECUTOR_REFACTOR_DECISION_2026_05_01.md) keeps passive executor/TWAP helpers quarantined until user-data stream and fill reconciliation exist.
-- PBO matrix harness: [docs/PBO_MATRIX_HARNESS_2026_05_01.md](docs/PBO_MATRIX_HARNESS_2026_05_01.md) adds the expensive candidate-by-fold matrix path for real PBO-style analysis.
+- PBO matrix harness/result: [docs/PBO_MATRIX_HARNESS_2026_05_01.md](docs/PBO_MATRIX_HARNESS_2026_05_01.md) adds the matrix path; [docs/PBO_FULL_RESULT_2026_05_02.md](docs/PBO_FULL_RESULT_2026_05_02.md) records the first full result.
 - User-stream parser: [docs/USER_STREAM_EVENT_PARSER_2026_05_01.md](docs/USER_STREAM_EVENT_PARSER_2026_05_01.md) parses Binance `ORDER_TRADE_UPDATE` events into local order-event telemetry.
 - User-stream listenKey helpers: [docs/USER_STREAM_LISTEN_KEY_2026_05_01.md](docs/USER_STREAM_LISTEN_KEY_2026_05_01.md) adds start/keepalive URL state helpers without opening a websocket.
 - User-stream reconcile: [docs/USER_STREAM_RECONCILE_2026_05_01.md](docs/USER_STREAM_RECONCILE_2026_05_01.md) adds conservative local position reconciliation decisions for parsed stream events.

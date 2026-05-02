@@ -1,0 +1,88 @@
+{
+  "avg_oos_rank_pct": 0.8764,
+  "folds": 7,
+  "median_oos_rank_pct": 0.986,
+  "pbo": 0.1429,
+  "selected": [
+    {
+      "candidate": "growth_70_compound|D15|DX8|VOL1.2|SL1.5",
+      "candidate_count": 216,
+      "logit_oos_rank": 27.631,
+      "oos_rank_pct": 1.0,
+      "pbo_hit": false,
+      "period": 1,
+      "test_metric": 43.6754,
+      "test_rank": 1,
+      "train_metric": 145.8979
+    },
+    {
+      "candidate": "growth_70_compound|D15|DX8|VOL1.2|SL1.5",
+      "candidate_count": 216,
+      "logit_oos_rank": 4.258,
+      "oos_rank_pct": 0.986,
+      "pbo_hit": false,
+      "period": 2,
+      "test_metric": 47.2306,
+      "test_rank": 4,
+      "train_metric": 160.7342
+    },
+    {
+      "candidate": "growth_70_compound|D15|DX8|VOL1.2|SL1.5",
+      "candidate_count": 216,
+      "logit_oos_rank": 4.258,
+      "oos_rank_pct": 0.986,
+      "pbo_hit": false,
+      "period": 3,
+      "test_metric": 20.6075,
+      "test_rank": 4,
+      "train_metric": 90.6026
+    },
+    {
+      "candidate": "growth_70_compound|D15|DX8|VOL1.2|SL1.5",
+      "candidate_count": 216,
+      "logit_oos_rank": 27.631,
+      "oos_rank_pct": 1.0,
+      "pbo_hit": false,
+      "period": 4,
+      "test_metric": 23.5753,
+      "test_rank": 1,
+      "train_metric": 84.2446
+    },
+    {
+      "candidate": "growth_70_compound|D15|DX8|VOL1.2|SL1.5",
+      "candidate_count": 216,
+      "logit_oos_rank": -0.0838,
+      "oos_rank_pct": 0.4791,
+      "pbo_hit": true,
+      "period": 5,
+      "test_metric": 23.0322,
+      "test_rank": 113,
+      "train_metric": 69.6836
+    },
+    {
+      "candidate": "growth_70_compound|D15|DX8|VOL1.2|SL2.0",
+      "candidate_count": 216,
+      "logit_oos_rank": 3.0204,
+      "oos_rank_pct": 0.9535,
+      "pbo_hit": false,
+      "period": 6,
+      "test_metric": 10.4481,
+      "test_rank": 11,
+      "train_metric": 86.8182
+    },
+    {
+      "candidate": "growth_70_compound|D15|DX8|VOL1.5|SL2.0",
+      "candidate_count": 216,
+      "logit_oos_rank": 0.9958,
+      "oos_rank_pct": 0.7302,
+      "pbo_hit": false,
+      "period": 7,
+      "test_metric": 5.4161,
+      "test_rank": 59,
+      "train_metric": 79.0509
+    }
+  ],
+  "test_metric": "test_return_pct",
+  "train_metric": "train_score",
+  "warning": "requires_full_candidate_by_fold_matrix"
+}

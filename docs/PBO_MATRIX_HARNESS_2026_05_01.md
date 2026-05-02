@@ -1,7 +1,8 @@
 # PBO Matrix Harness 2026-05-01
 
 Status: adds the missing full candidate-by-fold matrix path needed for a real
-PBO-style analysis.
+PBO-style analysis. The first full run is recorded in
+[PBO_FULL_RESULT_2026_05_02.md](PBO_FULL_RESULT_2026_05_02.md).
 
 ## Why
 
