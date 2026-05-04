@@ -54,9 +54,10 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - User-data stream decision: [docs/USER_DATA_STREAM_DECISION_2026_05_01.md](docs/USER_DATA_STREAM_DECISION_2026_05_01.md) rejects polling-only live operation and keeps live mode blocked until stream readiness is proven.
 - User-data stream runner: [docs/USER_STREAM_RUNNER_2026_05_04.md](docs/USER_STREAM_RUNNER_2026_05_04.md) adds a websocket consumer skeleton with duplicate/out-of-order guards, keepalive/reconnect timing, and local `live_state` reconciliation plumbing; it is not testnet-proven yet.
 - Post-audit actions: [docs/POST_AUDIT_ACTIONS_2026_05_04.md](docs/POST_AUDIT_ACTIONS_2026_05_04.md) records the safety fixes, live preflight, same-bar guard, and funding-carry research lane added after the 12-agent audit.
-- Strategy decision: [docs/STRATEGY_DECISION_2026_05_04.md](docs/STRATEGY_DECISION_2026_05_04.md) marks Donchian as `benchmark_only`, keeps live blocked, rejects trend/candle reducer activation, and rejects funding-executor work from the current PoC.
+- Strategy decision: [docs/STRATEGY_DECISION_2026_05_04.md](docs/STRATEGY_DECISION_2026_05_04.md) marks Donchian as `benchmark_only`, keeps live blocked, rejects trend/candle reducer activation, and rejects funding/cross-exchange executor work from the current PoCs.
 - Funding carry research: [docs/CARRY_RESEARCH_2026_05_04.md](docs/CARRY_RESEARCH_2026_05_04.md) scanned liquid spot-backed USDT perpetuals over 180 days; static carry and dynamic entry/exit threshold grids both produced `0` passing candidates, so no carry executor should be built yet.
 - Funding predictability PoC: [docs/FUNDING_PREDICTABILITY_2026_05_04.md](docs/FUNDING_PREDICTABILITY_2026_05_04.md) scanned `42` liquid spot-backed USDT perpetuals over 180 days; the strict OOS fold gate produced `0` passing symbols, so no predictive-funding executor should be built yet.
+- Cross-exchange basis PoC: [docs/CROSS_EXCHANGE_BASIS_2026_05_04.md](docs/CROSS_EXCHANGE_BASIS_2026_05_04.md) scanned common Binance/OKX/Bybit USDT perpetual funding spreads; `147` exchange-pair rows produced `0` passing pairs after costs and OOS fold gates, so no cross-exchange basis executor should be built yet.
 - Trend quality report: [docs/TREND_QUALITY_REPORT_2026_05_04.md](docs/TREND_QUALITY_REPORT_2026_05_04.md) confirms that long/short capability does not remove the need for strong trend context; `market:trend` trades had higher mean return than the full trade set, so trend-quality changes stay report-only until validated side-by-side.
 - Candle structure report: [docs/CANDLE_STRUCTURE_REPORT_2026_05_04.md](docs/CANDLE_STRUCTURE_REPORT_2026_05_04.md) adds a separate candle-density/length/correlation diagnostic; aligned candle-structure bias had higher mean return than the full set, but it remains report-only.
 - Candle/correlation reducer: [docs/CANDLE_CORRELATION_OVERLAY_2026_05_04.md](docs/CANDLE_CORRELATION_OVERLAY_2026_05_04.md) tests a train-gated risk reducer that never boosts size and only cuts setup buckets proven bad in train; latest OOS pass learned no bad buckets, so it made no paper/testnet/live change.
@@ -105,6 +106,7 @@ runtime_guards.py            Persistent trading-disabled flag helpers
 go_live_preflight.py         Fail-closed live readiness preflight report
 carry_research.py            Research-only funding-rate carry scanner
 funding_predictability_report.py Research-only funding predictability PoC
+cross_exchange_basis_report.py Research-only Binance/OKX/Bybit basis PoC
 trend_quality_report.py      Report-only trade attribution by trend-quality context
 candle_structure_report.py   Report-only candle-structure attribution
 candle_correlation_overlay.py Backtest-only train-gated candle/correlation risk reducer
@@ -169,6 +171,7 @@ python ops_status.py --json
 python go_live_preflight.py --json
 python carry_research.py --auto-universe --days 180 --min-quote-volume-usdt 50000000 --max-symbols 80 --dynamic-enter-grid 0.00005 0.000075 0.0001 0.00015 --dynamic-exit-grid 0 0.00002 0.00005 --out carry_candidates.csv --universe-out carry_universe.csv --json
 python funding_predictability_report.py --auto-universe --days 180 --min-quote-volume-usdt 50000000 --max-symbols 80 --signal-window 3 --horizon 3 --top-quantile 0.8 --train-samples 360 --test-samples 90 --roll-samples 90 --min-selected 10 --min-folds 3 --out funding_predictability_results.csv --folds-out funding_predictability_folds.csv --universe-out funding_predictability_universe.csv --json-out funding_predictability_report.json --md-out docs/FUNDING_PREDICTABILITY_2026_05_04.md
+python cross_exchange_basis_report.py --exchanges binance okx bybit --days 180 --min-quote-volume-usdt 50000000 --max-symbols 60 --train-samples 45 --test-samples 15 --roll-samples 15 --min-folds 3 --min-test-samples 10 --earn-apr 6 --out cross_exchange_basis_results.csv --folds-out cross_exchange_basis_folds.csv --universe-out cross_exchange_basis_universe.csv --json-out cross_exchange_basis_report.json --md-out docs/CROSS_EXCHANGE_BASIS_2026_05_04.md
 python trend_quality_report.py --trades portfolio_trades.csv --md-out docs/TREND_QUALITY_REPORT_2026_05_04.md --json-out trend_quality_report.json
 python candle_structure_report.py --trades portfolio_trades.csv --years 3 --md-out docs/CANDLE_STRUCTURE_REPORT_2026_05_04.md --json-out candle_structure_report.json
 python candle_correlation_overlay.py --trades portfolio_trades.csv --years 3

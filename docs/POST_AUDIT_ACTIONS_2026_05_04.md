@@ -50,6 +50,9 @@ approval.
 - Added `funding_predictability_report.py` as a research-only OOS funding
   persistence PoC. It learns thresholds on prior funding prints and validates
   only on future funding windows; it does not create an executor.
+- Added `cross_exchange_basis_report.py` as a research-only Binance/OKX/Bybit
+  perp funding-spread PoC. It selects exchange direction only from train folds
+  and validates realized funding spread only on OOS folds.
 - Updated `config.example.py` to keep API-key examples env-only.
 
 ## Still Blocked
@@ -67,6 +70,8 @@ approval.
   under current cost and `6%` USDT benchmark assumptions.
 - Predictive-funding PoC scanned `42` liquid spot-backed USDT perpetuals and
   produced `0` strict passing symbols with a minimum `3` OOS-fold gate.
+- Cross-exchange basis PoC scanned common Binance/OKX/Bybit USDT perpetuals
+  and produced `0` passing exchange pairs after cost and OOS fold gates.
 - Trend-quality attribution is diagnostic only; it is not wired as an active
   signal, filter, or risk gate.
 - Candle-structure attribution is diagnostic only; it is not wired as an active
@@ -81,7 +86,8 @@ approval.
 ## Validation
 
 - Safety/unit test count after follow-up carry, trend-quality, candle-structure,
-  and funding-predictability research pass: `133 passed, 3 subtests passed`.
+  funding-predictability, and cross-exchange basis research pass:
+  `136 passed, 3 subtests passed`.
 - `python go_live_preflight.py --json` returns `go_live_blocked`, as expected.
   Current blockers include `TESTNET=True`, `LIVE_TRADING_APPROVED=False`,
   runtime-profile mismatch, `USER_DATA_STREAM_READY=False`, and safety flags
@@ -99,3 +105,8 @@ approval.
   symbols. Short-history rows such as DOT/WLD were rejected as
   `insufficient_oos_folds`; longer-history rows such as AXL/BABY/ORCA failed
   consistent OOS predictive-edge requirements.
+- `python cross_exchange_basis_report.py --exchanges binance okx bybit ...`
+  returned `49` universe symbols, `147` exchange-pair rows, `57` rows with
+  OOS folds, `171` fold rows, and `0` passing pairs. The best fold-producing
+  rows were still negative after cost and benchmark; DOT Binance/OKX had
+  `-1.6095%` net versus benchmark across OOS folds.

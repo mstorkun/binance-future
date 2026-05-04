@@ -26,6 +26,7 @@ import exit_ladder
 import exchange_filters
 import flow_data
 import carry_research
+import cross_exchange_basis_report
 import funding_predictability_report
 import go_live_preflight
 import live_state
@@ -2084,6 +2085,69 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(summary["reason"], "no_prediction_frame")
         self.assertEqual(folds, [])
 
+    def test_cross_exchange_basis_train_direction_uses_oos_only(self):
+        idx = pd.date_range("2026-01-01", periods=360, freq="8h", tz="UTC")
+        aligned = pd.DataFrame(
+            {
+                "binance": [0.00016] * len(idx),
+                "okx": [0.00002] * len(idx),
+            },
+            index=idx,
+        )
+        summary, folds = cross_exchange_basis_report.walk_forward_exchange_pair(
+            aligned,
+            symbol="DOGE/USDT:USDT",
+            exchange_a="binance",
+            exchange_b="okx",
+            train_samples=120,
+            test_samples=60,
+            roll_samples=60,
+            min_folds=3,
+            min_test_samples=30,
+            earn_apr_benchmark_pct=0.0,
+            entry_exit_cost_pct=0.0,
+        )
+        self.assertTrue(summary["ok"])
+        self.assertEqual(summary["ok_folds"], summary["folds"])
+        self.assertGreater(summary["net_vs_earn_pct"], 0.0)
+        self.assertEqual(folds[0]["short_exchange"], "binance")
+        self.assertEqual(folds[0]["long_exchange"], "okx")
+
+    def test_cross_exchange_basis_reverses_direction_from_train(self):
+        idx = pd.date_range("2026-01-01", periods=240, freq="8h", tz="UTC")
+        aligned = pd.DataFrame(
+            {
+                "binance": [0.00001] * len(idx),
+                "okx": [0.00012] * len(idx),
+            },
+            index=idx,
+        )
+        fold = cross_exchange_basis_report.evaluate_exchange_pair_fold(
+            aligned.iloc[:120],
+            aligned.iloc[120:180],
+            symbol="DOGE/USDT:USDT",
+            exchange_a="binance",
+            exchange_b="okx",
+            entry_exit_cost_pct=0.0,
+            earn_apr_benchmark_pct=0.0,
+            min_test_samples=30,
+        )
+        self.assertTrue(fold["ok"])
+        self.assertEqual(fold["short_exchange"], "okx")
+        self.assertEqual(fold["long_exchange"], "binance")
+        self.assertGreater(fold["net_after_cost_pct"], 0.0)
+
+    def test_cross_exchange_basis_rejects_unaligned_rates(self):
+        summary, folds = cross_exchange_basis_report.walk_forward_exchange_pair(
+            pd.DataFrame(columns=["binance", "okx"]),
+            symbol="DOGE/USDT:USDT",
+            exchange_a="binance",
+            exchange_b="okx",
+        )
+        self.assertFalse(summary["ok"])
+        self.assertEqual(summary["reason"], "no_aligned_funding_data")
+        self.assertEqual(folds, [])
+
     def test_candle_correlation_overlay_buckets_setup_context(self):
         row = pd.Series({
             "candle_structure_alignment": "contra",
@@ -2219,11 +2283,13 @@ class SafetyTests(unittest.TestCase):
             pbo={"pbo": 0.1429},
             candle_wf={"delta_total_pnl": 0.0, "reduced_overlay_trades": 0},
             funding_poc={"passing_symbols": 0},
+            cross_exchange={"passing_pairs": 0},
         )
         self.assertEqual(report["decision"], "benchmark_only")
         self.assertFalse(report["live_allowed"])
         self.assertIn("trend_candle_overlay_no_activation_case", report["negatives"])
         self.assertIn("predictive_funding_poc_zero_pass", report["negatives"])
+        self.assertIn("cross_exchange_basis_zero_pass", report["negatives"])
 
     def test_trend_quality_token_parser_ignores_empty_values(self):
         self.assertEqual(trend_quality_report.reason_tokens(" market:trend | | adx:strong "), ("market:trend", "adx:strong"))

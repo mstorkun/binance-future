@@ -18,7 +18,8 @@ strategy, risk, backtest, paper, testnet, or live-trading changes.
 - After the 2026-05-04 12-agent audit, treat Donchian breakout as a benchmark
   strategy until stronger out-of-sample evidence appears. Funding-rate carry /
   delta-neutral research has scanner and predictive-PoC coverage now, but no
-  executor-ready edge has passed strict OOS gates.
+  executor-ready edge has passed strict OOS gates. Cross-exchange basis has
+  also been checked as a PoC and remains non-executor-ready.
 
 ## Current Strategy
 
@@ -117,8 +118,8 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `133` tests passed plus `3` subtests after
-  post-audit safety and funding-predictability additions.
+  `python -m pytest -q` -> `136` tests passed plus `3` subtests after
+  post-audit safety, funding-predictability, and cross-exchange additions.
   Covered areas include client order id duplicate classification,
   fetch-by-client-id behavior, partial-fill handling, trailing stop cleanup,
   hard-stop precision, reduce-only market
@@ -167,6 +168,15 @@ Other previous validation context:
   `insufficient_oos_folds`; longer-history rows such as AXL/BABY/ORCA failed
   consistent OOS predictive-edge requirements. Do not build a funding executor
   from this PoC.
+- Cross-exchange basis PoC:
+  `python cross_exchange_basis_report.py --exchanges binance okx bybit --days 180 --min-quote-volume-usdt 50000000 --max-symbols 60 --train-samples 45 --test-samples 15 --roll-samples 15 --min-folds 3 --min-test-samples 10 --earn-apr 6 --out cross_exchange_basis_results.csv --folds-out cross_exchange_basis_folds.csv --universe-out cross_exchange_basis_universe.csv --json-out cross_exchange_basis_report.json --md-out docs/CROSS_EXCHANGE_BASIS_2026_05_04.md`
+  scanned common Binance/OKX/Bybit USDT perpetuals and wrote
+  `docs/CROSS_EXCHANGE_BASIS_2026_05_04.md`. Result: `49` universe symbols,
+  `147` exchange-pair rows, `57` rows with OOS folds, `171` fold rows, and
+  strict pass count `0`. Best fold-producing row was DOT Binance/OKX with
+  gross spread `0.2966%`, but after modeled cost and USDT benchmark it was
+  `-1.6095%` net versus benchmark. Do not build a cross-exchange basis executor
+  from this PoC.
 - Trend-quality attribution:
   `python trend_quality_report.py --trades portfolio_trades.csv --json-out trend_quality_report.json --md-out docs/TREND_QUALITY_REPORT_2026_05_04.md --min-token-trades 10`
   is report-only and does not change bot behavior. Latest active portfolio
@@ -212,11 +222,13 @@ Other previous validation context:
   `docs/STRATEGY_DECISION_2026_05_04.md`. Current verdict is
   `benchmark_only`: keep Donchian as a benchmark/research line, keep live
   blocked, do not activate trend/candle/correlation reducers in paper/testnet,
-  and do not build a funding executor from the current predictive-funding PoC.
+  and do not build a funding or cross-exchange basis executor from the current
+  PoCs.
   Positive evidence remains useful for benchmarking, but the deflated-Sharpe
   proxy is negative, train/test degradation is severe, simple carry has `0`
-  passing candidates, predictive funding has `0` strict passing symbols, and
-  true entry-time trend/candle WF found no activation case.
+  passing candidates, predictive funding has `0` strict passing symbols,
+  cross-exchange basis has `0` passing pairs, and true entry-time trend/candle
+  WF found no activation case.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha

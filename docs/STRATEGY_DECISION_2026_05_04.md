@@ -9,7 +9,7 @@ approval.
 - Keep live trading blocked.
 - Keep Donchian as a benchmark/research line only.
 - Do not activate trend/candle/correlation reducers in paper/testnet.
-- Do not build a funding executor from the current predictive-funding PoC.
+- Do not build a funding or cross-exchange basis executor from current PoCs.
 
 ## Evidence
 
@@ -29,6 +29,10 @@ approval.
 | funding_poc_symbols_scanned | 42 |
 | funding_poc_passing_symbols | 0 |
 | funding_poc_fold_rows | 203 |
+| cross_exchange_pair_rows | 147 |
+| cross_exchange_pair_rows_with_folds | 57 |
+| cross_exchange_passing_pairs | 0 |
+| cross_exchange_fold_rows | 171 |
 
 ## Interpretation
 
@@ -37,12 +41,13 @@ selected walk-forward evidence are not garbage. It is still not an active
 alpha decision because the conservative Sharpe haircut/DSR proxy fails,
 train/test degradation is severe, simple Binance carry produced zero
 passing candidates, the predictive-funding PoC produced zero strict
-passing symbols, and the true entry-time trend/candle reducer found no
+passing symbols, cross-exchange basis produced zero passing pairs,
+and the true entry-time trend/candle reducer found no
 train-proven bad setup to exploit.
 
 ## Next Step
 
 Do not spend more engineering time on live execution gates until a new
 alpha path has evidence after costs and walk-forward validation. The
-remaining research choices are stricter funding-model variants,
-cross-exchange basis research, or keeping Donchian only as a benchmark.
+remaining research choices are stricter data acquisition/model variants
+or keeping Donchian only as a benchmark.
