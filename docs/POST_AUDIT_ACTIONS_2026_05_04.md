@@ -43,6 +43,8 @@ approval.
 - Added `candle_correlation_overlay.py` as a backtest-only train-gated risk
   reducer prototype that never boosts size and only cuts setup buckets proven
   bad in the train slice.
+- Added `trend_candle_entry_walk_forward.py`, which runs the same reducer as a
+  true entry-time side-by-side walk-forward through `portfolio_backtest.py`.
 - Updated `config.example.py` to keep API-key examples env-only.
 
 ## Still Blocked
@@ -64,6 +66,8 @@ approval.
   signal, filter, or risk gate.
 - The candle/correlation reducer learned `0` bad OOS-train buckets in the latest
   run, so it made no paper/testnet/live change and remains report-only.
+- The true entry-time trend/candle walk-forward also learned `0` bad train
+  buckets and reduced `0` trades, so there is still no activation case.
 
 ## Validation
 
@@ -76,3 +80,6 @@ approval.
 - `python candle_correlation_overlay.py --trades portfolio_trades.csv --years 3`
   returned unchanged OOS results because no train-proven bad setup bucket met
   the reduction gate.
+- `python trend_candle_entry_walk_forward.py --years 3` returned unchanged OOS
+  metrics through the real entry-sizing backtest path: `106` OOS trades,
+  `6002.34` PnL, PF `5.9885`, max DD `505.72`, and `0` reduced overlay trades.

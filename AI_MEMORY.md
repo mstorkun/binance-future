@@ -191,6 +191,14 @@ Other previous validation context:
   bad train buckets, `0` reduced OOS trades, baseline and reducer both
   `6415.09` OOS PnL with max DD `516.26`. Do not activate it until a true
   entry-time sizing backtest/walk-forward proves improvement.
+- Trend/candle entry-time walk-forward:
+  `python trend_candle_entry_walk_forward.py --years 3` runs the reducer through
+  the real `portfolio_backtest.py` entry sizing hook rather than post-hoc trade
+  scaling. It is research-only and does not change paper/testnet/live behavior.
+  Latest OOS result: baseline `106` OOS trades / `6002.34` PnL / PF `5.9885` /
+  max DD `505.72`; entry-time reducer learned `0` bad train buckets, reduced
+  `0` overlay trades, and returned identical OOS metrics. This provides no
+  activation case for trend/candle risk reduction.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha

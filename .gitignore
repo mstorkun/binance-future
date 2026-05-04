@@ -41,6 +41,9 @@ trend_quality_report.json
 candle_structure_report.json
 candle_correlation_overlay.json
 candle_correlation_overlay_trades.csv
+trend_candle_entry_walk_forward.json
+trend_candle_wf_baseline_trades.csv
+trend_candle_wf_overlay_trades.csv
 timeframe_sweep_results.csv
 timeframe_walk_forward_results.csv
 timeframe_sweep_scaled_results.csv

@@ -43,3 +43,7 @@ _No rows._
 If OOS PnL or drawdown does not improve, this reducer stays report-only.
 It should not be promoted into paper/testnet until a true entry-time
 position-sizing backtest and walk-forward both show net improvement.
+
+Follow-up completed in `docs/TREND_CANDLE_ENTRY_WALK_FORWARD_2026_05_04.md`:
+the true entry-time sizing path also learned `0` bad train buckets and reduced
+`0` trades, so there is still no activation case.

@@ -58,6 +58,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Trend quality report: [docs/TREND_QUALITY_REPORT_2026_05_04.md](docs/TREND_QUALITY_REPORT_2026_05_04.md) confirms that long/short capability does not remove the need for strong trend context; `market:trend` trades had higher mean return than the full trade set, so trend-quality changes stay report-only until validated side-by-side.
 - Candle structure report: [docs/CANDLE_STRUCTURE_REPORT_2026_05_04.md](docs/CANDLE_STRUCTURE_REPORT_2026_05_04.md) adds a separate candle-density/length/correlation diagnostic; aligned candle-structure bias had higher mean return than the full set, but it remains report-only.
 - Candle/correlation reducer: [docs/CANDLE_CORRELATION_OVERLAY_2026_05_04.md](docs/CANDLE_CORRELATION_OVERLAY_2026_05_04.md) tests a train-gated risk reducer that never boosts size and only cuts setup buckets proven bad in train; latest OOS pass learned no bad buckets, so it made no paper/testnet/live change.
+- Trend/candle entry walk-forward: [docs/TREND_CANDLE_ENTRY_WALK_FORWARD_2026_05_04.md](docs/TREND_CANDLE_ENTRY_WALK_FORWARD_2026_05_04.md) applies the same train-gated reducer at true entry-time sizing; latest OOS pass again learned `0` bad buckets and reduced `0` trades, so there is still no activation case.
 - Paper runtime reporting: [docs/PAPER_RUNTIME_REPORTING_2026_05_04.md](docs/PAPER_RUNTIME_REPORTING_2026_05_04.md) separates paper-state alerts from live-state mismatches and adds open-position, recent-trade, MAE/MFE, and 4h-vs-2h daily/weekly reporting.
 - Risk-adjusted metrics: [docs/RISK_ADJUSTED_METRICS_2026_05_01.md](docs/RISK_ADJUSTED_METRICS_2026_05_01.md) adds Sharpe/Sortino/Calmar reporting and Bonferroni visibility for candidate sweeps.
 - Correlation stress: [docs/CORRELATION_STRESS_2026_05_01.md](docs/CORRELATION_STRESS_2026_05_01.md) adds report-only pairwise symbol correlation stress before any covariance-aware sizing change.
@@ -104,6 +105,7 @@ carry_research.py            Research-only funding-rate carry scanner
 trend_quality_report.py      Report-only trade attribution by trend-quality context
 candle_structure_report.py   Report-only candle-structure attribution
 candle_correlation_overlay.py Backtest-only train-gated candle/correlation risk reducer
+trend_candle_entry_walk_forward.py True entry-time trend/candle reducer WF
 user_stream_client.py        Binance user-stream listenKey lifecycle helpers
 user_stream_events.py        Binance user-stream ORDER_TRADE_UPDATE parser
 user_stream_reconcile.py     Conservative user-stream position-state decisions
@@ -164,6 +166,7 @@ python carry_research.py --auto-universe --days 180 --min-quote-volume-usdt 5000
 python trend_quality_report.py --trades portfolio_trades.csv --md-out docs/TREND_QUALITY_REPORT_2026_05_04.md --json-out trend_quality_report.json
 python candle_structure_report.py --trades portfolio_trades.csv --years 3 --md-out docs/CANDLE_STRUCTURE_REPORT_2026_05_04.md --json-out candle_structure_report.json
 python candle_correlation_overlay.py --trades portfolio_trades.csv --years 3
+python trend_candle_entry_walk_forward.py --years 3
 python emergency_kill_switch.py --json
 python paper_report.py
 python paper_decision_report.py

@@ -84,7 +84,8 @@ def learn_bad_setup_rules(
     if train.empty:
         return rules
     frame = train.copy()
-    frame["setup_bucket"] = frame.apply(setup_bucket, axis=1)
+    if "setup_bucket" not in frame.columns:
+        frame["setup_bucket"] = frame.apply(setup_bucket, axis=1)
     for bucket, part in frame.groupby("setup_bucket"):
         if len(part) < int(min_bucket_trades):
             continue

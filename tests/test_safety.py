@@ -37,6 +37,7 @@ import pattern_ablation
 import paper_runner
 import paper_report
 import ops_status
+import portfolio_backtest
 import portfolio_candidate_sweep
 import portfolio_cost_stress
 import portfolio_holdout
@@ -50,6 +51,7 @@ import risk_metrics
 import runtime_guards
 import timeframe_sweep
 import trade_executor
+import trend_candle_entry_walk_forward
 import trend_quality_report
 import twap_execution
 import user_stream_client
@@ -2102,6 +2104,66 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(int((oos["overlay_multiplier"] < 1.0).sum()), 2)
         self.assertEqual(float(oos.iloc[0]["overlay_pnl"]), -10.0)
         self.assertEqual(float(oos.iloc[1]["overlay_pnl"]), 15.0)
+
+    def test_portfolio_backtest_entry_overlay_decision_parses_dict(self):
+        multiplier, blocked, reasons = portfolio_backtest._entry_overlay_decision(
+            lambda **_: {"multiplier": 0.5, "reasons": ("research_cut",)}
+        )
+        self.assertEqual(multiplier, 0.5)
+        self.assertFalse(blocked)
+        self.assertEqual(reasons, ("research_cut",))
+
+    def test_trend_candle_entry_bucket_uses_closed_bar_context(self):
+        ts = pd.Timestamp("2026-01-01 00:00:00")
+        corr_series = {"DOGE/USDT": pd.Series([0.7], index=[ts])}
+        bucket = trend_candle_entry_walk_forward.entry_setup_bucket(
+            symbol="DOGE/USDT",
+            ts=ts,
+            bar=pd.Series({"candle_structure_bias": -1}),
+            signal="long",
+            risk_reasons=("market:range", "adx:weak", "pattern:contra"),
+            corr_series=corr_series,
+        )
+        self.assertEqual(bucket, "contra|corr_high|trend_low")
+
+    def test_trend_candle_entry_overlay_reduces_scheduled_bad_bucket(self):
+        entry_times = pd.date_range("2026-01-01", periods=8, freq="4h")
+        annotated = pd.DataFrame({
+            "entry_time": entry_times,
+            "pnl": [-10.0, -8.0, 3.0, 12.0, -20.0, 15.0, -4.0, 5.0],
+            "setup_bucket": [
+                "contra|corr_high|trend_low",
+                "contra|corr_high|trend_low",
+                "contra|corr_high|trend_low",
+                "aligned|corr_normal|trend_medium",
+                "contra|corr_high|trend_low",
+                "aligned|corr_normal|trend_medium",
+                "contra|corr_high|trend_low",
+                "aligned|corr_normal|trend_medium",
+            ],
+        })
+        schedules = trend_candle_entry_walk_forward.build_fold_schedules(
+            annotated,
+            train_trades=4,
+            test_trades=4,
+            roll_trades=4,
+            min_bucket_trades=3,
+            reduce_multiplier=0.5,
+        )
+        overlay = trend_candle_entry_walk_forward.make_entry_overlay(
+            schedules,
+            {"DOGE/USDT": pd.Series([0.7], index=[entry_times[4]])},
+        )
+        decision = overlay(
+            symbol="DOGE/USDT",
+            ts=entry_times[4],
+            entry_time=entry_times[4],
+            bar=pd.Series({"candle_structure_bias": -1}),
+            signal="long",
+            risk_decision=risk.RiskDecision(1.0, False, ("market:range", "adx:weak", "pattern:contra")),
+        )
+        self.assertEqual(decision["multiplier"], 0.5)
+        self.assertIn("tcwf:reduce", decision["reasons"][0])
 
     def test_trend_quality_token_parser_ignores_empty_values(self):
         self.assertEqual(trend_quality_report.reason_tokens(" market:trend | | adx:strong "), ("market:trend", "adx:strong"))

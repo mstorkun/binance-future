@@ -58,6 +58,7 @@ def run_portfolio_backtest(
     enable_protections: bool | None = None,
     enable_exit_ladder: bool | None = None,
     enable_pair_universe: bool | None = None,
+    entry_risk_overlay=None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Returns (trades_df, equity_df).
@@ -217,6 +218,21 @@ def run_portfolio_backtest(
                     if protection.block_new_entries:
                         continue
                 effective_risk *= risk_decision.multiplier
+                overlay_multiplier, overlay_blocked, overlay_reasons = _entry_overlay_decision(
+                    entry_risk_overlay,
+                    symbol=sym,
+                    ts=ts,
+                    entry_time=next_bar.name,
+                    bar=bar,
+                    signal=signal,
+                    risk_decision=risk_decision,
+                    open_positions=open_positions,
+                    equity=equity,
+                )
+                if overlay_blocked:
+                    continue
+                effective_risk *= overlay_multiplier
+                risk_reasons = tuple(risk_decision.reasons) + tuple(overlay_reasons)
 
                 if risk_basis == "portfolio":
                     allocated = equity
@@ -246,8 +262,10 @@ def run_portfolio_backtest(
                     "entry_equity": equity,
                     "liquidation_price": liq_guard.liquidation_price,
                     "risk_pct": effective_risk,
-                    "risk_mult": risk_decision.multiplier,
-                    "risk_reasons": "|".join(risk_decision.reasons),
+                    "risk_mult": risk_decision.multiplier * overlay_multiplier,
+                    "risk_reasons": "|".join(risk_reasons),
+                    "entry_overlay_mult": overlay_multiplier,
+                    "entry_overlay_reasons": "|".join(overlay_reasons),
                     "exit_plan": exit_ladder.build_exit_plan(entry, atr, signal, enabled=enable_exit_ladder),
                     "exit_steps_filled": 0,
                     "initial_size": size,
@@ -268,6 +286,25 @@ def run_portfolio_backtest(
         })
 
     return pd.DataFrame(trades), pd.DataFrame(equity_history)
+
+
+def _entry_overlay_decision(entry_risk_overlay, **kwargs) -> tuple[float, bool, tuple[str, ...]]:
+    if entry_risk_overlay is None:
+        return 1.0, False, ()
+    decision = entry_risk_overlay(**kwargs)
+    if decision is None:
+        return 1.0, False, ()
+    if isinstance(decision, dict):
+        multiplier = float(decision.get("multiplier", 1.0))
+        blocked = bool(decision.get("block_new_entries", False))
+        reasons = decision.get("reasons", ())
+    else:
+        multiplier = float(getattr(decision, "multiplier", 1.0))
+        blocked = bool(getattr(decision, "block_new_entries", False))
+        reasons = getattr(decision, "reasons", ())
+    if isinstance(reasons, str):
+        reasons = (reasons,)
+    return max(0.0, multiplier), blocked, tuple(str(reason) for reason in reasons if str(reason))
 
 
 def _account_state(wallet: float, open_positions: dict, data_by_symbol: dict, ts) -> tuple[float, float, float]:
@@ -386,6 +423,8 @@ def _close_position(
         "risk_pct":    round(pos.get("risk_pct", 0.0), 5),
         "risk_mult":   round(pos.get("risk_mult", 1.0), 3),
         "risk_reasons": pos.get("risk_reasons", ""),
+        "entry_overlay_mult": round(pos.get("entry_overlay_mult", 1.0), 4),
+        "entry_overlay_reasons": pos.get("entry_overlay_reasons", ""),
         "pnl":         round(pnl, 2),
     })
     return pnl
