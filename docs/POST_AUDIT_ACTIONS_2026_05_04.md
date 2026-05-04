@@ -37,6 +37,9 @@ approval.
   backtests and threshold-grid optimization.
 - Added `trend_quality_report.py` as report-only attribution for long/short
   trade performance by trend-quality context.
+- Added `candle_structure.py` and `candle_structure_report.py` as report-only
+  attribution for candle body/range, density/compression, persistence, and
+  correlation context.
 - Updated `config.example.py` to keep API-key examples env-only.
 
 ## Still Blocked
@@ -54,10 +57,12 @@ approval.
   under current cost and `6%` USDT benchmark assumptions.
 - Trend-quality attribution is diagnostic only; it is not wired as an active
   signal, filter, or risk gate.
+- Candle-structure attribution is diagnostic only; it is not wired as an active
+  signal, filter, or risk gate.
 
 ## Validation
 
-- Safety/unit test count after follow-up carry and trend-quality research pass: `120 passed, 3 subtests passed` for
+- Safety/unit test count after follow-up carry, trend-quality, and candle-structure research pass: `123 passed, 3 subtests passed` for
   both `tests/test_safety.py` and the full `python -m pytest -q` suite.
 - `python go_live_preflight.py --json` returns `go_live_blocked`, as expected.
   Current blockers include `TESTNET=True`, `LIVE_TRADING_APPROVED=False`,

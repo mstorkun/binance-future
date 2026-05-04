@@ -117,7 +117,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `120` tests passed plus `3` subtests after
+  `python -m pytest -q` -> `123` tests passed plus `3` subtests after
   post-audit safety additions.
   Covered areas include client order id duplicate classification,
   fetch-by-client-id behavior, partial-fill handling, trailing stop cleanup,
@@ -138,7 +138,7 @@ Other previous validation context:
   protection retention, funding-carry summary math, and same-bar paper/live
   entry management guards, plus dynamic-threshold carry entry/exit tests that
   verify prior-signal use, invalid threshold rejection, optimizer selection, and
-  trend-quality report bucketing.
+  trend-quality report bucketing, plus candle-structure feature/report tests.
 - 2026-05-04 12-agent audit response:
   `docs/POST_AUDIT_ACTIONS_2026_05_04.md` records the applied Codex response.
   The Donchian `growth_70_compound` evidence remains useful for benchmarking,
@@ -170,6 +170,18 @@ Other previous validation context:
   improved mean return (`1.2893%` vs overall `0.9449%`). This supports measuring
   trend quality before changing filters; it is not enough by itself to activate
   a stricter live/paper filter.
+- Candle-structure attribution:
+  `python candle_structure_report.py --trades portfolio_trades.csv --years 3 --json-out candle_structure_report.json --md-out docs/CANDLE_STRUCTURE_REPORT_2026_05_04.md`
+  is report-only and does not change bot behavior. It scores closed-candle body
+  length, wick rejection, density/compression breakout, directional persistence,
+  range-volume correlation, and symbol return correlation. Latest active
+  portfolio trade set: aligned candle-structure bias `75` trades / `5048.18`
+  PnL / `1.4387%` mean return; neutral `88` trades / `2772.76` PnL / `0.9020%`
+  mean return; contra `101` trades / `2450.83` PnL / `0.6156%` mean return.
+  Symbol max absolute return correlations: DOGE/LINK `0.7017`, TRX max
+  `0.4067`. This suggests candle structure may be useful as an adaptive sizing
+  overlay, not as a hard filter, and needs side-by-side WF/cost-stress proof
+  before activation.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
@@ -331,6 +343,14 @@ Other previous validation context:
   context, and writes markdown/JSON summaries. It must not be treated as an
   active trading filter without side-by-side backtest, walk-forward, and cost
   stress evidence.
+- `candle_structure.py`: report-only closed-candle body/range/wick,
+  density/compression, directional-persistence, return-autocorrelation, and
+  volume-range-correlation features. It emits side-specific candle-structure
+  bias/confidence but is not wired into strategy/risk.
+- `candle_structure_report.py`: fetches historical data, annotates
+  `portfolio_trades.csv` with the prior signal bar's candle-structure features,
+  adds per-symbol max absolute return correlation, and writes
+  `docs/CANDLE_STRUCTURE_REPORT_2026_05_04.md` plus ignored JSON.
 - `docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md`: Binance API key operations
   runbook. Live key scope is Reading + USD-M Futures trading only, no withdrawal
   or universal transfer, trusted static IPv4 only, separate testnet/live keys,
@@ -517,15 +537,15 @@ Other previous validation context:
 ## Runtime / Worktree Notes
 
 - A paper runner was restarted after the active DOGE/LINK/TRX symbol change.
-  Last verified after the trend-quality report on 2026-05-04 with PID `9400`,
-  heartbeat `ok` (`38.52` minutes old at check time), equity `917.811576`,
+  Last verified after the candle-structure report on 2026-05-04 with PID `9400`,
+  heartbeat `ok` (`50.55` minutes old at check time), equity `917.811576`,
   wallet `918.776704`, open positions `1`, recent closed trades `2`, testnet
   `true`, live trading approval `false`, and `alert_count=0`. This can go
   stale; verify `paper_heartbeat.json` before relying on it.
 - A 2h scaled shadow paper runner was started with:
   `python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks`.
-  Last verified after the trend-quality report on 2026-05-04 with PID `17316`,
-  heartbeat `ok` (`38.54` minutes old at check time), equity `1008.757387`,
+  Last verified after the candle-structure report on 2026-05-04 with PID `17316`,
+  heartbeat `ok` (`50.56` minutes old at check time), equity `1008.757387`,
   wallet `1008.757387`, open positions `0`, recent closed trades `1`,
   warnings none. It writes isolated files such as
   `paper_shadow_2h_state.json` and can be checked with

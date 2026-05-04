@@ -14,6 +14,8 @@ import alerts
 import config
 import bias_audit
 import bias_audit_report
+import candle_structure
+import candle_structure_report
 import correlation_stress
 import data
 import decision_snapshots
@@ -2079,6 +2081,87 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(bucket_rows["high"]["pnl"], 10.0)
         self.assertEqual(bucket_rows["low"]["trades"], 1)
         self.assertEqual(bucket_rows["low"]["pnl"], -5.0)
+
+    def test_candle_structure_features_detect_bullish_impulse(self):
+        idx = pd.date_range("2026-01-01", periods=80, freq="4h")
+        raw = pd.DataFrame(
+            {
+                "open": [100.0] * 79 + [100.0],
+                "high": [101.0] * 79 + [106.0],
+                "low": [99.0] * 79 + [99.5],
+                "close": [100.2] * 79 + [105.5],
+                "volume": [1000.0] * 79 + [3000.0],
+                "atr": [2.0] * 80,
+            },
+            index=idx,
+        )
+        features = candle_structure.add_candle_structure_features(raw)
+        last = features.iloc[-1]
+        self.assertEqual(last["candle_structure_bias"], 1)
+        self.assertGreater(last["candle_structure_confidence"], 0.0)
+        self.assertIn("body:bull_impulse", last["candle_structure_reasons"])
+
+    def test_candle_structure_report_uses_prior_signal_bar(self):
+        idx = pd.date_range("2026-01-01", periods=80, freq="4h")
+        raw = pd.DataFrame(
+            {
+                "open": [100.0] * 78 + [100.0, 105.0],
+                "high": [101.0] * 78 + [106.0, 110.0],
+                "low": [99.0] * 78 + [99.5, 104.0],
+                "close": [100.2] * 78 + [105.5, 104.5],
+                "volume": [1000.0] * 78 + [3000.0, 1000.0],
+                "atr": [2.0] * 80,
+            },
+            index=idx,
+        )
+        trades = pd.DataFrame(
+            [{
+                "symbol": "DOGE/USDT",
+                "entry_time": idx[-1],
+                "side": "long",
+                "pnl": 10.0,
+                "pnl_return_pct": 1.0,
+            }]
+        )
+        annotated = candle_structure_report.annotate_trades(
+            trades,
+            {"DOGE/USDT": {"df": raw}},
+            symbol_max_abs_corr={"DOGE/USDT": 0.75},
+        )
+        self.assertEqual(pd.Timestamp(annotated.iloc[0]["signal_bar_time"]), idx[-2])
+        self.assertEqual(annotated.iloc[0]["candle_structure_alignment"], "aligned")
+        self.assertEqual(annotated.iloc[0]["symbol_max_abs_corr"], 0.75)
+
+    def test_candle_structure_report_summarizes_alignment(self):
+        annotated = pd.DataFrame(
+            [
+                {
+                    "candle_structure_alignment": "aligned",
+                    "side": "long",
+                    "symbol": "DOGE/USDT",
+                    "pnl": 10.0,
+                    "pnl_return_pct": 1.0,
+                    "candle_structure_confidence": 1.2,
+                    "candle_density": 3.0,
+                    "symbol_max_abs_corr": 0.8,
+                },
+                {
+                    "candle_structure_alignment": "contra",
+                    "side": "short",
+                    "symbol": "LINK/USDT",
+                    "pnl": -4.0,
+                    "pnl_return_pct": -0.4,
+                    "candle_structure_confidence": 0.9,
+                    "candle_density": 1.0,
+                    "symbol_max_abs_corr": 0.6,
+                },
+            ]
+        )
+        report = candle_structure_report.build_report(annotated)
+        rows = {row["segment"]: row for row in report["by_alignment"]}
+        self.assertEqual(rows["aligned"]["trades"], 1)
+        self.assertEqual(rows["aligned"]["pnl"], 10.0)
+        self.assertEqual(rows["contra"]["pnl"], -4.0)
 
     def test_carry_research_discovers_spot_backed_liquid_universe(self):
         class FuturesExchange:
