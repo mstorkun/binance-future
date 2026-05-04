@@ -639,12 +639,15 @@ Other previous validation context:
   `paper_short`, or `block`, but `can_open_trade` is always false. Documented
   source access and fail-closed policy in
   `docs/SOCIAL_SIGNAL_POLICY_2026_05_04.md`.
-- 2026-05-04 Hurst-MTF Phase A doc handoff: Phase A research modules are present
-  in the working tree, but the full strict run timed out before a trustworthy
-  result. `docs/HURST_MTF_MOMENTUM_REPORT_2026_05_04.md` is an honest timeout
-  status draft, not a pass report. Next agent must run an optimized full strict
-  rerun with the same gates from `docs/HURST_MTF_MOMENTUM_BRIEF_2026_05_04.md`;
-  do not relax thresholds or advance to Phase B until every gate passes.
+- 2026-05-04 Hurst-MTF Phase A result: implemented additive research-only
+  `hurst_gate.py`, `mtf_momentum_signal.py`, `vol_target_sizing.py`, and
+  `hurst_mtf_momentum_report.py`. Full strict rerun used fixed 8-perp universe,
+  72 candidates, 12 folds, 2400/300 train/test bars, 12-bar purge gap,
+  direction-specific 1h trigger volume, severe costs, PBO matrix, concentration,
+  tail, and crisis checks. Result is `benchmark_only`: severe total return
+  `-95.3959%`, CAGR `-84.6355%`, max DD `98.7345%`, Sortino `-1.5344`,
+  2/12 positive folds, DSR proxy `-4.8542`, sample `454` trades. Do not advance
+  to Phase B; hand to Claude review if requested.
 
 ## Runtime / Worktree Notes
 
