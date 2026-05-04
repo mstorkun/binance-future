@@ -49,6 +49,7 @@ import risk_adjusted_report
 import risk_management
 import risk_metrics
 import runtime_guards
+import strategy_decision_report
 import timeframe_sweep
 import trade_executor
 import trend_candle_entry_walk_forward
@@ -2164,6 +2165,25 @@ class SafetyTests(unittest.TestCase):
         )
         self.assertEqual(decision["multiplier"], 0.5)
         self.assertIn("tcwf:reduce", decision["reasons"][0])
+
+    def test_strategy_decision_marks_donchian_benchmark_only(self):
+        report = strategy_decision_report.strategy_verdict(
+            risk_adjusted={
+                "overfit_controls": {
+                    "sharpe_haircut": {"passes_zero_edge_after_haircut": False},
+                    "walk_forward_degradation": {
+                        "folds": 7,
+                        "positive_test_folds": 7,
+                        "severe_degradation_folds": 7,
+                    },
+                }
+            },
+            pbo={"pbo": 0.1429},
+            candle_wf={"delta_total_pnl": 0.0, "reduced_overlay_trades": 0},
+        )
+        self.assertEqual(report["decision"], "benchmark_only")
+        self.assertFalse(report["live_allowed"])
+        self.assertIn("trend_candle_overlay_no_activation_case", report["negatives"])
 
     def test_trend_quality_token_parser_ignores_empty_values(self):
         self.assertEqual(trend_quality_report.reason_tokens(" market:trend | | adx:strong "), ("market:trend", "adx:strong"))

@@ -199,6 +199,16 @@ Other previous validation context:
   max DD `505.72`; entry-time reducer learned `0` bad train buckets, reduced
   `0` overlay trades, and returned identical OOS metrics. This provides no
   activation case for trend/candle risk reduction.
+- Strategy decision:
+  `python strategy_decision_report.py` writes
+  `docs/STRATEGY_DECISION_2026_05_04.md`. Current verdict is
+  `benchmark_only`: keep Donchian as a benchmark/research line, keep live
+  blocked, do not activate trend/candle/correlation reducers in paper/testnet,
+  and only continue with a small predictive-funding PoC if more alpha research
+  is desired. Positive evidence remains useful for benchmarking, but the
+  deflated-Sharpe proxy is negative, train/test degradation is severe, simple
+  carry has `0` passing candidates, and true entry-time trend/candle WF found
+  no activation case.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha

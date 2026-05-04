@@ -45,6 +45,8 @@ approval.
   bad in the train slice.
 - Added `trend_candle_entry_walk_forward.py`, which runs the same reducer as a
   true entry-time side-by-side walk-forward through `portfolio_backtest.py`.
+- Added `strategy_decision_report.py` to consolidate the current Donchian,
+  carry, trend/candle, PBO, and risk-adjusted evidence into a keep/kill report.
 - Updated `config.example.py` to keep API-key examples env-only.
 
 ## Still Blocked
@@ -68,6 +70,8 @@ approval.
   run, so it made no paper/testnet/live change and remains report-only.
 - The true entry-time trend/candle walk-forward also learned `0` bad train
   buckets and reduced `0` trades, so there is still no activation case.
+- `docs/STRATEGY_DECISION_2026_05_04.md` marks Donchian as `benchmark_only`;
+  it is not an active live-money strategy.
 
 ## Validation
 
@@ -83,3 +87,5 @@ approval.
 - `python trend_candle_entry_walk_forward.py --years 3` returned unchanged OOS
   metrics through the real entry-sizing backtest path: `106` OOS trades,
   `6002.34` PnL, PF `5.9885`, max DD `505.72`, and `0` reduced overlay trades.
+- `python strategy_decision_report.py` returned verdict `benchmark_only` with
+  `live_allowed=false` and `paper_change_allowed=false`.

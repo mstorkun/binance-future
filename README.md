@@ -54,6 +54,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - User-data stream decision: [docs/USER_DATA_STREAM_DECISION_2026_05_01.md](docs/USER_DATA_STREAM_DECISION_2026_05_01.md) rejects polling-only live operation and keeps live mode blocked until stream readiness is proven.
 - User-data stream runner: [docs/USER_STREAM_RUNNER_2026_05_04.md](docs/USER_STREAM_RUNNER_2026_05_04.md) adds a websocket consumer skeleton with duplicate/out-of-order guards, keepalive/reconnect timing, and local `live_state` reconciliation plumbing; it is not testnet-proven yet.
 - Post-audit actions: [docs/POST_AUDIT_ACTIONS_2026_05_04.md](docs/POST_AUDIT_ACTIONS_2026_05_04.md) records the safety fixes, live preflight, same-bar guard, and funding-carry research lane added after the 12-agent audit.
+- Strategy decision: [docs/STRATEGY_DECISION_2026_05_04.md](docs/STRATEGY_DECISION_2026_05_04.md) marks Donchian as `benchmark_only`, keeps live blocked, rejects trend/candle reducer activation, and names a small predictive-funding PoC as the only next alpha research lane.
 - Funding carry research: [docs/CARRY_RESEARCH_2026_05_04.md](docs/CARRY_RESEARCH_2026_05_04.md) scanned liquid spot-backed USDT perpetuals over 180 days; static carry and dynamic entry/exit threshold grids both produced `0` passing candidates, so no carry executor should be built yet.
 - Trend quality report: [docs/TREND_QUALITY_REPORT_2026_05_04.md](docs/TREND_QUALITY_REPORT_2026_05_04.md) confirms that long/short capability does not remove the need for strong trend context; `market:trend` trades had higher mean return than the full trade set, so trend-quality changes stay report-only until validated side-by-side.
 - Candle structure report: [docs/CANDLE_STRUCTURE_REPORT_2026_05_04.md](docs/CANDLE_STRUCTURE_REPORT_2026_05_04.md) adds a separate candle-density/length/correlation diagnostic; aligned candle-structure bias had higher mean return than the full set, but it remains report-only.
@@ -119,6 +120,7 @@ portfolio_candidate_sweep.py Search better symbol combinations
 timeframe_sweep.py           Compare 1h/2h/4h with raw and scaled indicator horizons
 risk_metrics.py              Risk-adjusted metric helpers
 risk_adjusted_report.py      JSON report for Sharpe/Sortino and multiple-testing visibility
+strategy_decision_report.py  Research keep/kill decision report
 pbo_report.py                PBO-style report from candidate-by-fold matrix
 correlation_stress.py        Report-only pairwise symbol correlation stress
 pattern_ablation.py          Report-only pattern-risk on/off ablation
@@ -154,6 +156,7 @@ python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96
 python mature_bot_compare.py --years 3
 python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 5 --top 20
 python risk_adjusted_report.py
+python strategy_decision_report.py
 python correlation_stress.py --years 3
 python pattern_ablation.py --years 3
 python timeframe_sweep.py --years 3 --timeframes 1h 2h 4h --scaled-params
