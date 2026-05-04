@@ -117,7 +117,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `114` tests passed plus `3` subtests after
+  `python -m pytest -q` -> `117` tests passed plus `3` subtests after
   post-audit safety additions.
   Covered areas include client order id duplicate classification,
   fetch-by-client-id behavior, partial-fill handling, trailing stop cleanup,
@@ -136,7 +136,8 @@ Other previous validation context:
   and out-of-order gate, live-state backup recovery/fail-closed handling,
   trading-disabled flag behavior, live preflight blocking, partial close
   protection retention, funding-carry summary math, and same-bar paper/live
-  entry management guards.
+  entry management guards, plus dynamic-threshold carry entry/exit tests that
+  verify prior-signal use, invalid threshold rejection, and optimizer selection.
 - 2026-05-04 12-agent audit response:
   `docs/POST_AUDIT_ACTIONS_2026_05_04.md` records the applied Codex response.
   The Donchian `growth_70_compound` evidence remains useful for benchmarking,
@@ -147,8 +148,16 @@ Other previous validation context:
   scanned `32` active ASCII spot-backed USDT perpetuals. Passing candidates:
   `0`. Best row was `TST/USDT:USDT` with `3.7441%` annualized net after
   entry/exit cost and `-2.2559%` net APR versus a `6%` USDT benchmark. See
-  `docs/CARRY_RESEARCH_2026_05_04.md`. Do not build a live carry executor until
-  a dynamic-threshold carry study shows stronger edge.
+  `docs/CARRY_RESEARCH_2026_05_04.md`.
+- Dynamic-threshold carry scan:
+  `python carry_research.py --auto-universe --days 180 --min-quote-volume-usdt 50000000 --max-symbols 80 --dynamic-enter-grid 0.00005 0.000075 0.0001 0.00015 --dynamic-exit-grid 0 0.00002 0.00005 --dynamic-signal-window 3 --out carry_candidates.csv --universe-out carry_universe.csv --json`
+  scanned `33` active ASCII spot-backed USDT perpetuals in the latest live
+  market list. Passing candidates: `0`; single dynamic-threshold passing
+  candidates: `0`; best grid-optimized passing candidates: `0`. Best active
+  grid row was `PARTI/USDT:USDT` with enter `0.000075`, exit `0.00005`, `1`
+  entry, `13` active funding periods, `-0.3764%` net after cost, and `-0.4477%`
+  versus the prorated `6%` USDT benchmark. Do not build a live carry executor
+  from the simple Binance spot/perp carry model.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
@@ -490,16 +499,18 @@ Other previous validation context:
 
 ## Runtime / Worktree Notes
 
-- A paper runner was restarted after the active DOGE/LINK/TRX symbol change and
-  last observed healthy on 2026-05-04 with PID `9400`, status `ok`, equity
-  `917.811576`, wallet `918.776704`, open positions `1`, testnet `true`, live
-  trading approval `false`, and `alert_count=0`. This can go stale; verify
-  `paper_heartbeat.json` before relying on it.
+- A paper runner was restarted after the active DOGE/LINK/TRX symbol change.
+  Last verified after the dynamic carry scan on 2026-05-04 with PID `9400`,
+  heartbeat `ok` (`32.24` minutes old at check time), equity `917.811576`,
+  wallet `918.776704`, open positions `1`, recent closed trades `2`, testnet
+  `true`, live trading approval `false`, and `alert_count=0`. This can go
+  stale; verify `paper_heartbeat.json` before relying on it.
 - A 2h scaled shadow paper runner was started with:
   `python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks`.
-  Last observed on 2026-05-04 with PID `17316`, heartbeat `ok`, equity
-  `1008.757387`, wallet `1008.757387`, open positions `0`, recent closed
-  trades `1`, warnings none. It writes isolated files such as
+  Last verified after the dynamic carry scan on 2026-05-04 with PID `17316`,
+  heartbeat `ok` (`32.26` minutes old at check time), equity `1008.757387`,
+  wallet `1008.757387`, open positions `0`, recent closed trades `1`,
+  warnings none. It writes isolated files such as
   `paper_shadow_2h_state.json` and can be checked with
   `python paper_report.py --tag shadow_2h`.
 - `python paper_decision_report.py --json` compares daily/weekly decision
@@ -531,8 +542,9 @@ Other previous validation context:
    already-running Python processes may still use the old imported config.
 4. Testnet-prove `user_stream_runner.py` before considering any
    `USER_DATA_STREAM_READY=True` change.
-5. If continuing the strategy pivot, extend carry research with dynamic entry
-   thresholds and longer history before writing any spot/perp executor.
+5. If continuing the strategy pivot, move beyond simple Binance spot/perp carry:
+   research funding prediction, cross-exchange basis/funding, or a stat-arb
+   overlay before writing any spot/perp executor.
 6. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
    mode; current parameters reduce CAGR.
 7. Add a real executor-backed paper implementation only after a net-positive

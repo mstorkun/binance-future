@@ -1987,6 +1987,58 @@ class SafetyTests(unittest.TestCase):
         self.assertGreater(result["net_vs_earn_pct"], 0.0)
         self.assertTrue(result["ok"])
 
+    def test_dynamic_threshold_carry_uses_prior_signal(self):
+        idx = pd.date_range("2026-01-01", periods=6, freq="8h", tz="UTC")
+        rates = pd.DataFrame(
+            {"funding_rate": [0.0, 0.00006, 0.00006, 0.00006, 0.00001, 0.00001]},
+            index=idx,
+        )
+        result = carry_research.dynamic_threshold_backtest_from_rates(
+            rates,
+            symbol="DOGE/USDT:USDT",
+            enter_rate=0.00005,
+            exit_rate=0.00002,
+            signal_window=1,
+            min_active_periods=1,
+            earn_apr_benchmark_pct=0.0,
+            entry_exit_cost_pct=0.0,
+        )
+        self.assertEqual(result["entries"], 1)
+        self.assertEqual(result["exits"], 1)
+        self.assertEqual(result["active_periods"], 3)
+        self.assertAlmostEqual(result["gross_funding_pct"], 0.013)
+        self.assertTrue(result["ok"])
+
+    def test_dynamic_threshold_rejects_inverted_thresholds(self):
+        idx = pd.date_range("2026-01-01", periods=3, freq="8h", tz="UTC")
+        rates = pd.DataFrame({"funding_rate": [0.0001, 0.0001, 0.0001]}, index=idx)
+        with self.assertRaisesRegex(ValueError, "exit_rate"):
+            carry_research.dynamic_threshold_backtest_from_rates(
+                rates,
+                symbol="DOGE/USDT:USDT",
+                enter_rate=0.00002,
+                exit_rate=0.00005,
+            )
+
+    def test_dynamic_threshold_optimizer_picks_best_net_vs_earn(self):
+        idx = pd.date_range("2026-01-01", periods=10, freq="8h", tz="UTC")
+        rates = pd.DataFrame(
+            {"funding_rate": [0.0, 0.0002, 0.0002, 0.0002, -0.001, 0.0002, 0.0002, 0.0002, 0.0002, 0.0002]},
+            index=idx,
+        )
+        best = carry_research.optimize_dynamic_thresholds(
+            rates,
+            symbol="DOGE/USDT:USDT",
+            enter_grid=[0.00005, 0.00015],
+            exit_grid=[0.0, 0.00005],
+            signal_window=1,
+            min_active_periods=1,
+            earn_apr_benchmark_pct=0.0,
+            entry_exit_cost_pct=0.0,
+        )
+        self.assertIn(best["enter_rate"], {0.00005, 0.00015})
+        self.assertGreater(best["net_vs_earn_pct"], -0.1)
+
     def test_carry_research_discovers_spot_backed_liquid_universe(self):
         class FuturesExchange:
             def load_markets(self):

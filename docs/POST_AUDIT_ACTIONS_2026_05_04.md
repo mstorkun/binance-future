@@ -33,6 +33,8 @@ approval.
   so a position opened from a closed bar is not immediately managed or reopened
   from that same bar.
 - Added `carry_research.py` as a research-only funding-rate carry scanner.
+- Extended `carry_research.py` with prior-signal dynamic entry/exit threshold
+  backtests and threshold-grid optimization.
 - Updated `config.example.py` to keep API-key examples env-only.
 
 ## Still Blocked
@@ -46,10 +48,12 @@ approval.
   changing behavior.
 - Funding carry is only a research scanner; no spot/perp delta-neutral executor
   exists yet.
+- Static and dynamic-threshold carry scans both produced `0` passing candidates
+  under current cost and `6%` USDT benchmark assumptions.
 
 ## Validation
 
-- Safety/unit test count after follow-up carry research pass: `114 passed, 3 subtests passed` for
+- Safety/unit test count after follow-up carry research pass: `117 passed, 3 subtests passed` for
   both `tests/test_safety.py` and the full `python -m pytest -q` suite.
 - `python go_live_preflight.py --json` returns `go_live_blocked`, as expected.
   Current blockers include `TESTNET=True`, `LIVE_TRADING_APPROVED=False`,
