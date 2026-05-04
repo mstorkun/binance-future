@@ -49,7 +49,7 @@ approval.
 
 ## Validation
 
-- Safety/unit test count after this pass: `112 passed, 3 subtests passed` for
+- Safety/unit test count after follow-up carry research pass: `114 passed, 3 subtests passed` for
   both `tests/test_safety.py` and the full `python -m pytest -q` suite.
 - `python go_live_preflight.py --json` returns `go_live_blocked`, as expected.
   Current blockers include `TESTNET=True`, `LIVE_TRADING_APPROVED=False`,

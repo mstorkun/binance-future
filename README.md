@@ -54,6 +54,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - User-data stream decision: [docs/USER_DATA_STREAM_DECISION_2026_05_01.md](docs/USER_DATA_STREAM_DECISION_2026_05_01.md) rejects polling-only live operation and keeps live mode blocked until stream readiness is proven.
 - User-data stream runner: [docs/USER_STREAM_RUNNER_2026_05_04.md](docs/USER_STREAM_RUNNER_2026_05_04.md) adds a websocket consumer skeleton with duplicate/out-of-order guards, keepalive/reconnect timing, and local `live_state` reconciliation plumbing; it is not testnet-proven yet.
 - Post-audit actions: [docs/POST_AUDIT_ACTIONS_2026_05_04.md](docs/POST_AUDIT_ACTIONS_2026_05_04.md) records the safety fixes, live preflight, same-bar guard, and funding-carry research lane added after the 12-agent audit.
+- Funding carry research: [docs/CARRY_RESEARCH_2026_05_04.md](docs/CARRY_RESEARCH_2026_05_04.md) scanned 32 liquid spot-backed USDT perpetuals over 180 days; `0` passed the cost-adjusted 6% benchmark hurdle, so no carry executor should be built yet.
 - Paper runtime reporting: [docs/PAPER_RUNTIME_REPORTING_2026_05_04.md](docs/PAPER_RUNTIME_REPORTING_2026_05_04.md) separates paper-state alerts from live-state mismatches and adds open-position, recent-trade, MAE/MFE, and 4h-vs-2h daily/weekly reporting.
 - Risk-adjusted metrics: [docs/RISK_ADJUSTED_METRICS_2026_05_01.md](docs/RISK_ADJUSTED_METRICS_2026_05_01.md) adds Sharpe/Sortino/Calmar reporting and Bonferroni visibility for candidate sweeps.
 - Correlation stress: [docs/CORRELATION_STRESS_2026_05_01.md](docs/CORRELATION_STRESS_2026_05_01.md) adds report-only pairwise symbol correlation stress before any covariance-aware sizing change.
@@ -152,7 +153,7 @@ python portfolio_cost_stress.py --wf-results portfolio_param_walk_forward_risk_c
 python portfolio_holdout.py --years 3 --holdout-bars 500 --max-param-combos 6
 python ops_status.py --json
 python go_live_preflight.py --json
-python carry_research.py --days 180 --out carry_candidates.csv --json
+python carry_research.py --auto-universe --days 180 --min-quote-volume-usdt 50000000 --max-symbols 80 --out carry_candidates.csv --universe-out carry_universe.csv --json
 python emergency_kill_switch.py --json
 python paper_report.py
 python paper_decision_report.py

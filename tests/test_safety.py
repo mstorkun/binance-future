@@ -1972,6 +1972,82 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(summary["ok"])
         self.assertEqual(summary["reason"], "no_funding_data")
 
+    def test_carry_backtest_subtracts_cost_and_earn_benchmark(self):
+        idx = pd.date_range("2026-01-01", periods=90, freq="8h", tz="UTC")
+        rates = pd.DataFrame({"funding_rate": [0.0002] * len(idx)}, index=idx)
+        result = carry_research.carry_backtest_from_rates(
+            rates,
+            symbol="DOGE/USDT:USDT",
+            earn_apr_benchmark_pct=6.0,
+            entry_exit_cost_pct=0.46,
+        )
+        self.assertEqual(result["periods"], 90)
+        self.assertAlmostEqual(result["gross_funding_pct"], 1.8)
+        self.assertAlmostEqual(result["entry_exit_cost_pct"], 0.46)
+        self.assertGreater(result["net_vs_earn_pct"], 0.0)
+        self.assertTrue(result["ok"])
+
+    def test_carry_research_discovers_spot_backed_liquid_universe(self):
+        class FuturesExchange:
+            def load_markets(self):
+                return {
+                    "BTC/USDT:USDT": {
+                        "active": True,
+                        "swap": True,
+                        "linear": True,
+                        "quote": "USDT",
+                        "settle": "USDT",
+                        "base": "BTC",
+                    },
+                    "ETH/USDT:USDT": {
+                        "active": True,
+                        "swap": True,
+                        "linear": True,
+                        "quote": "USDT",
+                        "settle": "USDT",
+                        "base": "ETH",
+                    },
+                    "1000PEPE/USDT:USDT": {
+                        "active": True,
+                        "swap": True,
+                        "linear": True,
+                        "quote": "USDT",
+                        "settle": "USDT",
+                        "base": "1000PEPE",
+                    },
+                    "XRP/USDT:USDT": {
+                        "active": False,
+                        "swap": True,
+                        "linear": True,
+                        "quote": "USDT",
+                        "settle": "USDT",
+                        "base": "XRP",
+                    },
+                }
+
+            def fetch_tickers(self, symbols):
+                return {
+                    "BTC/USDT:USDT": {"quoteVolume": 100_000_000},
+                    "ETH/USDT:USDT": {"quoteVolume": 10_000_000},
+                }
+
+        class SpotExchange:
+            def load_markets(self):
+                return {
+                    "BTC/USDT": {"active": True, "spot": True},
+                    "ETH/USDT": {"active": True, "spot": True},
+                    "XRP/USDT": {"active": True, "spot": True},
+                }
+
+        universe = carry_research.discover_carry_universe(
+            FuturesExchange(),
+            SpotExchange(),
+            min_quote_volume_usdt=50_000_000,
+            max_symbols=10,
+        )
+        self.assertEqual(universe["symbol"].tolist(), ["BTC/USDT:USDT"])
+        self.assertEqual(universe.iloc[0]["spot_symbol"], "BTC/USDT")
+
     def test_legacy_walk_forward_accepts_weekly_data_argument(self):
         idx = pd.date_range("2026-01-01", periods=10, freq="4h")
         df_4h = pd.DataFrame(

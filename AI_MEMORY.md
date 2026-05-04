@@ -117,7 +117,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `112` tests passed plus `3` subtests after
+  `python -m pytest -q` -> `114` tests passed plus `3` subtests after
   post-audit safety additions.
   Covered areas include client order id duplicate classification,
   fetch-by-client-id behavior, partial-fill handling, trailing stop cleanup,
@@ -142,6 +142,13 @@ Other previous validation context:
   The Donchian `growth_70_compound` evidence remains useful for benchmarking,
   but not live approval. Funding-rate carry / delta-neutral is the next research
   lane via `carry_research.py`; no carry executor exists yet.
+- First broad carry scan:
+  `python carry_research.py --auto-universe --days 180 --min-quote-volume-usdt 50000000 --max-symbols 80 --out carry_candidates.csv --universe-out carry_universe.csv --json`
+  scanned `32` active ASCII spot-backed USDT perpetuals. Passing candidates:
+  `0`. Best row was `TST/USDT:USDT` with `3.7441%` annualized net after
+  entry/exit cost and `-2.2559%` net APR versus a `6%` USDT benchmark. See
+  `docs/CARRY_RESEARCH_2026_05_04.md`. Do not build a live carry executor until
+  a dynamic-threshold carry study shows stronger edge.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
@@ -293,9 +300,11 @@ Other previous validation context:
 - `go_live_preflight.py`: fail-closed live readiness report. It checks testnet
   status, live approval, live profile match, user-data stream readiness, safety
   flags, trading-disabled flag state, and required runbooks.
-- `carry_research.py`: research-only funding-rate carry scanner. It summarizes
-  recent Binance funding history and compares annualized funding against an
-  earn-style benchmark after conservative paired entry/exit costs.
+- `carry_research.py`: research-only funding-rate carry scanner. It can scan a
+  manual symbol list or discover a liquid spot-backed USDT perpetual universe
+  with `--auto-universe`. It compares annualized funding against an earn-style
+  benchmark after conservative paired entry/exit costs and reports simple
+  carry-backtest metrics.
 - `docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md`: Binance API key operations
   runbook. Live key scope is Reading + USD-M Futures trading only, no withdrawal
   or universal transfer, trusted static IPv4 only, separate testnet/live keys,
@@ -522,11 +531,13 @@ Other previous validation context:
    already-running Python processes may still use the old imported config.
 4. Testnet-prove `user_stream_runner.py` before considering any
    `USER_DATA_STREAM_READY=True` change.
-5. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
+5. If continuing the strategy pivot, extend carry research with dynamic entry
+   thresholds and longer history before writing any spot/perp executor.
+6. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
    mode; current parameters reduce CAGR.
-6. Add a real executor-backed paper implementation only after a net-positive
+7. Add a real executor-backed paper implementation only after a net-positive
    side-by-side report.
-7. Only after net-positive evidence and real fill review, consider live-trading
+8. Only after net-positive evidence and real fill review, consider live-trading
    gates.
 
 ## Do Not Do Without Explicit Approval
