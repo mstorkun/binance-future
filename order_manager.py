@@ -765,14 +765,13 @@ def update_trailing_sl(exchange: ccxt.Exchange, position: dict, current_price: f
 
 
 def close_position_market(exchange: ccxt.Exchange, side: str, size: float) -> bool:
-    """Fail-safe reduce-only market close; cancel failures do not block close."""
+    """Fail-safe reduce-only market close.
+
+    Existing stops are intentionally cancelled only after a confirmed full close.
+    If the close fails or partially fills, the old exchange-side protection
+    should remain alive instead of leaving a naked residual position.
+    """
     close_side = "sell" if side == "long" else "buy"
-    try:
-        exchange.cancel_all_orders(config.SYMBOL, signed_params())
-        order_events.record("close_cancel_all_ack")
-    except ccxt.BaseError as e:
-        order_events.record("close_cancel_all_error", error=str(e))
-        log.warning(f"Kapatma oncesi emir iptali basarisiz, market close yine denenecek: {e}")
 
     checked_size = _reduce_only_market_amount(exchange, size, "close")
     if checked_size is None:
@@ -796,7 +795,23 @@ def close_position_market(exchange: ccxt.Exchange, side: str, size: float) -> bo
         fill = _resolve_market_fill(exchange, order, 0.0, checked_size, context="close")
         fill_price, filled_size = fill.fill_price, fill.filled_size
         log.info(f"Pozisyon kapatildi (trend exit): {side.upper()} | miktar={filled_size} | fill={fill_price:.4f}")
-        return filled_size > 0 and not fill.partial
+        fully_closed = filled_size > 0 and not fill.partial
+        if not fully_closed:
+            order_events.record(
+                "close_not_fully_filled_protection_retained",
+                side=close_side,
+                requested_amount=checked_size,
+                filled_size=filled_size,
+                partial=fill.partial,
+            )
+            return False
+        try:
+            exchange.cancel_all_orders(config.SYMBOL, signed_params())
+            order_events.record("close_cancel_all_ack")
+        except ccxt.BaseError as e:
+            order_events.record("close_cancel_all_error", error=str(e))
+            log.warning(f"Kapatma sonrasi emir iptali basarisiz: {e}")
+        return True
     except ccxt.BaseError as e:
         order_events.record("close_order_error", client_order_id=cid, side=close_side, amount=size, error=str(e))
         log.error(f"Kapatma hatasi: {e}")

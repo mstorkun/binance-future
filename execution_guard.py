@@ -93,6 +93,26 @@ def should_skip_trailing_update(bar) -> GuardDecision:
     return GuardDecision(True, "")
 
 
+def _normalized_timestamp(value) -> pd.Timestamp:
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        return ts
+    return ts.tz_convert("UTC").tz_localize(None)
+
+
+def same_closed_bar_as_entry(position: dict, bar) -> bool:
+    """True when a position was opened from the same closed bar being evaluated."""
+    entry_time = position.get("entry_time")
+    if not entry_time:
+        return False
+    try:
+        entry_ts = _normalized_timestamp(entry_time)
+        bar_ts = _normalized_timestamp(getattr(bar, "name", None))
+    except Exception:
+        return False
+    return entry_ts == bar_ts
+
+
 def stop_decision(position: dict, bar) -> StopDecision:
     side = position["side"]
     soft_sl = float(position["sl"])

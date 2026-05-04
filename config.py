@@ -56,9 +56,12 @@ LIVE_PROFILE = {
     "DAILY_LOSS_LIMIT_PCT": 0.03,
     "MAX_OPEN_POSITIONS": 2,
     "MARGIN_MODE": "cross",
+    "LIQUIDATION_GUARD_ENABLED": True,
+    "PROTECTIONS_ENABLED": True,
 }
 USER_DATA_STREAM_REQUIRED_FOR_LIVE = True
 USER_DATA_STREAM_READY = False
+TRADING_DISABLED_FLAG = "trading_disabled.flag"
 
 CALENDAR_RISK_ENABLED = True
 CALENDAR_EVENT_FILE = "event_calendar.csv"
@@ -214,6 +217,8 @@ PAPER_LOCK_STALE_MINUTES = 240
 TESTNET_FILL_PROBE_NOTIONAL_USDT = 110.0
 ORDER_EVENTS_JSONL = "order_events.jsonl"
 LIVE_STATE_FILE = "live_state.json"
+LIVE_STATE_BACKUP_COUNT = 5
+LIVE_STATE_FAIL_CLOSED = True
 ALERTS_JSONL = "alerts.jsonl"
 
 # --- Trend takip indikatörleri (eski mantık, bazı yardımcılar hala kullanılıyor) ---

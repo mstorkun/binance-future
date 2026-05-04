@@ -2,12 +2,14 @@ import ccxt
 import pandas as pd
 import config
 import flow_data
+import runtime_guards
 
 
 def make_exchange() -> ccxt.Exchange:
     if not config.TESTNET and not getattr(config, "LIVE_TRADING_APPROVED", False):
         raise RuntimeError("Live trading is blocked. Set LIVE_TRADING_APPROVED=True only after all gates pass.")
     if not config.TESTNET:
+        runtime_guards.assert_trading_enabled()
         profile = live_profile_status()
         if not profile["ok"]:
             raise RuntimeError(f"Live trading is blocked by profile guard: {profile['reason']}")

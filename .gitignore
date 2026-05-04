@@ -18,7 +18,9 @@ paper_*_runner.lock
 order_events.jsonl
 order_events_*.jsonl
 live_state.json
+live_state.json.bak*
 live_state_*.json
+trading_disabled.flag
 alerts.jsonl
 alerts_*.jsonl
 trade_decisions.jsonl
@@ -33,6 +35,7 @@ portfolio_param_candidate_matrix.csv
 correlation_stress_report.json
 correlation_stress_pairs.csv
 pattern_ablation_results.csv
+carry_candidates.csv
 timeframe_sweep_results.csv
 timeframe_walk_forward_results.csv
 timeframe_sweep_scaled_results.csv

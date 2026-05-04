@@ -39,6 +39,9 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 
 - The current candidate is the DOGE/LINK/TRX `growth_70_compound` portfolio profile.
 - Latest 3-year candidate sweep/backtest: about `+124.21% CAGR` with `5.05%` peak drawdown.
+- 2026-05-04 critical audit status: the high CAGR is research/backtest evidence,
+  not a live expectation. Bonferroni/deflated-Sharpe and holdout degradation keep
+  the Donchian system in benchmark mode while funding-rate carry research starts.
 - Candidate portfolio walk-forward: fixed growth profile is positive in `7/7` test periods, with `20.12%` average test return and `5.25%` worst test return.
 - Full PBO matrix: [docs/PBO_FULL_RESULT_2026_05_02.md](docs/PBO_FULL_RESULT_2026_05_02.md) tested `216` candidates per fold; PBO is `0.1429`, selected candidates were OOS top-half in `6/7` folds, and selected test folds were positive in `7/7`.
 - Candidate Monte Carlo: block bootstrap ending-equity p05 is `6191.14` from `1000` start, ending-equity loss probability is `0%`, and peak-DD p95 is `6.25%`.
@@ -50,6 +53,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - Risk profile policy: [docs/RISK_PROFILE_POLICY_2026_05_01.md](docs/RISK_PROFILE_POLICY_2026_05_01.md) marks the current 10x/%4 profile as research-only and gates live mode to `balanced_live_v1`.
 - User-data stream decision: [docs/USER_DATA_STREAM_DECISION_2026_05_01.md](docs/USER_DATA_STREAM_DECISION_2026_05_01.md) rejects polling-only live operation and keeps live mode blocked until stream readiness is proven.
 - User-data stream runner: [docs/USER_STREAM_RUNNER_2026_05_04.md](docs/USER_STREAM_RUNNER_2026_05_04.md) adds a websocket consumer skeleton with duplicate/out-of-order guards, keepalive/reconnect timing, and local `live_state` reconciliation plumbing; it is not testnet-proven yet.
+- Post-audit actions: [docs/POST_AUDIT_ACTIONS_2026_05_04.md](docs/POST_AUDIT_ACTIONS_2026_05_04.md) records the safety fixes, live preflight, same-bar guard, and funding-carry research lane added after the 12-agent audit.
 - Paper runtime reporting: [docs/PAPER_RUNTIME_REPORTING_2026_05_04.md](docs/PAPER_RUNTIME_REPORTING_2026_05_04.md) separates paper-state alerts from live-state mismatches and adds open-position, recent-trade, MAE/MFE, and 4h-vs-2h daily/weekly reporting.
 - Risk-adjusted metrics: [docs/RISK_ADJUSTED_METRICS_2026_05_01.md](docs/RISK_ADJUSTED_METRICS_2026_05_01.md) adds Sharpe/Sortino/Calmar reporting and Bonferroni visibility for candidate sweeps.
 - Correlation stress: [docs/CORRELATION_STRESS_2026_05_01.md](docs/CORRELATION_STRESS_2026_05_01.md) adds report-only pairwise symbol correlation stress before any covariance-aware sizing change.
@@ -89,6 +93,9 @@ bias_audit.py                Lookahead/recursive indicator stability audit
 bias_audit_report.py         Reproducible multi-symbol bias-audit artifact writer
 ops_status.py                Local paper/testnet status report
 emergency_kill_switch.py     Dry-run-first emergency cancel/close CLI
+runtime_guards.py            Persistent trading-disabled flag helpers
+go_live_preflight.py         Fail-closed live readiness preflight report
+carry_research.py            Research-only funding-rate carry scanner
 user_stream_client.py        Binance user-stream listenKey lifecycle helpers
 user_stream_events.py        Binance user-stream ORDER_TRADE_UPDATE parser
 user_stream_reconcile.py     Conservative user-stream position-state decisions
@@ -144,6 +151,8 @@ python portfolio_param_walk_forward.py --years 3 --max-param-combos 6
 python portfolio_cost_stress.py --wf-results portfolio_param_walk_forward_risk_capped_results.csv --years 3
 python portfolio_holdout.py --years 3 --holdout-bars 500 --max-param-combos 6
 python ops_status.py --json
+python go_live_preflight.py --json
+python carry_research.py --days 180 --out carry_candidates.csv --json
 python emergency_kill_switch.py --json
 python paper_report.py
 python paper_decision_report.py

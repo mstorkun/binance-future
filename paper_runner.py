@@ -301,8 +301,19 @@ def _update_position_excursions(pos: dict[str, Any], bar: pd.Series) -> None:
         pos["max_adverse_pct"] = max(float(pos.get("max_adverse_pct") or 0.0), pos["max_adverse"] / entry_equity * 100.0)
 
 
-def _manage_positions(state: dict[str, Any], frames: dict[str, pd.DataFrame]) -> list[dict[str, Any]]:
+def _closed_on_current_bar(closed_bars: dict[str, str], symbol: str, bar: pd.Series) -> bool:
+    closed_at = closed_bars.get(symbol)
+    if not closed_at:
+        return False
+    try:
+        return eg._normalized_timestamp(closed_at) == eg._normalized_timestamp(bar.name)
+    except Exception:
+        return False
+
+
+def _manage_positions(state: dict[str, Any], frames: dict[str, pd.DataFrame]) -> tuple[list[dict[str, Any]], dict[str, str]]:
     trades: list[dict[str, Any]] = []
+    closed_bars: dict[str, str] = {}
     positions = state["positions"]
     for sym in list(positions.keys()):
         df = frames.get(sym)
@@ -311,6 +322,8 @@ def _manage_positions(state: dict[str, Any], frames: dict[str, pd.DataFrame]) ->
         pos = positions[sym]
         bar = df.iloc[-2]
         window = df
+        if eg.same_closed_bar_as_entry(pos, bar):
+            continue
         _update_position_excursions(pos, bar)
 
         decision = eg.stop_decision(pos, bar)
@@ -327,6 +340,7 @@ def _manage_positions(state: dict[str, Any], frames: dict[str, pd.DataFrame]) ->
             pnl, row = _close_position(pos, float(exit_price), bar.name, exit_reason)
             state["wallet"] = float(state["wallet"]) + pnl
             trades.append(row)
+            closed_bars[sym] = pd.Timestamp(bar.name).isoformat()
             del positions[sym]
             continue
 
@@ -344,7 +358,7 @@ def _manage_positions(state: dict[str, Any], frames: dict[str, pd.DataFrame]) ->
             if new_sl < float(pos["sl"]):
                 pos["sl"] = new_sl
                 pos["hard_sl"] = eg.hard_stop_from_soft(new_sl, float(pos.get("atr") or 0), pos["side"])
-    return trades
+    return trades, closed_bars
 
 
 def _decision_row(
@@ -409,7 +423,7 @@ def run_once(reset: bool = False) -> dict[str, Any]:
     for symbol in config.SYMBOLS:
         frames[symbol] = _prepare_symbol(exchange, symbol)
 
-    closed_trades = _manage_positions(state, frames)
+    closed_trades, closed_bars = _manage_positions(state, frames)
     if closed_trades:
         _append_csv(config.PAPER_TRADES_CSV, closed_trades)
 
@@ -426,6 +440,10 @@ def run_once(reset: bool = False) -> dict[str, Any]:
         signal = strat.get_signal(df)
         if signal is None:
             decision_rows.append(_decision_row(symbol, df, None, "no_signal", None, None, None, None, None))
+            continue
+
+        if _closed_on_current_bar(closed_bars, symbol, df.iloc[-2]):
+            decision_rows.append(_decision_row(symbol, df, signal, "skip", None, None, None, None, None, "same_bar_reentry_guard"))
             continue
 
         if len(state["positions"]) >= config.MAX_OPEN_POSITIONS:

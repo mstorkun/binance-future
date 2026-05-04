@@ -13,6 +13,7 @@ import data
 import exchange_filters as xf
 import order_events
 import order_manager
+import runtime_guards
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +50,8 @@ def run_kill_switch(
         if close_positions:
             for position in row.get("positions", []):
                 _execute_close(exchange, symbol, position, report)
+    flag = runtime_guards.disable_trading("emergency_kill_switch_execute")
+    report["trading_disabled_flag"] = str(flag)
     return report
 
 

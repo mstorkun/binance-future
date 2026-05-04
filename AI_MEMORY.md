@@ -15,6 +15,10 @@ strategy, risk, backtest, paper, testnet, or live-trading changes.
   validated profitability.
 - Live trading must stay blocked until paper/testnet/fill/monitoring gates pass.
 - Do not treat any result as investment advice.
+- After the 2026-05-04 12-agent audit, treat Donchian breakout as a benchmark
+  strategy until stronger out-of-sample evidence appears. The new preferred
+  research lane is funding-rate carry / delta-neutral, starting with scanners
+  and backtests before any executor work.
 
 ## Current Strategy
 
@@ -60,6 +64,8 @@ strategy, risk, backtest, paper, testnet, or live-trading changes.
 - `config.EXIT_LADDER_ENABLED = False`.
 - `config.PAIR_UNIVERSE_ENABLED = False`.
 - `config.TWAP_ENABLED = False`.
+- `config.TRADING_DISABLED_FLAG = "trading_disabled.flag"`.
+- `config.LIVE_STATE_FAIL_CLOSED = True`.
 
 The mature-bot add-ons are intentionally passive. Do not wire them into live or
 paper order behavior until a side-by-side backtest/walk-forward/Monte Carlo
@@ -111,8 +117,8 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `100` tests passed plus `3` subtests after
-  paper-runtime reporting and user-stream runner additions.
+  `python -m pytest -q` -> `112` tests passed plus `3` subtests after
+  post-audit safety additions.
   Covered areas include client order id duplicate classification,
   fetch-by-client-id behavior, partial-fill handling, trailing stop cleanup,
   hard-stop precision, reduce-only market
@@ -126,8 +132,16 @@ Other previous validation context:
   paper/live alert scoping, paper report open-position/trade summaries,
   4h-vs-2h paper decision reporting, and Binance user-stream order-update
   parsing, listenKey lifecycle helpers, conservative user-stream reconciliation
-  decisions, the user-stream runtime handler, and the websocket runner duplicate
-  and out-of-order gate.
+  decisions, the user-stream runtime handler, the websocket runner duplicate
+  and out-of-order gate, live-state backup recovery/fail-closed handling,
+  trading-disabled flag behavior, live preflight blocking, partial close
+  protection retention, funding-carry summary math, and same-bar paper/live
+  entry management guards.
+- 2026-05-04 12-agent audit response:
+  `docs/POST_AUDIT_ACTIONS_2026_05_04.md` records the applied Codex response.
+  The Donchian `growth_70_compound` evidence remains useful for benchmarking,
+  but not live approval. Funding-rate carry / delta-neutral is the next research
+  lane via `carry_research.py`; no carry executor exists yet.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
@@ -228,6 +242,7 @@ Other previous validation context:
 - `data.py`: exchange factory and live profile guard. If `TESTNET=False`,
   `make_exchange()` requires both `LIVE_TRADING_APPROVED=True` and a runtime
   config that matches `config.LIVE_PROFILE`, plus a ready user-data stream gate.
+  It also blocks live exchange creation when `trading_disabled.flag` exists.
 - `strategy.py`: main signal and exit logic. Avoid changing this unless the user
   explicitly approves a strategy change and validation is rerun.
 - `risk.py`: market, calendar, pattern, flow, and volume-profile risk
@@ -239,7 +254,8 @@ Other previous validation context:
   guard logic. `hard_stop_from_soft()` must not round prices to fixed decimal
   places; exchange tick normalization belongs in `exchange_filters.py`. It also
   owns `closed_bar_age_decision()`, which blocks stale closed-bar processing
-  after downtime.
+  after downtime, and `same_closed_bar_as_entry()`, which prevents evaluating an
+  entry bar as if the position existed during that bar.
 - `account_safety.py`: shared account safety checks for one-way position mode
   per-symbol leverage confirmation, margin-mode confirmation, and hard-stop
   presence for open positions. `ops_status.py --exchange` can query this
@@ -256,7 +272,8 @@ Other previous validation context:
   and remaining quantities and applies `PARTIAL_FILL_POLICY` (`abort` default,
   `accept` optional) so state, SL, and rollback use filled size only. Trailing
   stop updates now fetch same-side reduce-only STOP orders and cancel extras
-  after creating the new protected stop.
+  after creating the new protected stop. Market close now retains existing
+  protection orders until the reduce-only close is confirmed fully filled.
 - `order_events.py`: append-only JSONL telemetry for live/testnet order
   lifecycle events. `order_manager.py` records entry, stop, close, emergency
   close, cancel, order ack/error, and fill-resolution events. Runtime output is
@@ -269,6 +286,16 @@ Other previous validation context:
   Execution requires `--execute --yes-i-understand`; live config also requires
   `--allow-live`. It cancels open orders per symbol and closes positions with
   reduce-only market orders through the shared idempotent client-order-id path.
+  Execute mode also writes `trading_disabled.flag`, so future entries stay
+  blocked until the flag is explicitly cleared.
+- `runtime_guards.py`: persistent trading-disabled flag helpers. Live exchange
+  creation and `bot.py` new-entry logic respect this flag.
+- `go_live_preflight.py`: fail-closed live readiness report. It checks testnet
+  status, live approval, live profile match, user-data stream readiness, safety
+  flags, trading-disabled flag state, and required runbooks.
+- `carry_research.py`: research-only funding-rate carry scanner. It summarizes
+  recent Binance funding history and compares annualized funding against an
+  earn-style benchmark after conservative paired entry/exit costs.
 - `docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md`: Binance API key operations
   runbook. Live key scope is Reading + USD-M Futures trading only, no withdrawal
   or universal transfer, trusted static IPv4 only, separate testnet/live keys,
@@ -344,7 +371,8 @@ Other previous validation context:
 - `paper_runner.py`: no-order paper telemetry runner. `_append_csv()` creates
   parent directories and flushes/fsyncs paper CSV appends; schema-expanding
   rewrites use temp+replace. New paper positions and closed-trade rows include
-  entry context and MFE/MAE fields.
+  entry context and MFE/MAE fields. It skips management on the same closed bar
+  used for entry and blocks same-bar re-entry after a close.
 - `paper_runtime.py`: tagged paper/shadow runtime isolation helpers for
   separate state/decision/equity/heartbeat files and temporary timeframe
   overrides.
@@ -455,7 +483,7 @@ Other previous validation context:
 
 - A paper runner was restarted after the active DOGE/LINK/TRX symbol change and
   last observed healthy on 2026-05-04 with PID `9400`, status `ok`, equity
-  `998.949551`, wallet `1000.0`, open positions `1`, testnet `true`, live
+  `917.811576`, wallet `918.776704`, open positions `1`, testnet `true`, live
   trading approval `false`, and `alert_count=0`. This can go stale; verify
   `paper_heartbeat.json` before relying on it.
 - A 2h scaled shadow paper runner was started with:

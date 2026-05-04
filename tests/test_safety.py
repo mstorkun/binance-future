@@ -22,6 +22,8 @@ import execution_guard
 import exit_ladder
 import exchange_filters
 import flow_data
+import carry_research
+import go_live_preflight
 import live_state
 import order_manager
 import order_events
@@ -42,6 +44,7 @@ import risk
 import risk_adjusted_report
 import risk_management
 import risk_metrics
+import runtime_guards
 import timeframe_sweep
 import trade_executor
 import twap_execution
@@ -257,6 +260,31 @@ class StopOrderExchange(FakeExchangeInfo):
         return order
 
 
+class PartialCloseExchange(FakeExchangeInfo):
+    def __init__(self):
+        self.created_orders = []
+        self.cancel_all_calls = []
+
+    def cancel_all_orders(self, symbol, params=None):
+        self.cancel_all_calls.append({"symbol": symbol, "params": params or {}})
+
+    def create_order(self, symbol, type, side, amount, params=None):
+        order = {
+            "id": "partial-close",
+            "symbol": symbol,
+            "type": type,
+            "side": side,
+            "amount": amount,
+            "filled": amount / 2.0,
+            "remaining": amount / 2.0,
+            "average": 0.5,
+            "clientOrderId": (params or {}).get("newClientOrderId"),
+            "params": params or {},
+        }
+        self.created_orders.append(order)
+        return order
+
+
 class TrailingCleanupExchange(FakeExchangeInfo):
     def __init__(self):
         self.created_orders = []
@@ -408,6 +436,37 @@ class SafetyTests(unittest.TestCase):
             positions = live_state.remove_position("DOGE/USDT", path)
             self.assertNotIn("DOGE/USDT", positions)
             self.assertEqual(live_state.load_positions(path), {})
+            self.assertTrue((Path(tmp) / "live_state.json.bak1").exists())
+
+    def test_live_state_uses_backup_after_corruption(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "live_state.json"
+            live_state.save_positions({"DOGE/USDT": {"side": "long", "size": 10}}, path)
+            live_state.save_positions({"LINK/USDT": {"side": "short", "size": 5}}, path)
+            path.write_text("{bad json", encoding="utf-8")
+            loaded = live_state.load_positions(path)
+            self.assertEqual(set(loaded), {"DOGE/USDT"})
+
+    def test_live_state_uses_backup_when_primary_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "live_state.json"
+            live_state.save_positions({"DOGE/USDT": {"side": "long", "size": 10}}, path)
+            live_state.save_positions({"LINK/USDT": {"side": "short", "size": 5}}, path)
+            path.unlink()
+            loaded = live_state.load_positions(path)
+            self.assertEqual(set(loaded), {"DOGE/USDT"})
+
+    def test_live_state_fails_closed_when_corrupt_without_backup(self):
+        old_fail = getattr(config, "LIVE_STATE_FAIL_CLOSED", True)
+        try:
+            config.LIVE_STATE_FAIL_CLOSED = True
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "live_state.json"
+                path.write_text("{bad json", encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "Live state corrupted"):
+                    live_state.load_state(path)
+        finally:
+            config.LIVE_STATE_FAIL_CLOSED = old_fail
 
     def test_live_state_reconcile_drops_closed_local_positions(self):
         local = {
@@ -464,7 +523,15 @@ class SafetyTests(unittest.TestCase):
                 setattr(config, key, value)
 
     def test_live_profile_status_accepts_balanced_profile(self):
-        keys = ["LEVERAGE", "RISK_PER_TRADE_PCT", "DAILY_LOSS_LIMIT_PCT", "MAX_OPEN_POSITIONS", "MARGIN_MODE"]
+        keys = [
+            "LEVERAGE",
+            "RISK_PER_TRADE_PCT",
+            "DAILY_LOSS_LIMIT_PCT",
+            "MAX_OPEN_POSITIONS",
+            "MARGIN_MODE",
+            "LIQUIDATION_GUARD_ENABLED",
+            "PROTECTIONS_ENABLED",
+        ]
         old_values = {key: getattr(config, key) for key in keys}
         try:
             config.LEVERAGE = 5
@@ -472,6 +539,8 @@ class SafetyTests(unittest.TestCase):
             config.DAILY_LOSS_LIMIT_PCT = 0.03
             config.MAX_OPEN_POSITIONS = 2
             config.MARGIN_MODE = "cross"
+            config.LIQUIDATION_GUARD_ENABLED = True
+            config.PROTECTIONS_ENABLED = True
             status = data.live_profile_status()
             self.assertTrue(status["ok"])
             self.assertEqual(status["required_live_profile"], "balanced_live_v1")
@@ -489,6 +558,8 @@ class SafetyTests(unittest.TestCase):
             "DAILY_LOSS_LIMIT_PCT",
             "MAX_OPEN_POSITIONS",
             "MARGIN_MODE",
+            "LIQUIDATION_GUARD_ENABLED",
+            "PROTECTIONS_ENABLED",
             "USER_DATA_STREAM_REQUIRED_FOR_LIVE",
             "USER_DATA_STREAM_READY",
         ]
@@ -501,6 +572,8 @@ class SafetyTests(unittest.TestCase):
             config.DAILY_LOSS_LIMIT_PCT = 0.03
             config.MAX_OPEN_POSITIONS = 2
             config.MARGIN_MODE = "cross"
+            config.LIQUIDATION_GUARD_ENABLED = True
+            config.PROTECTIONS_ENABLED = True
             config.USER_DATA_STREAM_REQUIRED_FOR_LIVE = True
             config.USER_DATA_STREAM_READY = False
             with self.assertRaisesRegex(RuntimeError, "user-data stream gate"):
@@ -521,6 +594,52 @@ class SafetyTests(unittest.TestCase):
         finally:
             config.USER_DATA_STREAM_REQUIRED_FOR_LIVE = old_required
             config.USER_DATA_STREAM_READY = old_ready
+
+    def test_live_profile_status_requires_safety_flags(self):
+        old_values = {
+            "LEVERAGE": config.LEVERAGE,
+            "RISK_PER_TRADE_PCT": config.RISK_PER_TRADE_PCT,
+            "DAILY_LOSS_LIMIT_PCT": config.DAILY_LOSS_LIMIT_PCT,
+            "MAX_OPEN_POSITIONS": config.MAX_OPEN_POSITIONS,
+            "MARGIN_MODE": config.MARGIN_MODE,
+            "LIQUIDATION_GUARD_ENABLED": config.LIQUIDATION_GUARD_ENABLED,
+            "PROTECTIONS_ENABLED": config.PROTECTIONS_ENABLED,
+        }
+        try:
+            config.LEVERAGE = 5
+            config.RISK_PER_TRADE_PCT = 0.03
+            config.DAILY_LOSS_LIMIT_PCT = 0.03
+            config.MAX_OPEN_POSITIONS = 2
+            config.MARGIN_MODE = "cross"
+            config.LIQUIDATION_GUARD_ENABLED = False
+            config.PROTECTIONS_ENABLED = False
+            status = data.live_profile_status()
+            self.assertFalse(status["ok"])
+            self.assertIn("LIQUIDATION_GUARD_ENABLED", {row["key"] for row in status["mismatches"]})
+            self.assertIn("PROTECTIONS_ENABLED", {row["key"] for row in status["mismatches"]})
+        finally:
+            for key, value in old_values.items():
+                setattr(config, key, value)
+
+    def test_runtime_trading_disabled_flag_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "trading_disabled.flag"
+            self.assertFalse(runtime_guards.trading_disabled(path))
+            runtime_guards.disable_trading("unit test", path)
+            self.assertTrue(runtime_guards.trading_disabled(path))
+            with self.assertRaisesRegex(RuntimeError, "Trading is disabled"):
+                runtime_guards.assert_trading_enabled(path)
+            runtime_guards.enable_trading(path)
+            self.assertFalse(runtime_guards.trading_disabled(path))
+
+    def test_go_live_preflight_fails_closed_by_default(self):
+        report = go_live_preflight.build_preflight(include_files=False)
+        self.assertFalse(report["ok"])
+        failed = {row["name"] for row in report["checks"] if not row["ok"]}
+        self.assertIn("testnet_disabled_for_live", failed)
+        self.assertIn("live_approved", failed)
+        self.assertIn("live_profile", failed)
+        self.assertIn("user_data_stream", failed)
 
     def test_user_stream_order_trade_update_parser_flags_reduce_only_fill(self):
         event = {
@@ -990,13 +1109,16 @@ class SafetyTests(unittest.TestCase):
 
     def test_kill_switch_execute_cancels_and_reduce_only_closes(self):
         old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        old_flag = getattr(config, "TRADING_DISABLED_FLAG", "trading_disabled.flag")
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                config.TRADING_DISABLED_FLAG = str(Path(tmp) / "trading_disabled.flag")
                 exchange = KillSwitchExchange()
                 report = emergency_kill_switch.run_kill_switch(exchange, ["DOGE/USDT"], execute=True)
                 self.assertEqual(report["totals"]["cancelled"], 1)
                 self.assertEqual(report["totals"]["closed"], 1)
+                self.assertTrue(Path(report["trading_disabled_flag"]).exists())
                 self.assertEqual(exchange.cancelled[0]["order_id"], "stop-1")
                 self.assertEqual(exchange.created_orders[0]["side"], "sell")
                 self.assertEqual(exchange.created_orders[0]["amount"], 12.0)
@@ -1004,6 +1126,7 @@ class SafetyTests(unittest.TestCase):
                 self.assertIn("newClientOrderId", exchange.created_orders[0]["params"])
         finally:
             config.ORDER_EVENTS_JSONL = old_path
+            config.TRADING_DISABLED_FLAG = old_flag
 
     def test_close_position_records_order_events(self):
         old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
@@ -1022,6 +1145,24 @@ class SafetyTests(unittest.TestCase):
                 self.assertIn("close_order_submit", event_types)
                 self.assertIn("close_order_ack", event_types)
                 self.assertIn("close_fill_resolved", event_types)
+        finally:
+            config.ORDER_EVENTS_JSONL = old_path
+            config.SYMBOL = old_symbol
+
+    def test_close_position_partial_fill_retains_existing_protection(self):
+        old_path = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        old_symbol = config.SYMBOL
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "events.jsonl"
+                config.ORDER_EVENTS_JSONL = str(path)
+                config.SYMBOL = "DOGE/USDT"
+                exchange = PartialCloseExchange()
+                ok = order_manager.close_position_market(exchange, "long", 20.0)
+                self.assertFalse(ok)
+                self.assertEqual(exchange.cancel_all_calls, [])
+                rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+                self.assertIn("close_not_fully_filled_protection_retained", {row["event_type"] for row in rows})
         finally:
             config.ORDER_EVENTS_JSONL = old_path
             config.SYMBOL = old_symbol
@@ -1551,6 +1692,56 @@ class SafetyTests(unittest.TestCase):
         self.assertAlmostEqual(pos["max_favorable_pct"], 3.0)
         self.assertAlmostEqual(pos["max_adverse_pct"], 1.0)
 
+    def test_same_closed_bar_as_entry_guard(self):
+        bar = pd.Series({"close": 1.0}, name=pd.Timestamp("2026-05-04 00:00:00"))
+        pos = {"entry_time": "2026-05-04T00:00:00"}
+        self.assertTrue(execution_guard.same_closed_bar_as_entry(pos, bar))
+        other = pd.Series({"close": 1.0}, name=pd.Timestamp("2026-05-04 04:00:00"))
+        self.assertFalse(execution_guard.same_closed_bar_as_entry(pos, other))
+
+    def test_paper_runner_skips_same_bar_position_management(self):
+        bar_time = pd.Timestamp("2026-05-04 00:00:00")
+        frame = pd.DataFrame(
+            [
+                {"open": 1.0, "high": 1.1, "low": 0.9, "close": 1.0, "atr": 0.1},
+                {"open": 1.0, "high": 1.1, "low": 0.5, "close": 0.9, "atr": 0.1},
+                {"open": 0.9, "high": 1.0, "low": 0.8, "close": 0.95, "atr": 0.1},
+            ],
+            index=[
+                pd.Timestamp("2026-05-03 20:00:00"),
+                bar_time,
+                pd.Timestamp("2026-05-04 04:00:00"),
+            ],
+        )
+        state = {
+            "wallet": 1000.0,
+            "positions": {
+                "DOGE/USDT": {
+                    "symbol": "DOGE/USDT",
+                    "side": "long",
+                    "entry": 1.0,
+                    "size": 100.0,
+                    "sl": 0.8,
+                    "hard_sl": 0.7,
+                    "atr": 0.1,
+                    "extreme": 1.0,
+                    "entry_time": bar_time.isoformat(),
+                    "entry_equity": 1000.0,
+                }
+            },
+        }
+        trades, closed_bars = paper_runner._manage_positions(state, {"DOGE/USDT": frame})
+        self.assertEqual(trades, [])
+        self.assertEqual(closed_bars, {})
+        self.assertIn("DOGE/USDT", state["positions"])
+        self.assertEqual(state["wallet"], 1000.0)
+
+    def test_paper_runner_same_bar_reentry_helper(self):
+        bar = pd.Series({"close": 1.0}, name=pd.Timestamp("2026-05-04 00:00:00"))
+        closed_bars = {"DOGE/USDT": "2026-05-04T00:00:00"}
+        self.assertTrue(paper_runner._closed_on_current_bar(closed_bars, "DOGE/USDT", bar))
+        self.assertFalse(paper_runner._closed_on_current_bar(closed_bars, "LINK/USDT", bar))
+
     def test_paper_report_latest_decision_by_symbol(self):
         rows = [
             {"symbol": "DOGE/USDT", "action": "no_signal", "bar_time": "old", "close": "1.0"},
@@ -1760,6 +1951,26 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(summary["trades"], 1)
         self.assertEqual(summary["total_pnl"], 5.0)
         self.assertEqual(summary["errors"], 1)
+
+    def test_carry_research_summarizes_positive_funding_edge(self):
+        idx = pd.date_range("2026-01-01", periods=90, freq="8h", tz="UTC")
+        rates = pd.DataFrame({"funding_rate": [0.0002] * len(idx)}, index=idx)
+        summary = carry_research.summarize_funding_rates(
+            rates,
+            symbol="DOGE/USDT",
+            earn_apr_benchmark_pct=6.0,
+        )
+        self.assertEqual(summary["samples"], 90)
+        self.assertGreater(summary["gross_funding_apr_pct"], 20.0)
+        self.assertTrue(summary["ok"])
+
+    def test_carry_research_rejects_no_data(self):
+        summary = carry_research.summarize_funding_rates(
+            pd.DataFrame(columns=["funding_rate"]),
+            symbol="DOGE/USDT",
+        )
+        self.assertFalse(summary["ok"])
+        self.assertEqual(summary["reason"], "no_funding_data")
 
     def test_legacy_walk_forward_accepts_weekly_data_argument(self):
         idx = pd.date_range("2026-01-01", periods=10, freq="4h")

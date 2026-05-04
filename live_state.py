@@ -20,11 +20,21 @@ def utc_now() -> str:
 def load_state(path: str | Path | None = None) -> dict[str, Any]:
     target = Path(path or getattr(config, "LIVE_STATE_FILE", "live_state.json"))
     if not target.exists():
+        backup = _load_latest_backup(target)
+        if backup is not None:
+            log.error(f"Live state primary missing, backup kullaniliyor: {target}")
+            return backup
         return _empty_state()
     try:
         data = json.loads(target.read_text(encoding="utf-8"))
     except Exception as exc:
-        log.error(f"Live state okunamadi, bos state kullaniliyor: {exc}")
+        backup = _load_latest_backup(target)
+        if backup is not None:
+            log.error(f"Live state okunamadi, backup kullaniliyor: {exc}")
+            return backup
+        log.error(f"Live state okunamadi: {exc}")
+        if bool(getattr(config, "LIVE_STATE_FAIL_CLOSED", True)):
+            raise RuntimeError(f"Live state corrupted and no valid backup exists: {target}") from exc
         return _empty_state()
     data.setdefault("positions", {})
     data.setdefault("created_at", utc_now())
@@ -38,9 +48,14 @@ def save_state(state: dict[str, Any], path: str | Path | None = None) -> None:
     state["testnet"] = bool(getattr(config, "TESTNET", True))
     if target.parent and str(target.parent) != ".":
         target.parent.mkdir(parents=True, exist_ok=True)
+    _rotate_backups(target)
     tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(_clean(state), indent=2, sort_keys=True), encoding="utf-8")
+    with tmp.open("w", encoding="utf-8") as fh:
+        fh.write(json.dumps(_clean(state), indent=2, sort_keys=True))
+        fh.flush()
+        os.fsync(fh.fileno())
     os.replace(tmp, target)
+    _fsync_parent(target)
 
 
 def load_positions(path: str | Path | None = None) -> dict[str, dict[str, Any]]:
@@ -100,6 +115,51 @@ def _empty_state() -> dict[str, Any]:
         "symbols": list(getattr(config, "SYMBOLS", [])),
         "testnet": bool(getattr(config, "TESTNET", True)),
     }
+
+
+def _backup_path(target: Path, index: int) -> Path:
+    return target.with_name(f"{target.name}.bak{index}")
+
+
+def _rotate_backups(target: Path) -> None:
+    if not target.exists():
+        return
+    count = max(0, int(getattr(config, "LIVE_STATE_BACKUP_COUNT", 5)))
+    if count <= 0:
+        return
+    for idx in range(count, 1, -1):
+        src = _backup_path(target, idx - 1)
+        dst = _backup_path(target, idx)
+        if src.exists():
+            os.replace(src, dst)
+    os.replace(target, _backup_path(target, 1))
+
+
+def _load_latest_backup(target: Path) -> dict[str, Any] | None:
+    count = max(0, int(getattr(config, "LIVE_STATE_BACKUP_COUNT", 5)))
+    for idx in range(1, count + 1):
+        backup = _backup_path(target, idx)
+        if not backup.exists():
+            continue
+        try:
+            data = json.loads(backup.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        data.setdefault("positions", {})
+        data.setdefault("created_at", utc_now())
+        return data
+    return None
+
+
+def _fsync_parent(target: Path) -> None:
+    try:
+        fd = os.open(str(target.parent if str(target.parent) != "." else Path(".")), os.O_RDONLY)
+    except Exception:
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def _clean_position(position: dict[str, Any]) -> dict[str, Any]:

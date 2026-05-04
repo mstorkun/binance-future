@@ -22,6 +22,8 @@ import time
 import logging
 import schedule
 
+import pandas as pd
+
 import config
 import data
 import decision_snapshots
@@ -33,6 +35,7 @@ import execution_guard as eg
 import live_state
 import order_manager as om
 import liquidation
+import runtime_guards
 
 
 logging.basicConfig(
@@ -195,6 +198,9 @@ def run():
                     pos = active_positions[sym]
                     closed_bar = df.iloc[-2]
                     cur_price = float(closed_bar["close"])
+                    if eg.same_closed_bar_as_entry(pos, closed_bar):
+                        log.info(f"[{sym}] Pozisyon entry bari henuz gecmedi; exit/trailing bu tur atlandi.")
+                        continue
 
                     stop_decision = eg.stop_decision(pos, closed_bar)
                     if stop_decision.hit:
@@ -202,17 +208,21 @@ def run():
                             f"[{sym}] {stop_decision.reason} teyit edildi -> "
                             f"{pos['side'].upper()} kapatiliyor."
                         )
-                        om.close_position_market(exchange, pos["side"], pos["size"])
-                        active_positions.pop(sym, None)
-                        _persist_positions()
+                        if om.close_position_market(exchange, pos["side"], pos["size"]):
+                            active_positions.pop(sym, None)
+                            _persist_positions()
+                        else:
+                            log.error(f"[{sym}] Pozisyon kapatma basarisiz/partial; lokal state korunuyor.")
                         continue
 
                     # Trend tersine döndü mü?
                     if strat.check_exit(df, pos["side"]):
                         log.info(f"[{sym}] Trend tersine döndü → {pos['side'].upper()} kapatılıyor.")
-                        om.close_position_market(exchange, pos["side"], pos["size"])
-                        active_positions.pop(sym, None)
-                        _persist_positions()
+                        if om.close_position_market(exchange, pos["side"], pos["size"]):
+                            active_positions.pop(sym, None)
+                            _persist_positions()
+                        else:
+                            log.error(f"[{sym}] Pozisyon kapatma basarisiz/partial; lokal state korunuyor.")
                         continue
 
                     # Extreme güncelle
@@ -236,6 +246,9 @@ def run():
                 signal = strat.get_signal(df)
                 log.info(f"[{sym}] Sinyal: {signal or 'YOK'}")
                 if signal is None:
+                    continue
+                if runtime_guards.trading_disabled():
+                    log.warning(f"[{sym}] Trading disabled flag aktif; yeni pozisyon acilmiyor.")
                     continue
 
                 # MAX_OPEN_POSITIONS guard (tüm semboller arası global limit)
@@ -302,6 +315,7 @@ def run():
                         "size":         result["size"],
                         "extreme":      result["entry"],
                         "sl_order_id":  result.get("sl_order_id"),
+                        "entry_time":   pd.Timestamp(signal_bar.name).isoformat(),
                     }
                     _persist_positions()
                     log.info(f"[{sym}] {signal.upper()} pozisyon başarıyla açıldı. Giriş: {result['entry']} SL: {result['sl']:.2f}")
