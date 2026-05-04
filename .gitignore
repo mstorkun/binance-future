@@ -37,6 +37,7 @@ correlation_stress_pairs.csv
 pattern_ablation_results.csv
 carry_candidates.csv
 carry_universe.csv
+trend_quality_report.json
 timeframe_sweep_results.csv
 timeframe_walk_forward_results.csv
 timeframe_sweep_scaled_results.csv

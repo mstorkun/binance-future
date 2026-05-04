@@ -55,6 +55,7 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - User-data stream runner: [docs/USER_STREAM_RUNNER_2026_05_04.md](docs/USER_STREAM_RUNNER_2026_05_04.md) adds a websocket consumer skeleton with duplicate/out-of-order guards, keepalive/reconnect timing, and local `live_state` reconciliation plumbing; it is not testnet-proven yet.
 - Post-audit actions: [docs/POST_AUDIT_ACTIONS_2026_05_04.md](docs/POST_AUDIT_ACTIONS_2026_05_04.md) records the safety fixes, live preflight, same-bar guard, and funding-carry research lane added after the 12-agent audit.
 - Funding carry research: [docs/CARRY_RESEARCH_2026_05_04.md](docs/CARRY_RESEARCH_2026_05_04.md) scanned liquid spot-backed USDT perpetuals over 180 days; static carry and dynamic entry/exit threshold grids both produced `0` passing candidates, so no carry executor should be built yet.
+- Trend quality report: [docs/TREND_QUALITY_REPORT_2026_05_04.md](docs/TREND_QUALITY_REPORT_2026_05_04.md) confirms that long/short capability does not remove the need for strong trend context; `market:trend` trades had higher mean return than the full trade set, so trend-quality changes stay report-only until validated side-by-side.
 - Paper runtime reporting: [docs/PAPER_RUNTIME_REPORTING_2026_05_04.md](docs/PAPER_RUNTIME_REPORTING_2026_05_04.md) separates paper-state alerts from live-state mismatches and adds open-position, recent-trade, MAE/MFE, and 4h-vs-2h daily/weekly reporting.
 - Risk-adjusted metrics: [docs/RISK_ADJUSTED_METRICS_2026_05_01.md](docs/RISK_ADJUSTED_METRICS_2026_05_01.md) adds Sharpe/Sortino/Calmar reporting and Bonferroni visibility for candidate sweeps.
 - Correlation stress: [docs/CORRELATION_STRESS_2026_05_01.md](docs/CORRELATION_STRESS_2026_05_01.md) adds report-only pairwise symbol correlation stress before any covariance-aware sizing change.
@@ -97,6 +98,7 @@ emergency_kill_switch.py     Dry-run-first emergency cancel/close CLI
 runtime_guards.py            Persistent trading-disabled flag helpers
 go_live_preflight.py         Fail-closed live readiness preflight report
 carry_research.py            Research-only funding-rate carry scanner
+trend_quality_report.py      Report-only trade attribution by trend-quality context
 user_stream_client.py        Binance user-stream listenKey lifecycle helpers
 user_stream_events.py        Binance user-stream ORDER_TRADE_UPDATE parser
 user_stream_reconcile.py     Conservative user-stream position-state decisions
@@ -154,6 +156,7 @@ python portfolio_holdout.py --years 3 --holdout-bars 500 --max-param-combos 6
 python ops_status.py --json
 python go_live_preflight.py --json
 python carry_research.py --auto-universe --days 180 --min-quote-volume-usdt 50000000 --max-symbols 80 --dynamic-enter-grid 0.00005 0.000075 0.0001 0.00015 --dynamic-exit-grid 0 0.00002 0.00005 --out carry_candidates.csv --universe-out carry_universe.csv --json
+python trend_quality_report.py --trades portfolio_trades.csv --md-out docs/TREND_QUALITY_REPORT_2026_05_04.md --json-out trend_quality_report.json
 python emergency_kill_switch.py --json
 python paper_report.py
 python paper_decision_report.py

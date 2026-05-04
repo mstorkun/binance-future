@@ -117,7 +117,7 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `117` tests passed plus `3` subtests after
+  `python -m pytest -q` -> `120` tests passed plus `3` subtests after
   post-audit safety additions.
   Covered areas include client order id duplicate classification,
   fetch-by-client-id behavior, partial-fill handling, trailing stop cleanup,
@@ -137,7 +137,8 @@ Other previous validation context:
   trading-disabled flag behavior, live preflight blocking, partial close
   protection retention, funding-carry summary math, and same-bar paper/live
   entry management guards, plus dynamic-threshold carry entry/exit tests that
-  verify prior-signal use, invalid threshold rejection, and optimizer selection.
+  verify prior-signal use, invalid threshold rejection, optimizer selection, and
+  trend-quality report bucketing.
 - 2026-05-04 12-agent audit response:
   `docs/POST_AUDIT_ACTIONS_2026_05_04.md` records the applied Codex response.
   The Donchian `growth_70_compound` evidence remains useful for benchmarking,
@@ -158,6 +159,17 @@ Other previous validation context:
   entry, `13` active funding periods, `-0.3764%` net after cost, and `-0.4477%`
   versus the prorated `6%` USDT benchmark. Do not build a live carry executor
   from the simple Binance spot/perp carry model.
+- Trend-quality attribution:
+  `python trend_quality_report.py --trades portfolio_trades.csv --json-out trend_quality_report.json --md-out docs/TREND_QUALITY_REPORT_2026_05_04.md --min-token-trades 10`
+  is report-only and does not change bot behavior. Latest active portfolio
+  trade set: `264` trades, total PnL `10271.77`, win rate `83.3333%`, profit
+  factor `10.1688`. Quality buckets: high `104` trades / `5807.53` PnL /
+  `1.2776%` mean return, medium `92` trades / `2700.63` PnL / `0.8366%` mean
+  return, low `68` trades / `1763.61` PnL / `0.5825%` mean return. Short trades
+  contributed `6597.06` PnL vs long `3674.71`, but `market:trend` context still
+  improved mean return (`1.2893%` vs overall `0.9449%`). This supports measuring
+  trend quality before changing filters; it is not enough by itself to activate
+  a stricter live/paper filter.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
@@ -314,6 +326,11 @@ Other previous validation context:
   with `--auto-universe`. It compares annualized funding against an earn-style
   benchmark after conservative paired entry/exit costs and reports simple
   carry-backtest metrics.
+- `trend_quality_report.py`: report-only trade attribution from
+  `portfolio_trades.csv`. It parses `risk_reasons`, scores trend-quality
+  context, and writes markdown/JSON summaries. It must not be treated as an
+  active trading filter without side-by-side backtest, walk-forward, and cost
+  stress evidence.
 - `docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md`: Binance API key operations
   runbook. Live key scope is Reading + USD-M Futures trading only, no withdrawal
   or universal transfer, trusted static IPv4 only, separate testnet/live keys,
@@ -500,15 +517,15 @@ Other previous validation context:
 ## Runtime / Worktree Notes
 
 - A paper runner was restarted after the active DOGE/LINK/TRX symbol change.
-  Last verified after the dynamic carry scan on 2026-05-04 with PID `9400`,
-  heartbeat `ok` (`32.24` minutes old at check time), equity `917.811576`,
+  Last verified after the trend-quality report on 2026-05-04 with PID `9400`,
+  heartbeat `ok` (`38.52` minutes old at check time), equity `917.811576`,
   wallet `918.776704`, open positions `1`, recent closed trades `2`, testnet
   `true`, live trading approval `false`, and `alert_count=0`. This can go
   stale; verify `paper_heartbeat.json` before relying on it.
 - A 2h scaled shadow paper runner was started with:
   `python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks`.
-  Last verified after the dynamic carry scan on 2026-05-04 with PID `17316`,
-  heartbeat `ok` (`32.26` minutes old at check time), equity `1008.757387`,
+  Last verified after the trend-quality report on 2026-05-04 with PID `17316`,
+  heartbeat `ok` (`38.54` minutes old at check time), equity `1008.757387`,
   wallet `1008.757387`, open positions `0`, recent closed trades `1`,
   warnings none. It writes isolated files such as
   `paper_shadow_2h_state.json` and can be checked with

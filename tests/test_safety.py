@@ -47,6 +47,7 @@ import risk_metrics
 import runtime_guards
 import timeframe_sweep
 import trade_executor
+import trend_quality_report
 import twap_execution
 import user_stream_client
 import user_stream_events
@@ -2038,6 +2039,46 @@ class SafetyTests(unittest.TestCase):
         )
         self.assertIn(best["enter_rate"], {0.00005, 0.00015})
         self.assertGreater(best["net_vs_earn_pct"], -0.1)
+
+    def test_trend_quality_token_parser_ignores_empty_values(self):
+        self.assertEqual(trend_quality_report.reason_tokens(" market:trend | | adx:strong "), ("market:trend", "adx:strong"))
+        self.assertEqual(trend_quality_report.reason_tokens("nan"), ())
+
+    def test_trend_quality_score_buckets_strong_context(self):
+        tokens = ("market:trend", "adx:strong", "daily:aligned", "obv:aligned")
+        score = trend_quality_report.trend_quality_score(tokens)
+        self.assertEqual(score, 6)
+        self.assertEqual(trend_quality_report.trend_quality_bucket(score), "high")
+        weak_score = trend_quality_report.trend_quality_score(("market:range", "adx:weak", "pattern:contra"))
+        self.assertEqual(trend_quality_report.trend_quality_bucket(weak_score), "low")
+
+    def test_trend_quality_report_summarizes_buckets(self):
+        trades = pd.DataFrame(
+            [
+                {
+                    "side": "long",
+                    "exit_reason": "trend_exit",
+                    "risk_reasons": "market:trend|adx:strong|daily:aligned|obv:aligned",
+                    "pnl": 10.0,
+                    "pnl_return_pct": 1.0,
+                    "bars_held": 3,
+                },
+                {
+                    "side": "short",
+                    "exit_reason": "soft_sl",
+                    "risk_reasons": "market:range|adx:weak|pattern:contra",
+                    "pnl": -5.0,
+                    "pnl_return_pct": -0.5,
+                    "bars_held": 1,
+                },
+            ]
+        )
+        report = trend_quality_report.build_report(trades, min_token_trades=1)
+        bucket_rows = {row["segment"]: row for row in report["by_quality_bucket"]}
+        self.assertEqual(bucket_rows["high"]["trades"], 1)
+        self.assertEqual(bucket_rows["high"]["pnl"], 10.0)
+        self.assertEqual(bucket_rows["low"]["trades"], 1)
+        self.assertEqual(bucket_rows["low"]["pnl"], -5.0)
 
     def test_carry_research_discovers_spot_backed_liquid_universe(self):
         class FuturesExchange:

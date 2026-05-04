@@ -35,6 +35,8 @@ approval.
 - Added `carry_research.py` as a research-only funding-rate carry scanner.
 - Extended `carry_research.py` with prior-signal dynamic entry/exit threshold
   backtests and threshold-grid optimization.
+- Added `trend_quality_report.py` as report-only attribution for long/short
+  trade performance by trend-quality context.
 - Updated `config.example.py` to keep API-key examples env-only.
 
 ## Still Blocked
@@ -50,10 +52,12 @@ approval.
   exists yet.
 - Static and dynamic-threshold carry scans both produced `0` passing candidates
   under current cost and `6%` USDT benchmark assumptions.
+- Trend-quality attribution is diagnostic only; it is not wired as an active
+  signal, filter, or risk gate.
 
 ## Validation
 
-- Safety/unit test count after follow-up carry research pass: `117 passed, 3 subtests passed` for
+- Safety/unit test count after follow-up carry and trend-quality research pass: `120 passed, 3 subtests passed` for
   both `tests/test_safety.py` and the full `python -m pytest -q` suite.
 - `python go_live_preflight.py --json` returns `go_live_blocked`, as expected.
   Current blockers include `TESTNET=True`, `LIVE_TRADING_APPROVED=False`,
