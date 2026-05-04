@@ -15,6 +15,7 @@ import config
 import bias_audit
 import bias_audit_report
 import candle_structure
+import candle_correlation_overlay
 import candle_structure_report
 import correlation_stress
 import data
@@ -2041,6 +2042,66 @@ class SafetyTests(unittest.TestCase):
         )
         self.assertIn(best["enter_rate"], {0.00005, 0.00015})
         self.assertGreater(best["net_vs_earn_pct"], -0.1)
+
+    def test_candle_correlation_overlay_buckets_setup_context(self):
+        row = pd.Series({
+            "candle_structure_alignment": "contra",
+            "symbol_dynamic_max_abs_corr": 0.7,
+            "risk_reasons": "market:range|adx:weak|pattern:contra",
+        })
+        self.assertEqual(
+            candle_correlation_overlay.setup_bucket(row),
+            "contra|corr_high|trend_low",
+        )
+
+    def test_candle_correlation_overlay_learns_only_negative_pf_buckets(self):
+        train = pd.DataFrame({
+            "pnl": [-10.0, -8.0, 3.0, 12.0, -1.0, 10.0],
+            "candle_structure_alignment": ["contra", "contra", "contra", "aligned", "aligned", "aligned"],
+            "symbol_dynamic_max_abs_corr": [0.7, 0.7, 0.7, 0.2, 0.2, 0.2],
+            "risk_reasons": [
+                "market:range|adx:weak|pattern:contra",
+                "market:range|adx:weak|pattern:contra",
+                "market:range|adx:weak|pattern:contra",
+                "market:trend|adx:strong|daily:aligned",
+                "market:trend|adx:strong|daily:aligned",
+                "market:trend|adx:strong|daily:aligned",
+            ],
+        })
+        rules = candle_correlation_overlay.learn_bad_setup_rules(train, min_bucket_trades=3)
+        self.assertIn("contra|corr_high|trend_low", rules)
+        self.assertNotIn("aligned|corr_normal|trend_medium", rules)
+
+    def test_candle_correlation_overlay_reduces_only_oos_bad_train_setups(self):
+        annotated = pd.DataFrame({
+            "entry_time": pd.date_range("2026-01-01", periods=8, freq="4h"),
+            "pnl": [-10.0, -8.0, 3.0, 12.0, -20.0, 15.0, -4.0, 5.0],
+            "candle_structure_alignment": ["contra", "contra", "contra", "aligned", "contra", "aligned", "contra", "aligned"],
+            "symbol_dynamic_max_abs_corr": [0.7, 0.7, 0.7, 0.2, 0.7, 0.2, 0.7, 0.2],
+            "risk_reasons": [
+                "market:range|adx:weak|pattern:contra",
+                "market:range|adx:weak|pattern:contra",
+                "market:range|adx:weak|pattern:contra",
+                "market:trend|adx:strong|daily:aligned",
+                "market:range|adx:weak|pattern:contra",
+                "market:trend|adx:strong|daily:aligned",
+                "market:range|adx:weak|pattern:contra",
+                "market:trend|adx:strong|daily:aligned",
+            ],
+        })
+        overlaid, folds = candle_correlation_overlay.apply_walk_forward_reducer(
+            annotated,
+            train_trades=4,
+            test_trades=4,
+            roll_trades=4,
+            min_bucket_trades=3,
+            reduce_multiplier=0.5,
+        )
+        oos = overlaid[overlaid["wf_is_test"] == True]
+        self.assertEqual(len(folds), 1)
+        self.assertEqual(int((oos["overlay_multiplier"] < 1.0).sum()), 2)
+        self.assertEqual(float(oos.iloc[0]["overlay_pnl"]), -10.0)
+        self.assertEqual(float(oos.iloc[1]["overlay_pnl"]), 15.0)
 
     def test_trend_quality_token_parser_ignores_empty_values(self):
         self.assertEqual(trend_quality_report.reason_tokens(" market:trend | | adx:strong "), ("market:trend", "adx:strong"))

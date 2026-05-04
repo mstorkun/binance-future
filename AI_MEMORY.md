@@ -182,6 +182,15 @@ Other previous validation context:
   `0.4067`. This suggests candle structure may be useful as an adaptive sizing
   overlay, not as a hard filter, and needs side-by-side WF/cost-stress proof
   before activation.
+- Candle/correlation train-gated reducer:
+  `python candle_correlation_overlay.py --trades portfolio_trades.csv --years 3`
+  is backtest-only and does not change bot, paper, testnet, or live behavior.
+  It never boosts size. It only reduces setup buckets that were negative in
+  train and had profit factor below `1.0`, using closed-bar dynamic correlation
+  and trend-quality buckets. Latest OOS result: `104` OOS trades, `0` learned
+  bad train buckets, `0` reduced OOS trades, baseline and reducer both
+  `6415.09` OOS PnL with max DD `516.26`. Do not activate it until a true
+  entry-time sizing backtest/walk-forward proves improvement.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha

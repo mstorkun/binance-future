@@ -39,6 +39,8 @@ carry_candidates.csv
 carry_universe.csv
 trend_quality_report.json
 candle_structure_report.json
+candle_correlation_overlay.json
+candle_correlation_overlay_trades.csv
 timeframe_sweep_results.csv
 timeframe_walk_forward_results.csv
 timeframe_sweep_scaled_results.csv

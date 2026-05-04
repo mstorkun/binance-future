@@ -40,6 +40,9 @@ approval.
 - Added `candle_structure.py` and `candle_structure_report.py` as report-only
   attribution for candle body/range, density/compression, persistence, and
   correlation context.
+- Added `candle_correlation_overlay.py` as a backtest-only train-gated risk
+  reducer prototype that never boosts size and only cuts setup buckets proven
+  bad in the train slice.
 - Updated `config.example.py` to keep API-key examples env-only.
 
 ## Still Blocked
@@ -59,6 +62,8 @@ approval.
   signal, filter, or risk gate.
 - Candle-structure attribution is diagnostic only; it is not wired as an active
   signal, filter, or risk gate.
+- The candle/correlation reducer learned `0` bad OOS-train buckets in the latest
+  run, so it made no paper/testnet/live change and remains report-only.
 
 ## Validation
 
@@ -68,3 +73,6 @@ approval.
   Current blockers include `TESTNET=True`, `LIVE_TRADING_APPROVED=False`,
   runtime-profile mismatch, `USER_DATA_STREAM_READY=False`, and safety flags
   that are intentionally off in the research profile.
+- `python candle_correlation_overlay.py --trades portfolio_trades.csv --years 3`
+  returned unchanged OOS results because no train-proven bad setup bucket met
+  the reduction gate.
