@@ -49,6 +49,8 @@ A 4-hour Donchian breakout trend-following bot for Binance Futures.
 - API key runbook: [docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md](docs/API_KEY_SECURITY_RUNBOOK_2026_05_01.md) defines live/testnet key scope, trusted-IP policy, and rotation.
 - Risk profile policy: [docs/RISK_PROFILE_POLICY_2026_05_01.md](docs/RISK_PROFILE_POLICY_2026_05_01.md) marks the current 10x/%4 profile as research-only and gates live mode to `balanced_live_v1`.
 - User-data stream decision: [docs/USER_DATA_STREAM_DECISION_2026_05_01.md](docs/USER_DATA_STREAM_DECISION_2026_05_01.md) rejects polling-only live operation and keeps live mode blocked until stream readiness is proven.
+- User-data stream runner: [docs/USER_STREAM_RUNNER_2026_05_04.md](docs/USER_STREAM_RUNNER_2026_05_04.md) adds a websocket consumer skeleton with duplicate/out-of-order guards, keepalive/reconnect timing, and local `live_state` reconciliation plumbing; it is not testnet-proven yet.
+- Paper runtime reporting: [docs/PAPER_RUNTIME_REPORTING_2026_05_04.md](docs/PAPER_RUNTIME_REPORTING_2026_05_04.md) separates paper-state alerts from live-state mismatches and adds open-position, recent-trade, MAE/MFE, and 4h-vs-2h daily/weekly reporting.
 - Risk-adjusted metrics: [docs/RISK_ADJUSTED_METRICS_2026_05_01.md](docs/RISK_ADJUSTED_METRICS_2026_05_01.md) adds Sharpe/Sortino/Calmar reporting and Bonferroni visibility for candidate sweeps.
 - Correlation stress: [docs/CORRELATION_STRESS_2026_05_01.md](docs/CORRELATION_STRESS_2026_05_01.md) adds report-only pairwise symbol correlation stress before any covariance-aware sizing change.
 - Pattern ablation: [docs/PATTERN_ABLATION_2026_05_01.md](docs/PATTERN_ABLATION_2026_05_01.md) adds report-only pattern-risk on/off comparison before any pattern-weight claim.
@@ -91,7 +93,9 @@ user_stream_client.py        Binance user-stream listenKey lifecycle helpers
 user_stream_events.py        Binance user-stream ORDER_TRADE_UPDATE parser
 user_stream_reconcile.py     Conservative user-stream position-state decisions
 user_stream_runtime.py       Single-message user-stream live_state handler
+user_stream_runner.py        User-data stream websocket consumer skeleton
 paper_report.py              Detailed paper decision/equity/error report
+paper_decision_report.py     Daily/weekly paper decision comparison report
 paper_runtime.py             Tagged paper/shadow runtime isolation helpers
 mature_bot_compare.py        Side-by-side add-on validation
 portfolio_candidate_sweep.py Search better symbol combinations
@@ -142,9 +146,12 @@ python portfolio_holdout.py --years 3 --holdout-bars 500 --max-param-combos 6
 python ops_status.py --json
 python emergency_kill_switch.py --json
 python paper_report.py
+python paper_decision_report.py
+python paper_decision_report.py --json
 python paper_runner.py --once --reset
 python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks --reset
 python paper_report.py --tag shadow_2h
+python user_stream_runner.py --dry-run
 python -m unittest discover -s tests -v
 ```
 

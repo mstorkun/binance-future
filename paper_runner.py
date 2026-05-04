@@ -269,9 +269,36 @@ def _close_position(pos: dict[str, Any], exit_price: float, exit_ts, reason: str
         "pnl": round(pnl, 6),
         "pnl_return_pct": round((pnl / entry_equity * 100.0) if entry_equity > 0 else 0.0, 6),
         "exit_reason": reason,
+        "entry_signal": pos.get("entry_signal", pos.get("side", "")),
+        "entry_regime": pos.get("entry_regime", ""),
+        "entry_adx": pos.get("entry_adx", ""),
+        "entry_rsi": pos.get("entry_rsi", ""),
+        "entry_orderbook_reason": pos.get("entry_orderbook_reason", ""),
         "risk_reasons": pos.get("risk_reasons", ""),
+        "max_favorable": round(float(pos.get("max_favorable") or 0.0), 6),
+        "max_adverse": round(float(pos.get("max_adverse") or 0.0), 6),
+        "max_favorable_pct": round(float(pos.get("max_favorable_pct") or 0.0), 6),
+        "max_adverse_pct": round(float(pos.get("max_adverse_pct") or 0.0), 6),
     }
     return pnl, row
+
+
+def _update_position_excursions(pos: dict[str, Any], bar: pd.Series) -> None:
+    entry = float(pos["entry"])
+    size = float(pos["size"])
+    entry_equity = float(pos.get("entry_equity") or 0.0)
+    if pos["side"] == strat.LONG:
+        favorable = max(0.0, (float(bar["high"]) - entry) * size)
+        adverse = max(0.0, (entry - float(bar["low"])) * size)
+    else:
+        favorable = max(0.0, (entry - float(bar["low"])) * size)
+        adverse = max(0.0, (float(bar["high"]) - entry) * size)
+
+    pos["max_favorable"] = max(float(pos.get("max_favorable") or 0.0), favorable)
+    pos["max_adverse"] = max(float(pos.get("max_adverse") or 0.0), adverse)
+    if entry_equity > 0:
+        pos["max_favorable_pct"] = max(float(pos.get("max_favorable_pct") or 0.0), pos["max_favorable"] / entry_equity * 100.0)
+        pos["max_adverse_pct"] = max(float(pos.get("max_adverse_pct") or 0.0), pos["max_adverse"] / entry_equity * 100.0)
 
 
 def _manage_positions(state: dict[str, Any], frames: dict[str, pd.DataFrame]) -> list[dict[str, Any]]:
@@ -284,6 +311,7 @@ def _manage_positions(state: dict[str, Any], frames: dict[str, pd.DataFrame]) ->
         pos = positions[sym]
         bar = df.iloc[-2]
         window = df
+        _update_position_excursions(pos, bar)
 
         decision = eg.stop_decision(pos, bar)
         exit_reason = None
@@ -435,6 +463,7 @@ def run_once(reset: bool = False) -> dict[str, Any]:
         state["positions"][symbol] = {
             "symbol": symbol,
             "side": signal,
+            "entry_signal": signal,
             "entry": entry,
             "size": size,
             "sl": sl,
@@ -444,10 +473,20 @@ def run_once(reset: bool = False) -> dict[str, Any]:
             "extreme": entry,
             "entry_time": pd.Timestamp(bar.name).isoformat(),
             "entry_equity": equity,
+            "entry_regime": bar.get("regime", ""),
+            "entry_adx": float(bar.get("adx", 0) or 0),
+            "entry_rsi": float(bar.get("rsi", 0) or 0),
+            "entry_daily_trend": bar.get("daily_trend", ""),
+            "entry_weekly_trend": bar.get("weekly_trend", ""),
+            "entry_orderbook_reason": guard.reason,
             "risk_pct": effective_risk,
             "risk_mult": risk_decision.multiplier,
             "risk_reasons": "|".join(risk_decision.reasons),
             "notional": notional,
+            "max_favorable": 0.0,
+            "max_adverse": 0.0,
+            "max_favorable_pct": 0.0,
+            "max_adverse_pct": 0.0,
         }
         decision_rows.append(_decision_row(symbol, df, signal, "paper_open", risk_decision, guard, effective_risk, size, notional))
 

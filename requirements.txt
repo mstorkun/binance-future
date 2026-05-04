@@ -2,3 +2,4 @@ ccxt==4.5.51
 pandas==3.0.2
 schedule==1.2.2
 python-dotenv==1.2.2
+websockets==16.0

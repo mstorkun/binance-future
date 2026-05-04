@@ -98,6 +98,8 @@ def build_status(include_exchange: bool = False) -> dict[str, Any]:
         "recent_errors": int(len(errors_tail)),
         "recent_order_events": order_event_counts,
         "latest_order_event": order_events_tail[-1] if order_events_tail else {},
+        "state_scope": "paper",
+        "compare_live_state_positions": False,
         "live_state_positions": len(live_state.get("positions") or {}),
         "live_state_updated_at": live_state.get("updated_at"),
         "live_trading_approved": bool(getattr(config, "LIVE_TRADING_APPROVED", False)),

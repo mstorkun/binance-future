@@ -26,6 +26,7 @@ import live_state
 import order_manager
 import order_events
 import paper_runtime
+import paper_decision_report
 import pair_universe
 import pattern_ablation
 import paper_runner
@@ -48,6 +49,7 @@ import user_stream_client
 import user_stream_events
 import user_stream_reconcile
 import user_stream_runtime
+import user_stream_runner
 import walk_forward
 
 
@@ -710,6 +712,53 @@ class SafetyTests(unittest.TestCase):
         finally:
             config.ORDER_EVENTS_JSONL = old_events
 
+    def test_user_stream_runner_gate_rejects_duplicate_and_out_of_order_events(self):
+        gate = user_stream_runner.UserStreamEventGate()
+        event = {
+            "e": "ORDER_TRADE_UPDATE",
+            "E": 10,
+            "o": {"s": "DOGEUSDT", "i": 1, "c": "cid", "x": "NEW", "X": "NEW", "z": "0"},
+        }
+        self.assertEqual(gate.accept(event), (True, "accepted"))
+        self.assertEqual(gate.accept(event), (False, "duplicate"))
+        older = {
+            "e": "ORDER_TRADE_UPDATE",
+            "E": 9,
+            "o": {"s": "DOGEUSDT", "i": 1, "c": "cid", "x": "TRADE", "X": "PARTIALLY_FILLED", "z": "1"},
+        }
+        self.assertEqual(gate.accept(older), (False, "out_of_order"))
+
+    def test_user_stream_runner_handle_message_reconciles_state(self):
+        old_events = getattr(config, "ORDER_EVENTS_JSONL", "order_events.jsonl")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                state_path = Path(tmp) / "live_state.json"
+                config.ORDER_EVENTS_JSONL = str(Path(tmp) / "events.jsonl")
+                live_state.save_positions({"DOGE/USDT": {"side": "long", "size": 100}}, state_path)
+                result = user_stream_runner.handle_message(json.dumps({
+                    "e": "ORDER_TRADE_UPDATE",
+                    "E": 10,
+                    "T": 11,
+                    "o": {
+                        "s": "DOGEUSDT",
+                        "i": 1,
+                        "c": "hard-sl",
+                        "S": "SELL",
+                        "o": "STOP_MARKET",
+                        "ot": "STOP_MARKET",
+                        "x": "TRADE",
+                        "X": "FILLED",
+                        "q": "100",
+                        "z": "100",
+                        "R": True,
+                    },
+                }), state_path=state_path)
+                self.assertEqual(result["action"], "order_update")
+                self.assertTrue(result["changed"])
+                self.assertEqual(live_state.load_positions(state_path), {})
+        finally:
+            config.ORDER_EVENTS_JSONL = old_events
+
     def test_account_safety_confirms_one_way_and_leverage(self):
         old_leverage = config.LEVERAGE
         try:
@@ -789,10 +838,40 @@ class SafetyTests(unittest.TestCase):
             status = ops_status.build_status(include_exchange=True)
             self.assertTrue(status["exchange_safety"]["ok"])
             self.assertEqual(status["exchange_safety"]["position_mode"]["mode"], "one_way")
+            self.assertEqual(status["state_scope"], "paper")
+            self.assertFalse(status["compare_live_state_positions"])
             self.assertIn("alerts", status)
             self.assertIn("alert_count", status)
         finally:
             ops_status._exchange_safety_status = original
+
+    def test_alerts_skip_live_state_mismatch_for_paper_scope(self):
+        rows = alerts.build_alerts({
+            "run_tag": "unit",
+            "heartbeat_status": "ok",
+            "heartbeat_stale": False,
+            "recent_errors": 0,
+            "open_positions": 1,
+            "live_state_positions": 0,
+            "compare_live_state_positions": False,
+            "testnet": True,
+            "live_trading_approved": False,
+        })
+        self.assertNotIn("state_position_mismatch", {row["code"] for row in rows})
+
+    def test_alerts_detect_live_state_mismatch_when_enabled(self):
+        rows = alerts.build_alerts({
+            "run_tag": "unit",
+            "heartbeat_status": "ok",
+            "heartbeat_stale": False,
+            "recent_errors": 0,
+            "open_positions": 1,
+            "live_state_positions": 0,
+            "compare_live_state_positions": True,
+            "testnet": True,
+            "live_trading_approved": False,
+        })
+        self.assertIn("state_position_mismatch", {row["code"] for row in rows})
 
     def test_alerts_detect_stale_heartbeat_and_errors(self):
         rows = alerts.build_alerts({
@@ -1457,6 +1536,21 @@ class SafetyTests(unittest.TestCase):
             self.assertTrue(csv_path.exists())
             self.assertEqual(pd.read_csv(csv_path).iloc[0]["symbol"], "SOL/USDT")
 
+    def test_paper_runner_updates_position_excursions(self):
+        pos = {
+            "symbol": "DOGE/USDT",
+            "side": "long",
+            "entry": 1.0,
+            "size": 10.0,
+            "entry_equity": 100.0,
+        }
+        bar = pd.Series({"high": 1.3, "low": 0.9})
+        paper_runner._update_position_excursions(pos, bar)
+        self.assertAlmostEqual(pos["max_favorable"], 3.0)
+        self.assertAlmostEqual(pos["max_adverse"], 1.0)
+        self.assertAlmostEqual(pos["max_favorable_pct"], 3.0)
+        self.assertAlmostEqual(pos["max_adverse_pct"], 1.0)
+
     def test_paper_report_latest_decision_by_symbol(self):
         rows = [
             {"symbol": "DOGE/USDT", "action": "no_signal", "bar_time": "old", "close": "1.0"},
@@ -1475,6 +1569,7 @@ class SafetyTests(unittest.TestCase):
         old_equity = getattr(config, "PAPER_EQUITY_CSV", "paper_equity.csv")
         old_trades = getattr(config, "PAPER_TRADES_CSV", "paper_trades.csv")
         old_errors = getattr(config, "PAPER_ERRORS_CSV", "paper_errors.csv")
+        old_state = getattr(config, "PAPER_STATE_FILE", "paper_state.json")
         old_testnet = config.TESTNET
         old_live = config.LIVE_TRADING_APPROVED
         try:
@@ -1488,6 +1583,7 @@ class SafetyTests(unittest.TestCase):
                 config.PAPER_EQUITY_CSV = str(root / "equity.csv")
                 config.PAPER_TRADES_CSV = str(root / "trades.csv")
                 config.PAPER_ERRORS_CSV = str(root / "errors.csv")
+                config.PAPER_STATE_FILE = str(root / "state.json")
 
                 heartbeat = {
                     "status": "ok",
@@ -1510,12 +1606,38 @@ class SafetyTests(unittest.TestCase):
                 paper_runner._append_csv(config.PAPER_EQUITY_CSV, [
                     {"wallet": 1000.0, "equity": 1001.0, "open_positions": 0}
                 ])
+                paper_runner._append_csv(config.PAPER_TRADES_CSV, [
+                    {
+                        "symbol": "DOGE/USDT",
+                        "side": "long",
+                        "exit_time": "2026-01-01",
+                        "pnl": "5.5",
+                        "pnl_return_pct": "0.55",
+                        "exit_reason": "trend_exit",
+                        "max_favorable_pct": "1.2",
+                        "max_adverse_pct": "0.4",
+                    }
+                ])
+                Path(config.PAPER_STATE_FILE).write_text(json.dumps({
+                    "positions": {
+                        "LINK/USDT": {
+                            "side": "short",
+                            "entry": 10.0,
+                            "size": 2.0,
+                            "sl": 11.0,
+                            "risk_pct": 0.02,
+                        }
+                    }
+                }), encoding="utf-8")
 
                 report = paper_report.build_report(decision_limit=10)
                 self.assertEqual(report["heartbeat"]["status"], "ok")
                 self.assertEqual(report["recent"]["actions"]["no_signal"], 1)
                 self.assertEqual(report["recent"]["actions"]["skip"], 1)
                 self.assertEqual(report["recent"]["skips"]["risk_block"], 1)
+                self.assertEqual(report["recent"]["trade_summary"]["total_pnl"], 5.5)
+                self.assertEqual(report["recent"]["latest_trades"][0]["exit_reason"], "trend_exit")
+                self.assertEqual(report["open_positions"][0]["symbol"], "LINK/USDT")
                 self.assertEqual(report["warnings"], [])
         finally:
             config.SYMBOLS = old_symbols
@@ -1524,6 +1646,7 @@ class SafetyTests(unittest.TestCase):
             config.PAPER_EQUITY_CSV = old_equity
             config.PAPER_TRADES_CSV = old_trades
             config.PAPER_ERRORS_CSV = old_errors
+            config.PAPER_STATE_FILE = old_state
             config.TESTNET = old_testnet
             config.LIVE_TRADING_APPROVED = old_live
 
@@ -1607,6 +1730,36 @@ class SafetyTests(unittest.TestCase):
             config.SYMBOLS = old_symbols
             for attr, value in old_files.items():
                 setattr(config, attr, value)
+
+    def test_paper_decision_report_summarizes_daily_window(self):
+        now = pd.Timestamp("2026-05-04T12:00:00Z")
+        decisions = pd.DataFrame({
+            "run_at_utc": [
+                "2026-05-04T11:00:00Z",
+                "2026-05-04T10:00:00Z",
+                "2026-05-02T10:00:00Z",
+            ],
+            "action": ["paper_open", "skip", "no_signal"],
+            "skipped_reason": ["", "orderbook_guard", ""],
+        })
+        trades = pd.DataFrame({
+            "closed_at_utc": ["2026-05-04T11:30:00Z", "2026-05-02T10:00:00Z"],
+            "pnl": ["5.0", "-2.0"],
+        })
+        errors = pd.DataFrame({"run_at_utc": ["2026-05-04T11:45:00Z"]})
+        summary = paper_decision_report.summarize_window(
+            decisions,
+            trades,
+            errors,
+            pd.Timedelta(days=1),
+            now=now,
+        )
+        self.assertEqual(summary["decision_rows"], 2)
+        self.assertEqual(summary["actions"]["paper_open"], 1)
+        self.assertEqual(summary["skips"]["orderbook_guard"], 1)
+        self.assertEqual(summary["trades"], 1)
+        self.assertEqual(summary["total_pnl"], 5.0)
+        self.assertEqual(summary["errors"], 1)
 
     def test_legacy_walk_forward_accepts_weekly_data_argument(self):
         idx = pd.date_range("2026-01-01", periods=10, freq="4h")

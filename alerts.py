@@ -119,7 +119,8 @@ def build_alerts(status: dict[str, Any]) -> list[dict[str, Any]]:
 
     open_positions = int(_to_float(status.get("open_positions"), 0.0))
     live_state_positions = int(_to_float(status.get("live_state_positions"), 0.0))
-    if (open_positions or live_state_positions) and open_positions != live_state_positions:
+    compare_live_state = bool(status.get("compare_live_state_positions", False))
+    if compare_live_state and (open_positions or live_state_positions) and open_positions != live_state_positions:
         _add(
             rows,
             status=status,

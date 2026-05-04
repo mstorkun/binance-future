@@ -1,6 +1,6 @@
 # AI Memory / Project Handoff
 
-Last updated: 2026-05-01
+Last updated: 2026-05-04
 
 This file is the repo-local memory for future AI agents. Read it before making
 strategy, risk, backtest, paper, testnet, or live-trading changes.
@@ -111,20 +111,23 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `94` tests passed plus `3` subtests after the
-  Claude follow-up fixes and tick precision audit. Covered areas include client
-  order id duplicate classification, fetch-by-client-id behavior, partial-fill
-  handling, trailing stop cleanup, hard-stop precision, reduce-only market
+  `python -m pytest -q` -> `100` tests passed plus `3` subtests after
+  paper-runtime reporting and user-stream runner additions.
+  Covered areas include client order id duplicate classification,
+  fetch-by-client-id behavior, partial-fill handling, trailing stop cleanup,
+  hard-stop precision, reduce-only market
   amount normalization, stale closed-bar detection, trade decision snapshot
   persistence, emergency kill-switch dry-run/execute paths, live profile guard
   behavior, user-data stream live-gate behavior, and basic risk-adjusted metrics
   reporting plus correlation stress, pattern ablation, and exchange-filter cache
   TTL helpers, paper CSV append hardening, stale risk-code quarantine, and
   passive TWAP/executor guardrails, exact requirement pinning, and paper lock
-  heartbeat refresh, bias-audit report serialization, PBO matrix reporting, and
-  Binance user-stream order-update parsing, listenKey lifecycle helpers, and
-  conservative user-stream reconciliation decisions, and the user-stream runtime
-  handler.
+  heartbeat refresh, bias-audit report serialization, PBO matrix reporting,
+  paper/live alert scoping, paper report open-position/trade summaries,
+  4h-vs-2h paper decision reporting, and Binance user-stream order-update
+  parsing, listenKey lifecycle helpers, conservative user-stream reconciliation
+  decisions, the user-stream runtime handler, and the websocket runner duplicate
+  and out-of-order gate.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
@@ -157,23 +160,24 @@ Other previous validation context:
 - User-stream parser:
   `user_stream_events.py` parses Binance USD-M Futures `ORDER_TRADE_UPDATE`
   events, records them through `order_events.record()`, and flags terminal,
-  partial, liquidation/ADL, and immediate-reconcile events. This is parser-only;
-  listenKey lifecycle, websocket runner, keepalive, reconnect, and live-state
-  reconciliation are still missing.
+  partial, liquidation/ADL, and immediate-reconcile events.
 - User-stream listenKey helper:
   `user_stream_client.py` adds start/keepalive helpers, private websocket URL
-  construction, and `ListenKeyState` keepalive/reconnect timing. It does not open
-  a websocket and is not wired into `bot.py`.
+  construction, and `ListenKeyState` keepalive/reconnect timing.
 - User-stream reconcile:
   `user_stream_reconcile.py` applies parsed order updates to local positions
   conservatively. It removes state on reduce-only filled stops or
-  liquidation/ADL, and marks partial/non-terminal updates. It is not wired into
-  live_state yet.
+  liquidation/ADL, and marks partial/non-terminal updates.
 - User-stream runtime handler:
   `user_stream_runtime.py` records one parsed update, applies reconcile
   decisions, persists changed `live_state` positions, and records a
-  `user_stream_reconcile_decision`. There is still no websocket runner or event
-  ordering/deduplication loop.
+  `user_stream_reconcile_decision`.
+- User-stream runner:
+  `user_stream_runner.py` adds the first websocket consumer skeleton with
+  duplicate and out-of-order gating, listenKey keepalive/reconnect timing,
+  connection-error telemetry, and routing into `user_stream_runtime.py`. It is
+  not testnet-proven, not wired into `bot.py`, and does not change
+  `USER_DATA_STREAM_READY=False`.
 - Portfolio candidate sweep:
   `python portfolio_candidate_sweep.py --years 3 --min-size 3 --max-size 3 --top 30`
   ranked `DOGE/USDT,LINK/USDT,TRX/USDT` first with `264` trades, `83.33%`
@@ -315,6 +319,12 @@ Other previous validation context:
   local-position decisions from parsed user-stream events.
 - `docs/USER_STREAM_RUNTIME_HANDLER_2026_05_01.md`: documents the single-message
   parser/reconcile/live_state adapter for future websocket consumption.
+- `docs/USER_STREAM_RUNNER_2026_05_04.md`: documents the websocket consumer
+  skeleton, duplicate/out-of-order gate, keepalive/reconnect timing, and the
+  remaining testnet-proof work before stream readiness can be marked true.
+- `docs/PAPER_RUNTIME_REPORTING_2026_05_04.md`: documents paper/live alert
+  scoping, enriched paper report output, and the 4h-vs-2h daily/weekly decision
+  report.
 - `live_state.py`: persistent JSON state for live/testnet active positions.
   `bot.py` loads it at startup, writes after recovery/open/close/extreme/trailing
   changes, and reconciles stale local symbols against exchange open positions.
@@ -322,7 +332,9 @@ Other previous validation context:
 - `alerts.py`: deterministic alert generation and append-only JSONL sink for
   local paper/testnet operations. `ops_status.py` attaches alerts to every
   status payload and `--emit-alerts` writes runtime output to ignored
-  `alerts.jsonl`.
+  `alerts.jsonl`. `state_position_mismatch` is only emitted when
+  `compare_live_state_positions=True`, so paper-only state no longer creates a
+  false live-state mismatch alert.
 - `exchange_filters.py`: Binance Futures `exchangeInfo` filter validation for
   entry, stop, and reduce-only market close sizing. It validates tick size,
   step size, market lot size, minimum notional for entries/stops,
@@ -331,7 +343,8 @@ Other previous validation context:
   `refresh_symbol_filters()` forces a fresh fetch.
 - `paper_runner.py`: no-order paper telemetry runner. `_append_csv()` creates
   parent directories and flushes/fsyncs paper CSV appends; schema-expanding
-  rewrites use temp+replace.
+  rewrites use temp+replace. New paper positions and closed-trade rows include
+  entry context and MFE/MAE fields.
 - `paper_runtime.py`: tagged paper/shadow runtime isolation helpers for
   separate state/decision/equity/heartbeat files and temporary timeframe
   overrides.
@@ -345,13 +358,16 @@ Other previous validation context:
 - `pbo_report.py`: reads a candidate-by-fold matrix and reports selected
   candidate OOS rank/PBO-style diagnostics.
 - `user_stream_events.py`: parser/telemetry adapter for Binance
-  `ORDER_TRADE_UPDATE` events; no websocket connection yet.
-- `user_stream_client.py`: listenKey lifecycle and websocket URL helpers; no
-  websocket connection yet.
+  `ORDER_TRADE_UPDATE` events.
+- `user_stream_client.py`: listenKey lifecycle and websocket URL helpers.
 - `user_stream_reconcile.py`: conservative position-state decisions from parsed
-  user-stream order updates; not wired into live runtime yet.
+  user-stream order updates.
 - `user_stream_runtime.py`: single-message handler that records, reconciles, and
-  persists parsed user-stream order updates; no websocket loop yet.
+  persists parsed user-stream order updates.
+- `user_stream_runner.py`: websocket consumer skeleton for Binance USD-M
+  Futures user-data streams. It has duplicate/out-of-order guards, keepalive and
+  reconnect timing, and routes order updates into `user_stream_runtime.py`; it
+  is still not testnet-proven and not a live-readiness gate.
 - `correlation_stress.py`: report-only pairwise symbol return correlation
   stress. It writes ignored `correlation_stress_report.json` and
   `correlation_stress_pairs.csv`; it does not change sizing behavior.
@@ -368,7 +384,10 @@ Other previous validation context:
 - `trade_executor.py`: passive lifecycle contract for future execution refactor.
   Marked `PASSIVE_ONLY`; it is not wired into order flow.
 - `ops_status.py`: local paper/testnet status report.
-- `paper_report.py`: detailed paper decision/equity/error report.
+- `paper_report.py`: detailed paper decision/equity/error/open-position/trade
+  report.
+- `paper_decision_report.py`: daily/weekly comparison report for default 4h and
+  tagged shadow paper runs such as `shadow_2h`.
 - `mature_bot_compare.py`: side-by-side add-on validation.
 - `portfolio_candidate_sweep.py`: searches better symbol combinations without
   changing the strategy.
@@ -427,23 +446,30 @@ Other previous validation context:
   now marks client order idempotency, partial-fill handling, trailing-stop
   orphan cleanup, tick precision, stale-bar guard, live decision snapshots, and
   emergency kill switch closed in code, API key runbook closed in docs, and risk
-  profile mismatch closed with a live profile guard. User-data stream is closed
-  as an architecture decision/live gate: polling is not accepted for live, and
-  live exchange creation stays blocked until stream readiness is proven.
+  profile mismatch closed with a live profile guard. User-data stream is now a
+  live gate plus partial implementation: polling is not accepted for live, the
+  websocket runner skeleton exists, and live exchange creation stays blocked
+  until stream readiness is proven on testnet.
 
 ## Runtime / Worktree Notes
 
 - A paper runner was restarted after the active DOGE/LINK/TRX symbol change and
-  last observed healthy with PID `9400`, status `ok`, equity `1000`, wallet
-  `1000`, open positions `0`, testnet `true`, and live trading approval
-  `false`. This can go stale; verify `paper_heartbeat.json` before relying on
-  it.
+  last observed healthy on 2026-05-04 with PID `9400`, status `ok`, equity
+  `998.949551`, wallet `1000.0`, open positions `1`, testnet `true`, live
+  trading approval `false`, and `alert_count=0`. This can go stale; verify
+  `paper_heartbeat.json` before relying on it.
 - A 2h scaled shadow paper runner was started with:
   `python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks`.
-  Last observed PID `17316`, heartbeat `ok`, equity `1000`, wallet `1000`,
-  open positions `0`, actions `{'no_signal': 6}`, warnings none. It writes
-  isolated files such as `paper_shadow_2h_state.json` and can be checked with
+  Last observed on 2026-05-04 with PID `17316`, heartbeat `ok`, equity
+  `1008.757387`, wallet `1008.757387`, open positions `0`, recent closed
+  trades `1`, warnings none. It writes isolated files such as
+  `paper_shadow_2h_state.json` and can be checked with
   `python paper_report.py --tag shadow_2h`.
+- `python paper_decision_report.py --json` compares daily/weekly decision
+  windows for default and `shadow_2h`. Last observed daily state on 2026-05-04:
+  default 4h had `72` decision rows, `1` paper open, `1` orderbook skip, and no
+  closed trades; `shadow_2h` had `72` decision rows, one closed trade, and total
+  PnL `8.757387`.
 - Runtime paper files are ignored by git.
 - Shadow paper mode is available:
   `python paper_runner.py --loop --interval-minutes 60 --tag shadow_2h --timeframe 2h --scale-lookbacks --reset`.
@@ -461,14 +487,18 @@ Other previous validation context:
    change.
 2. Monitor paper behavior with `python ops_status.py --json` and
    `python paper_report.py`; the latter shows latest per-symbol decisions,
-   action counts, skips, flow freshness, risk multipliers, and runtime warnings.
+   action counts, skips, flow freshness, risk multipliers, open positions,
+   trade summaries, and runtime warnings. Use `python paper_decision_report.py`
+   for 4h vs 2h daily/weekly comparison.
 3. Restart paper/testnet runners only after checking `ops_status.py --json`;
    already-running Python processes may still use the old imported config.
-4. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
+4. Testnet-prove `user_stream_runner.py` before considering any
+   `USER_DATA_STREAM_READY=True` change.
+5. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
    mode; current parameters reduce CAGR.
-5. Add a real executor-backed paper implementation only after a net-positive
+6. Add a real executor-backed paper implementation only after a net-positive
    side-by-side report.
-6. Only after net-positive evidence and real fill review, consider live-trading
+7. Only after net-positive evidence and real fill review, consider live-trading
    gates.
 
 ## Do Not Do Without Explicit Approval

@@ -42,9 +42,12 @@ First implementation layer added:
   adds conservative local position reconciliation decisions for parsed events.
 - [USER_STREAM_RUNTIME_HANDLER_2026_05_01.md](USER_STREAM_RUNTIME_HANDLER_2026_05_01.md)
   persists parsed/reconciled order updates into `live_state`.
+- [USER_STREAM_RUNNER_2026_05_04.md](USER_STREAM_RUNNER_2026_05_04.md)
+  adds the first websocket consumer skeleton with duplicate/out-of-order guards,
+  keepalive/reconnect timing, and runtime reconciliation plumbing.
 
-The stream runner, keepalive loop, reconnect handling, and live-state
-event ordering/deduplication are still missing.
+The stream runner is now present, but it is not testnet-proven and
+`USER_DATA_STREAM_READY` remains `False`.
 
 ## Required Stream Design Before Live
 
@@ -81,7 +84,7 @@ is a deliberate live-trading block.
 
 ## Verification
 
-- `python -m py_compile config.py data.py ops_status.py tests\test_safety.py`
-- `python -m pytest -q` -> `73 passed, 3 subtests passed`
+- `python -m py_compile user_stream_runner.py tests\test_safety.py`
+- `python -m pytest -q` -> `100 passed, 3 subtests passed`
 
 No real testnet or live orders were sent for this change.
