@@ -36,6 +36,7 @@ import live_state
 import order_manager as om
 import liquidation
 import runtime_guards
+import urgent_exit_policy
 
 
 logging.basicConfig(
@@ -204,15 +205,49 @@ def run():
 
                     stop_decision = eg.stop_decision(pos, closed_bar)
                     if stop_decision.hit:
-                        log.info(
-                            f"[{sym}] {stop_decision.reason} teyit edildi -> "
-                            f"{pos['side'].upper()} kapatiliyor."
+                        if str(stop_decision.reason).startswith("soft_sl") and getattr(config, "THESIS_HOLD_SOFT_STOP_ENABLED", True):
+                            urgent = urgent_exit_policy.urgent_exit_decision(pos, closed_bar)
+                            if not urgent.market_exit:
+                                log.info(
+                                    f"[{sym}] Soft stop goruldu ama tez gecersiz degil; "
+                                    f"market cikis yok. reason={urgent.reason} loss_r={urgent.loss_r:.2f} "
+                                    f"equity_loss={urgent.equity_loss_pct:.2f}%"
+                                )
+                            else:
+                                log.warning(
+                                    f"[{sym}] Acil market cikis: {','.join(urgent.reasons)} "
+                                    f"loss_r={urgent.loss_r:.2f} equity_loss={urgent.equity_loss_pct:.2f}%"
+                                )
+                                if om.close_position_market(exchange, pos["side"], pos["size"]):
+                                    active_positions.pop(sym, None)
+                                    _persist_positions()
+                                else:
+                                    log.error(f"[{sym}] Acil pozisyon kapatma basarisiz/partial; lokal state korunuyor.")
+                                continue
+                        else:
+                            log.info(
+                                f"[{sym}] {stop_decision.reason} teyit edildi -> "
+                                f"{pos['side'].upper()} kapatiliyor."
+                            )
+                            if om.close_position_market(exchange, pos["side"], pos["size"]):
+                                active_positions.pop(sym, None)
+                                _persist_positions()
+                            else:
+                                log.error(f"[{sym}] Pozisyon kapatma basarisiz/partial; lokal state korunuyor.")
+                            continue
+
+                    urgent = urgent_exit_policy.urgent_exit_decision(pos, closed_bar)
+                    if urgent.market_exit:
+                        log.warning(
+                            f"[{sym}] Tez bozuldu/acil risk -> reduceOnly market cikis: "
+                            f"{','.join(urgent.reasons)} loss_r={urgent.loss_r:.2f} "
+                            f"equity_loss={urgent.equity_loss_pct:.2f}%"
                         )
                         if om.close_position_market(exchange, pos["side"], pos["size"]):
                             active_positions.pop(sym, None)
                             _persist_positions()
                         else:
-                            log.error(f"[{sym}] Pozisyon kapatma basarisiz/partial; lokal state korunuyor.")
+                            log.error(f"[{sym}] Acil pozisyon kapatma basarisiz/partial; lokal state korunuyor.")
                         continue
 
                     # Trend tersine döndü mü?

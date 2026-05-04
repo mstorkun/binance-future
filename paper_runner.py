@@ -29,6 +29,7 @@ import liquidation
 import paper_runtime
 import risk as r
 import strategy as strat
+import urgent_exit_policy
 
 
 MIN_NOTIONAL_USDT = 100.0
@@ -275,6 +276,8 @@ def _close_position(pos: dict[str, Any], exit_price: float, exit_ts, reason: str
         "entry_rsi": pos.get("entry_rsi", ""),
         "entry_orderbook_reason": pos.get("entry_orderbook_reason", ""),
         "risk_reasons": pos.get("risk_reasons", ""),
+        "urgent_exit_reasons": pos.get("urgent_exit_reasons", ""),
+        "exit_order_type": pos.get("exit_order_type", ""),
         "max_favorable": round(float(pos.get("max_favorable") or 0.0), 6),
         "max_adverse": round(float(pos.get("max_adverse") or 0.0), 6),
         "max_favorable_pct": round(float(pos.get("max_favorable_pct") or 0.0), 6),
@@ -330,9 +333,27 @@ def _manage_positions(state: dict[str, Any], frames: dict[str, pd.DataFrame]) ->
         exit_reason = None
         exit_price = None
         if decision.hit:
-            exit_reason = decision.reason
-            exit_price = decision.price
-        elif strat.check_exit(window, pos["side"]):
+            if str(decision.reason).startswith("soft_sl") and getattr(config, "THESIS_HOLD_SOFT_STOP_ENABLED", True):
+                urgent = urgent_exit_policy.urgent_exit_decision(pos, bar)
+                if urgent.market_exit:
+                    exit_reason = urgent.reason
+                    exit_price = urgent.exit_price
+                    pos["urgent_exit_reasons"] = "|".join(urgent.reasons)
+                    pos["exit_order_type"] = "reduce_only_market"
+                else:
+                    pos["soft_stop_hold_reason"] = urgent.reason
+                    pos["soft_stop_hold_reasons"] = "|".join(urgent.reasons)
+            else:
+                exit_reason = decision.reason
+                exit_price = decision.price
+        else:
+            urgent = urgent_exit_policy.urgent_exit_decision(pos, bar)
+            if urgent.market_exit:
+                exit_reason = urgent.reason
+                exit_price = urgent.exit_price
+                pos["urgent_exit_reasons"] = "|".join(urgent.reasons)
+                pos["exit_order_type"] = "reduce_only_market"
+        if exit_reason is None and strat.check_exit(window, pos["side"]):
             exit_reason = "trend_exit"
             exit_price = float(bar["close"])
 

@@ -248,6 +248,53 @@ Other previous validation context:
   `portfolio_param_walk_forward.py --matrix-out portfolio_param_candidate_matrix.csv`
   can now write the full candidate-by-fold matrix, and `pbo_report.py` reports
   selected candidate OOS rank/PBO from that matrix.
+- High-return futures research pivot (user directive, 2026-05-04):
+  user explicitly wants to continue toward a Binance Futures bot targeting at
+  least `80%` net annual return with dynamic long/short/wait and dynamic risk,
+  accepting that losses are possible. Do not redirect this thread to GSM or
+  passive yield. Keep live trading blocked until evidence passes costs,
+  walk-forward, drawdown, and fill-quality gates.
+- New research-only alpha-path modules from the pivot:
+  `liquidation_hunting_report.py` tests an OHLCV liquidation proxy with
+  cooldown/per-day trade caps and a minimum OOS sample-days gate. Latest DOGE
+  15m 45d smoke had `0` passing rows because OOS sample was only `17.9896`
+  days despite high annualized short-sample math.
+  `adaptive_decision_report.py` trains a small ridge model over indicators,
+  candle features, multi-timeframe context, BTC/ETH market context, BTC leader
+  features, and modeled costs; it chooses long/short/wait and dynamic risk.
+  Latest DOGE 15m 60d smoke with MTF candle gate produced `44` OOS trades,
+  `-13.4415%` return, `-88.8784%` CAGR, `38.0447%` max DD, PF `0.8598`,
+  and failed `target_not_met|drawdown_limit|profit_factor_low`.
+- New context/gating modules:
+  `macro_event_policy.py` maps official macro/crypto event categories into
+  calendar-risk rows; `news_direction_policy.py` only allows directional news
+  trading from trusted sources with market-reaction confirmation;
+  `btc_market_leader.py` adds BTC trend/shock/correlation/beta context for alt
+  decisions; `multi_timeframe_candle.py` creates weekly/daily/4h/1h/trigger
+  candle features and a gate that blocks naked minute triggers, weekly/daily
+  conflict, HTF compression, outside-mid indecision, and late daily expansion.
+  These are research-only and are not wired into live execution.
+- Urgent exit policy:
+  `urgent_exit_policy.py` implements the user's exit preference: do not churn
+  on small adverse moves; let the bot hold losing long/short positions when
+  market/trend/news/indicator context still supports the thesis; allow around
+  `30%` adverse account-level loss only with supportive context and force
+  exit if that context is absent; force
+  `reduceOnly` market close at the absolute `50%` adverse cap, when thesis is
+  invalid near the large-loss zone, or when liquidation buffer gets too tight.
+  It is wired into `bot.py`, `paper_runner.py`, and passive `trade_executor.py`;
+  live trading remains blocked by preflight. `execution_guard.stop_decision()`
+  now prioritizes hard stop over soft stop when both are touched, so the soft
+  stop hold policy cannot shadow the exchange fail-safe level.
+- Current high-return research docs:
+  `docs/CANDLE_ORDERFLOW_RESEARCH_2026_05_04.md`,
+  `docs/LIQUIDATION_HUNTING_2026_05_04.md`,
+  `docs/MACRO_NEWS_RISK_POLICY_2026_05_04.md`,
+  `docs/NEWS_DIRECTION_STRATEGY_PLAN_2026_05_04.md`,
+  `docs/BTC_MARKET_LEADER_OVERLAY_2026_05_04.md`,
+  `docs/MULTI_TIMEFRAME_CANDLE_STRATEGY_2026_05_04.md`, and
+  `docs/ADAPTIVE_DECISION_MODEL_2026_05_04.md`,
+  `docs/URGENT_EXIT_POLICY_2026_05_04.md`.
 - Full PBO result:
   On 2026-05-02,
   `python portfolio_param_walk_forward.py --years 3 --train-bars 3000 --test-bars 500 --roll-bars 500 --risk-capped --out pbo_full_wf.csv --matrix-out portfolio_param_candidate_matrix.csv`
@@ -580,6 +627,18 @@ Other previous validation context:
   live gate plus partial implementation: polling is not accepted for live, the
   websocket runner skeleton exists, and live exchange creation stays blocked
   until stream readiness is proven on testnet.
+- 2026-05-04 high-return pivot continuation: user reaffirmed the single target
+  as `80%+` net annual return with 7x-10x leverage and dynamic risk. Added
+  objective chart-pattern features from visual chart research in
+  `chart_pattern_features.py`, wired them into `adaptive_decision_report.py`,
+  and documented the screenshot-to-feature policy in
+  `docs/VISUAL_CHART_PATTERN_RESEARCH_2026_05_04.md`.
+- 2026-05-04 social/news context decision: realtime social data must not run
+  inside the order loop. Added `social_signal_policy.py` as an async/cacheable
+  context scorer. It can produce `observe`, `alert_only`, `paper_long`,
+  `paper_short`, or `block`, but `can_open_trade` is always false. Documented
+  source access and fail-closed policy in
+  `docs/SOCIAL_SIGNAL_POLICY_2026_05_04.md`.
 
 ## Runtime / Worktree Notes
 

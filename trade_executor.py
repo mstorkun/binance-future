@@ -17,6 +17,7 @@ import config
 import execution_guard as eg
 import exit_ladder
 import strategy as strat
+import urgent_exit_policy
 
 PASSIVE_ONLY = True
 LIVE_ORDER_FLOW_WIRED = False
@@ -71,8 +72,40 @@ class ManagedTrade:
         emitted: list[dict] = []
         stop_decision = eg.stop_decision(self.__dict__, bar)
         if stop_decision.hit:
+            if not (str(stop_decision.reason).startswith("soft_sl") and getattr(config, "THESIS_HOLD_SOFT_STOP_ENABLED", True)):
+                self.status = ExecutorStatus.CLOSED
+                event = {"event": "close", "reason": stop_decision.reason, "price": stop_decision.price}
+                self.events.append(event)
+                return [event]
+            urgent = urgent_exit_policy.urgent_exit_decision(self.__dict__, bar)
+            if urgent.market_exit:
+                self.status = ExecutorStatus.CLOSED
+                event = {
+                    "event": "close",
+                    "reason": urgent.reason,
+                    "price": urgent.exit_price,
+                    "order_type": "reduce_only_market",
+                    "urgent_exit_reasons": "|".join(urgent.reasons),
+                }
+                self.events.append(event)
+                return [event]
+            self.events.append({
+                "event": "soft_stop_hold",
+                "reason": urgent.reason,
+                "loss_r": urgent.loss_r,
+                "equity_loss_pct": urgent.equity_loss_pct,
+            })
+
+        urgent = urgent_exit_policy.urgent_exit_decision(self.__dict__, bar)
+        if urgent.market_exit:
             self.status = ExecutorStatus.CLOSED
-            event = {"event": "close", "reason": stop_decision.reason, "price": stop_decision.price}
+            event = {
+                "event": "close",
+                "reason": urgent.reason,
+                "price": urgent.exit_price,
+                "order_type": "reduce_only_market",
+                "urgent_exit_reasons": "|".join(urgent.reasons),
+            }
             self.events.append(event)
             return [event]
 

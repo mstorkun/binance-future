@@ -133,10 +133,10 @@ def stop_decision(position: dict, bar) -> StopDecision:
             if close <= soft_sl:
                 return StopDecision(True, "soft_sl_confirmed", close)
             return StopDecision(False, "soft_sl_wick_ignored" if low <= soft_sl else "")
-        if low <= soft_sl:
-            return StopDecision(True, "soft_sl", soft_sl)
         if low <= hard_sl:
             return StopDecision(True, "hard_sl", hard_sl)
+        if low <= soft_sl:
+            return StopDecision(True, "soft_sl", soft_sl)
     else:
         if liquidation_price is not None and high >= liquidation_price:
             return StopDecision(True, "liquidation", liquidation_price)
@@ -146,10 +146,10 @@ def stop_decision(position: dict, bar) -> StopDecision:
             if close >= soft_sl:
                 return StopDecision(True, "soft_sl_confirmed", close)
             return StopDecision(False, "soft_sl_wick_ignored" if high >= soft_sl else "")
-        if high >= soft_sl:
-            return StopDecision(True, "soft_sl", soft_sl)
         if high >= hard_sl:
             return StopDecision(True, "hard_sl", hard_sl)
+        if high >= soft_sl:
+            return StopDecision(True, "soft_sl", soft_sl)
 
     return StopDecision(False, "")
 

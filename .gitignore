@@ -53,6 +53,12 @@ cross_exchange_basis_report.json
 cross_exchange_basis_results.csv
 cross_exchange_basis_folds.csv
 cross_exchange_basis_universe.csv
+liquidation_hunting_report.json
+liquidation_hunting_results.csv
+liquidation_hunting_trades.csv
+adaptive_decision_report.json
+adaptive_decision_results.csv
+adaptive_decision_trades.csv
 timeframe_sweep_results.csv
 timeframe_walk_forward_results.csv
 timeframe_sweep_scaled_results.csv

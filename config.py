@@ -95,6 +95,24 @@ MIN_DEPTH_TO_NOTIONAL_MULT = 3.0
 ORDER_BOOK_DEPTH_BAND_PCT = 0.0020
 EXCHANGE_FILTER_CACHE_TTL_SECONDS = 3600
 
+# --- Thesis-aware urgent market exit guard ---
+# This is not "close every red trade". It is a last-resort decision for real
+# adverse movement where commission is secondary to loss/liquidation control.
+# Soft stops can be treated as advisory when the broader thesis remains valid;
+# hard stops and liquidation-risk exits stay fail-safe.
+URGENT_EXIT_ENABLED = True
+THESIS_HOLD_SOFT_STOP_ENABLED = True
+URGENT_EXIT_MIN_LOSS_R = 1.50
+URGENT_EXIT_MIN_EQUITY_LOSS_PCT = 8.00
+URGENT_EXIT_MAX_EQUITY_LOSS_PCT = 30.00
+URGENT_EXIT_ABSOLUTE_EQUITY_LOSS_PCT = 50.00
+URGENT_EXIT_HOLD_SUPPORT_MIN_REASONS = 2
+URGENT_EXIT_FORCE_LOSS_R = 2.50
+URGENT_EXIT_RANGE_ATR_MULT = 1.20
+URGENT_EXIT_VOLUME_MULT = 1.30
+URGENT_EXIT_LIQUIDATION_BUFFER_PCT = 0.03
+URGENT_EXIT_SCORE_THRESHOLD = 1.0
+
 # --- Liquidation / hard-stop guard ---
 LIQUIDATION_GUARD_ENABLED = False
 MAINTENANCE_MARGIN_RATE = 0.005
@@ -191,6 +209,17 @@ TWAP_MAX_SLICES = 10
 TWAP_INTERVAL_SECONDS = 30
 
 OPS_HEARTBEAT_STALE_MINUTES = 180
+
+# --- Social/news context layer ---
+# Social data is a context/risk signal only. It must be ingested asynchronously,
+# cached, and price-confirmed before it can affect paper research decisions.
+SOCIAL_SIGNAL_ENABLED = False
+SOCIAL_SIGNAL_NEVER_DIRECT_OPEN = True
+SOCIAL_SIGNAL_CACHE_TTL_SECONDS = 90
+SOCIAL_SIGNAL_MAX_AGE_SECONDS = 600
+SOCIAL_SIGNAL_MIN_PRICE_CONFIRMATION = 0.55
+SOCIAL_SIGNAL_MIN_INDEPENDENT_CONFIRMATION = 0.50
+SOCIAL_SIGNAL_MAX_MANIPULATION_RISK = 0.35
 
 # --- Backtest maliyet varsayımları ---
 # Tarihsel funding verisi çekilemezse fallback olarak kullanılır.

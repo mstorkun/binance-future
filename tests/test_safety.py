@@ -14,9 +14,11 @@ import alerts
 import config
 import bias_audit
 import bias_audit_report
+import btc_market_leader
 import candle_structure
 import candle_correlation_overlay
 import candle_structure_report
+import chart_pattern_features
 import correlation_stress
 import data
 import decision_snapshots
@@ -29,7 +31,11 @@ import carry_research
 import cross_exchange_basis_report
 import funding_predictability_report
 import go_live_preflight
+import liquidation_hunting_report
 import live_state
+import macro_event_policy
+import multi_timeframe_candle
+import news_direction_policy
 import order_manager
 import order_events
 import paper_runtime
@@ -51,12 +57,14 @@ import risk_adjusted_report
 import risk_management
 import risk_metrics
 import runtime_guards
+import social_signal_policy
 import strategy_decision_report
 import timeframe_sweep
 import trade_executor
 import trend_candle_entry_walk_forward
 import trend_quality_report
 import twap_execution
+import urgent_exit_policy
 import user_stream_client
 import user_stream_events
 import user_stream_reconcile
@@ -1513,6 +1521,19 @@ class SafetyTests(unittest.TestCase):
             places=9,
         )
 
+    def test_stop_decision_prioritizes_hard_stop_over_soft_hold_zone(self):
+        long_pos = {"side": "long", "sl": 90.0, "hard_sl": 80.0}
+        long_bar = pd.Series({"open": 100.0, "high": 101.0, "low": 75.0, "close": 95.0, "atr": 5.0, "volume": 1.0, "volume_ma": 1.0})
+        long_decision = execution_guard.stop_decision(long_pos, long_bar)
+        self.assertTrue(long_decision.hit)
+        self.assertEqual(long_decision.reason, "hard_sl")
+
+        short_pos = {"side": "short", "sl": 110.0, "hard_sl": 120.0}
+        short_bar = pd.Series({"open": 100.0, "high": 125.0, "low": 99.0, "close": 105.0, "atr": 5.0, "volume": 1.0, "volume_ma": 1.0})
+        short_decision = execution_guard.stop_decision(short_pos, short_bar)
+        self.assertTrue(short_decision.hit)
+        self.assertEqual(short_decision.reason, "hard_sl")
+
     def test_timeframe_to_timedelta(self):
         self.assertEqual(execution_guard.timeframe_to_timedelta("15m").total_seconds(), 900)
         self.assertEqual(execution_guard.timeframe_to_timedelta("2h").total_seconds(), 7200)
@@ -2147,6 +2168,367 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(summary["ok"])
         self.assertEqual(summary["reason"], "no_aligned_funding_data")
         self.assertEqual(folds, [])
+
+    def test_liquidation_proxy_detects_directional_volume_shock(self):
+        idx = pd.date_range("2026-01-01", periods=40, freq="5min", tz="UTC")
+        rows = []
+        for i in range(len(idx)):
+            rows.append({"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 100.0})
+        rows[-1] = {"open": 100.0, "high": 101.0, "low": 94.0, "close": 95.0, "volume": 1000.0}
+        df = pd.DataFrame(rows, index=idx)
+        features = liquidation_hunting_report.add_liquidation_proxy_features(df, volume_window=20, range_window=20)
+        signal = liquidation_hunting_report.event_signal(
+            features.iloc[-1],
+            min_abs_return_pct=3.0,
+            min_volume_z=2.0,
+            min_range_multiple=1.2,
+        )
+        self.assertEqual(signal, "long")
+
+    def test_liquidation_proxy_backtest_enters_next_bar_and_stops_first(self):
+        idx = pd.date_range("2026-01-01", periods=45, freq="5min", tz="UTC")
+        rows = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 100.0} for _ in idx]
+        rows[30] = {"open": 100.0, "high": 101.0, "low": 94.0, "close": 95.0, "volume": 1000.0}
+        rows[31] = {"open": 95.0, "high": 97.0, "low": 93.0, "close": 96.0, "volume": 300.0}
+        df = pd.DataFrame(rows, index=idx)
+        trades, equity = liquidation_hunting_report.backtest_liquidation_proxy(
+            df,
+            symbol="DOGE/USDT:USDT",
+            timeframe="5m",
+            min_abs_return_pct=3.0,
+            min_volume_z=2.0,
+            min_range_multiple=1.2,
+            horizon_bars=3,
+            tp_pct=1.0,
+            sl_pct=1.0,
+            start_balance=5000.0,
+            leverage=7.0,
+            risk_per_trade_pct=0.02,
+            round_trip_cost_rate=0.0,
+        )
+        self.assertEqual(len(trades), 1)
+        self.assertEqual(trades.iloc[0]["entry_time"], idx[31].isoformat())
+        self.assertEqual(trades.iloc[0]["exit_reason"], "sl")
+        self.assertLess(float(trades.iloc[0]["pnl"]), 0.0)
+        self.assertFalse(equity.empty)
+
+    def test_liquidation_proxy_summary_requires_target_gate(self):
+        trades = pd.DataFrame({"pnl": [10.0, -5.0], "balance": [5010.0, 5005.0]})
+        equity = pd.DataFrame({"equity": [5010.0, 5005.0]})
+        summary = liquidation_hunting_report.summarize_trades(
+            trades,
+            equity,
+            symbol="DOGE/USDT:USDT",
+            timeframe="5m",
+            start_balance=5000.0,
+            min_trades=20,
+            target_cagr_pct=80.0,
+        )
+        self.assertFalse(summary["ok"])
+        self.assertIn("insufficient_trades", summary["reason"])
+        self.assertIn("target_not_met", summary["reason"])
+
+    def test_macro_event_policy_blocks_tier1_events(self):
+        row = macro_event_policy.event_calendar_row(
+            "2026-05-12 12:30:00",
+            "Consumer Price Index",
+            category="cpi",
+            source="https://www.bls.gov/schedule/news_release/cpi.htm",
+        )
+        self.assertEqual(row["impact"], "critical")
+        self.assertEqual(row["pre_minutes"], 180)
+        self.assertEqual(row["post_minutes"], 240)
+        self.assertEqual(row["risk_mult"], 0.0)
+        self.assertEqual(row["block_new_entries"], "true")
+        self.assertEqual(row["action"], "observe_only")
+
+    def test_macro_event_policy_classifies_binance_delisting_as_symbol_observe(self):
+        row = macro_event_policy.event_calendar_row(
+            "2026-05-05 09:00:00",
+            "Binance Will Delist ABCUSDT Perpetual Contract",
+            source="https://www.binance.com/en/support/announcement",
+        )
+        self.assertEqual(row["impact"], "symbol_critical")
+        self.assertEqual(row["risk_mult"], 0.0)
+        self.assertEqual(row["block_new_entries"], "true")
+        self.assertEqual(row["action"], "symbol_observe_only")
+
+    def test_news_direction_waits_for_unconfirmed_source(self):
+        decision = news_direction_policy.decide_news_direction(
+            title="Rumor says CPI will be cold",
+            source="random_social",
+            category="cpi",
+            market_reaction="bullish",
+            market_reaction_score=1.0,
+        )
+        self.assertEqual(decision.source_tier, "unconfirmed")
+        self.assertEqual(decision.trade_bias, "wait")
+        self.assertEqual(decision.action, "observe_only")
+
+    def test_news_direction_allows_confirmed_official_bullish_bias(self):
+        decision = news_direction_policy.decide_news_direction(
+            title="Spot ETF approval announced",
+            url="https://www.sec.gov/newsroom/press-releases/example",
+            category="etf approval",
+            market_reaction="bullish",
+            market_reaction_score=0.8,
+        )
+        self.assertEqual(decision.source_tier, "official")
+        self.assertEqual(decision.trade_bias, "long")
+        self.assertEqual(decision.action, "directional_allowed")
+
+    def test_news_direction_blocks_when_news_and_market_conflict(self):
+        decision = news_direction_policy.decide_news_direction(
+            title="Hot inflation keeps rates higher for longer",
+            url="https://www.bls.gov/news.release/cpi.htm",
+            category="cpi",
+            market_reaction="bullish",
+            market_reaction_score=0.8,
+        )
+        self.assertEqual(decision.trade_bias, "wait")
+        self.assertEqual(decision.action, "block_new_entries")
+
+    def test_btc_market_leader_blocks_alt_long_when_btc_shocks_down(self):
+        row = pd.Series({
+            "btc_ret_3": -2.0,
+            "btc_trend_strength": -1.0,
+            "btc_trend_slope": -0.5,
+            "btc_shock_z": -2.5,
+            "btc_corr": 0.75,
+            "btc_beta": 1.2,
+            "btc_relative_strength_12": -0.2,
+        })
+        decision = btc_market_leader.btc_leader_decision(row, side="long")
+        self.assertTrue(decision.block_new_entries)
+        self.assertEqual(decision.multiplier, 0.0)
+        self.assertIn("btc:shock_against", decision.reasons)
+
+    def test_btc_market_leader_reduces_decoupled_alt_signal(self):
+        row = pd.Series({
+            "btc_ret_3": 0.2,
+            "btc_trend_strength": 0.1,
+            "btc_trend_slope": 0.05,
+            "btc_shock_z": 0.2,
+            "btc_corr": 0.1,
+            "btc_beta": 0.1,
+            "btc_relative_strength_12": 0.0,
+        })
+        decision = btc_market_leader.btc_leader_decision(row, side="long")
+        self.assertFalse(decision.block_new_entries)
+        self.assertLess(decision.multiplier, 1.0)
+        self.assertIn("btc:decoupled", decision.reasons)
+
+    def test_multi_timeframe_candle_allows_aligned_long_context(self):
+        row = pd.Series({
+            "ctx_1w_candle_bias": 1,
+            "ctx_1w_candle_confidence": 1.0,
+            "ctx_1d_candle_bias": 1,
+            "ctx_1d_candle_confidence": 1.0,
+            "ctx_4h_candle_bias": 1,
+            "ctx_4h_candle_confidence": 0.8,
+            "ctx_1h_candle_bias": 1,
+            "ctx_1h_candle_confidence": 0.8,
+            "base_candle_bias": 1,
+            "base_candle_confidence": 0.8,
+            "ctx_1d_candle_atr_ratio": 1.0,
+        })
+        decision = multi_timeframe_candle.multi_timeframe_candle_decision(row, side="long")
+        self.assertFalse(decision.block_new_entries)
+        self.assertEqual(decision.permission, "long_only")
+        self.assertEqual(decision.bias, "long")
+        self.assertGreater(decision.multiplier, 1.0)
+        self.assertIn("mtf:weekly_aligned", decision.reasons)
+
+    def test_multi_timeframe_candle_blocks_weekly_daily_conflict(self):
+        row = pd.Series({
+            "ctx_1w_candle_bias": 1,
+            "ctx_1w_candle_confidence": 1.0,
+            "ctx_1d_candle_bias": -1,
+            "ctx_1d_candle_confidence": 1.0,
+            "ctx_4h_candle_bias": 1,
+            "ctx_4h_candle_confidence": 0.8,
+            "ctx_1h_candle_bias": 1,
+            "ctx_1h_candle_confidence": 0.8,
+            "base_candle_bias": 1,
+            "base_candle_confidence": 0.8,
+        })
+        decision = multi_timeframe_candle.multi_timeframe_candle_decision(row, side="long")
+        self.assertTrue(decision.block_new_entries)
+        self.assertEqual(decision.multiplier, 0.0)
+        self.assertIn("mtf:weekly_daily_conflict", decision.reasons)
+
+    def test_multi_timeframe_candle_blocks_late_daily_expansion(self):
+        row = pd.Series({
+            "ctx_1w_candle_bias": 1,
+            "ctx_1w_candle_confidence": 1.0,
+            "ctx_1d_candle_bias": 1,
+            "ctx_1d_candle_confidence": 1.0,
+            "ctx_1d_candle_atr_ratio": 2.0,
+            "ctx_4h_candle_bias": 1,
+            "ctx_4h_candle_confidence": 0.8,
+            "ctx_1h_candle_bias": 1,
+            "ctx_1h_candle_confidence": 0.8,
+            "base_candle_bias": 1,
+            "base_candle_confidence": 0.8,
+        })
+        decision = multi_timeframe_candle.multi_timeframe_candle_decision(row, side="long")
+        self.assertTrue(decision.block_new_entries)
+        self.assertIn("mtf:daily_late_extreme_expansion", decision.reasons)
+
+    def test_multi_timeframe_candle_blocks_naked_minute_trigger(self):
+        row = pd.Series({
+            "base_candle_bias": 1,
+            "base_candle_confidence": 1.0,
+        })
+        decision = multi_timeframe_candle.multi_timeframe_candle_decision(row, side="long")
+        self.assertTrue(decision.block_new_entries)
+        self.assertIn("mtf:no_higher_timeframe_context", decision.reasons)
+
+    def test_multi_timeframe_candle_features_detect_inside_bar_and_rejection(self):
+        idx = pd.date_range("2026-01-01", periods=3, freq="1h", tz="UTC")
+        raw = pd.DataFrame(
+            [
+                {"open": 100.0, "high": 110.0, "low": 90.0, "close": 105.0, "volume": 100.0},
+                {"open": 104.0, "high": 108.0, "low": 92.0, "close": 107.0, "volume": 120.0},
+                {"open": 104.0, "high": 106.0, "low": 95.0, "close": 105.5, "volume": 130.0},
+            ],
+            index=idx,
+        )
+        features = multi_timeframe_candle.add_candle_context_features(raw, prefix="ctx_1h_")
+        self.assertEqual(int(features.iloc[-1]["ctx_1h_candle_inside_bar"]), 1)
+        self.assertGreater(float(features.iloc[-1]["ctx_1h_candle_lower_wick_pct"]), 0.70)
+        self.assertGreaterEqual(int(features.iloc[-1]["ctx_1h_candle_bias"]), 0)
+
+    def test_urgent_exit_holds_large_loss_when_thesis_valid(self):
+        pos = {
+            "side": "long",
+            "entry": 100.0,
+            "sl": 90.0,
+            "size": 1.0,
+            "entry_equity": 100.0,
+            "atr": 5.0,
+            "liquidation_price": 20.0,
+        }
+        bar = pd.Series({
+            "open": 78.0,
+            "high": 80.0,
+            "low": 74.0,
+            "close": 75.0,
+            "atr": 5.0,
+            "volume": 100.0,
+            "volume_ma": 100.0,
+            "daily_trend": 1,
+            "weekly_trend": 1,
+            "ema_fast": 74.0,
+            "ema_slow": 73.0,
+            "regime": "trend",
+            "adx": 30.0,
+            "mtf_bias": "long",
+        })
+        decision = urgent_exit_policy.urgent_exit_decision(pos, bar)
+        self.assertFalse(decision.market_exit)
+        self.assertEqual(decision.reason, "thesis_valid_hold")
+        self.assertLess(decision.equity_loss_pct, config.URGENT_EXIT_ABSOLUTE_EQUITY_LOSS_PCT)
+
+    def test_urgent_exit_tolerates_thirty_pct_when_market_context_supports(self):
+        pos = {"side": "long", "entry": 100.0, "sl": 90.0, "size": 1.0, "entry_equity": 100.0, "atr": 5.0}
+        bar = pd.Series({
+            "open": 69.0,
+            "high": 72.0,
+            "low": 66.0,
+            "close": 68.0,
+            "atr": 5.0,
+            "daily_trend": 1,
+            "weekly_trend": 1,
+            "ema_fast": 67.0,
+            "ema_slow": 66.0,
+            "regime": "trend",
+            "adx": 30.0,
+            "mtf_bias": "long",
+            "news_bias": "long",
+        })
+        decision = urgent_exit_policy.urgent_exit_decision(pos, bar)
+        self.assertFalse(decision.market_exit)
+        self.assertEqual(decision.reason, "large_loss_thesis_supported_hold")
+        self.assertIn("support:daily", decision.reasons)
+
+    def test_urgent_exit_forces_absolute_fifty_pct_loss_cap(self):
+        pos = {"side": "long", "entry": 100.0, "sl": 90.0, "size": 1.0, "entry_equity": 100.0, "atr": 5.0}
+        bar = pd.Series({"open": 55.0, "high": 56.0, "low": 44.0, "close": 45.0, "atr": 5.0})
+        decision = urgent_exit_policy.urgent_exit_decision(pos, bar)
+        self.assertTrue(decision.market_exit)
+        self.assertIn("urgent:absolute_equity_loss", decision.reasons)
+
+    def test_urgent_exit_closes_thirty_pct_loss_when_thesis_invalid(self):
+        pos = {"side": "long", "entry": 100.0, "sl": 90.0, "size": 1.0, "entry_equity": 100.0, "atr": 5.0}
+        bar = pd.Series({
+            "open": 70.0,
+            "high": 71.0,
+            "low": 67.0,
+            "close": 68.0,
+            "atr": 5.0,
+            "daily_trend": -1,
+            "weekly_trend": -1,
+            "ema_fast": 72.0,
+            "ema_slow": 73.0,
+            "donchian_exit_low": 69.0,
+        })
+        decision = urgent_exit_policy.urgent_exit_decision(pos, bar)
+        self.assertTrue(decision.market_exit)
+        self.assertIn("urgent:max_thesis_loss", decision.reasons)
+        self.assertIn("thesis:daily_against", decision.reasons)
+
+    def test_urgent_exit_closes_thirty_pct_loss_without_supportive_context(self):
+        pos = {"side": "long", "entry": 100.0, "sl": 90.0, "size": 1.0, "entry_equity": 100.0, "atr": 5.0}
+        bar = pd.Series({
+            "open": 69.0,
+            "high": 72.0,
+            "low": 66.0,
+            "close": 68.0,
+            "atr": 5.0,
+            "daily_trend": 1,
+            "weekly_trend": 0,
+            "ema_fast": 72.0,
+            "ema_slow": 71.0,
+            "regime": "mixed",
+            "news_bias": "wait",
+        })
+        decision = urgent_exit_policy.urgent_exit_decision(pos, bar)
+        self.assertTrue(decision.market_exit)
+        self.assertIn("urgent:max_context_loss", decision.reasons)
+
+    def test_paper_runner_holds_soft_stop_when_thesis_valid(self):
+        idx = pd.date_range("2026-01-01", periods=3, freq="4h")
+        frame = pd.DataFrame(
+            [
+                {"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "atr": 5.0, "volume": 100.0, "volume_ma": 100.0},
+                {"open": 89.0, "high": 91.0, "low": 88.0, "close": 89.5, "atr": 5.0, "volume": 100.0, "volume_ma": 100.0, "daily_trend": 1, "weekly_trend": 1, "ema_fast": 88.0, "ema_slow": 87.0},
+                {"open": 90.0, "high": 92.0, "low": 89.0, "close": 91.0, "atr": 5.0, "volume": 100.0, "volume_ma": 100.0},
+            ],
+            index=idx,
+        )
+        state = {
+            "wallet": 1000.0,
+            "positions": {
+                "DOGE/USDT": {
+                    "symbol": "DOGE/USDT",
+                    "side": "long",
+                    "entry": 100.0,
+                    "size": 1.0,
+                    "sl": 90.0,
+                    "hard_sl": 70.0,
+                    "atr": 5.0,
+                    "extreme": 100.0,
+                    "entry_time": idx[0].isoformat(),
+                    "entry_equity": 100.0,
+                    "liquidation_price": 20.0,
+                }
+            },
+        }
+        trades, _closed = paper_runner._manage_positions(state, {"DOGE/USDT": frame})
+        self.assertEqual(trades, [])
+        self.assertIn("DOGE/USDT", state["positions"])
+        self.assertEqual(state["positions"]["DOGE/USDT"]["soft_stop_hold_reason"], "thesis_valid_hold")
 
     def test_candle_correlation_overlay_buckets_setup_context(self):
         row = pd.Series({
@@ -2916,6 +3298,131 @@ class SafetyTests(unittest.TestCase):
         with timeframe_sweep.temporary_scaled_periods("1h", enabled=False):
             self.assertEqual(config.DONCHIAN_PERIOD, old_donchian)
         self.assertEqual(config.DONCHIAN_PERIOD, old_donchian)
+
+    def _chart_pattern_frame(self):
+        idx = pd.date_range("2026-01-01", periods=25, freq="15min")
+        rows = []
+        for i in range(25):
+            rows.append({
+                "open": 10.0,
+                "high": 10.10 if i % 2 else 10.00,
+                "low": 9.50,
+                "close": 9.95 if i % 2 else 10.02,
+                "volume": 1000.0 + i,
+            })
+        return pd.DataFrame(rows, index=idx)
+
+    def test_chart_pattern_features_detect_close_confirmed_breakout(self):
+        frame = self._chart_pattern_frame()
+        frame.iloc[-1] = {
+            "open": 10.20,
+            "high": 10.85,
+            "low": 10.10,
+            "close": 10.75,
+            "volume": 2500.0,
+        }
+        features = chart_pattern_features.add_chart_pattern_features(frame, lookback=10)
+        last = features.iloc[-1]
+        self.assertEqual(int(last["pattern_breakout_up"]), 1)
+        self.assertGreater(last["pattern_score_long"], last["pattern_score_short"])
+        self.assertIn("pattern:range_breakout_up", last["pattern_reasons"])
+
+    def test_chart_pattern_features_flags_wick_fakeout(self):
+        frame = self._chart_pattern_frame()
+        frame.iloc[-1] = {
+            "open": 10.05,
+            "high": 10.65,
+            "low": 9.90,
+            "close": 10.02,
+            "volume": 1800.0,
+        }
+        features = chart_pattern_features.add_chart_pattern_features(frame, lookback=10)
+        last = features.iloc[-1]
+        self.assertEqual(int(last["pattern_wick_break_up"]), 1)
+        self.assertEqual(int(last["pattern_bias"]), -1)
+        self.assertIn("pattern:failed_breakout_up", last["pattern_reasons"])
+
+    def test_chart_pattern_features_detect_breakout_retest(self):
+        frame = self._chart_pattern_frame()
+        frame.iloc[-2] = {
+            "open": 10.10,
+            "high": 10.80,
+            "low": 10.00,
+            "close": 10.70,
+            "volume": 2200.0,
+        }
+        frame.iloc[-1] = {
+            "open": 10.65,
+            "high": 10.78,
+            "low": 10.08,
+            "close": 10.32,
+            "volume": 1400.0,
+        }
+        features = chart_pattern_features.add_chart_pattern_features(frame, lookback=10)
+        last = features.iloc[-1]
+        self.assertEqual(int(last["pattern_retest_long"]), 1)
+        self.assertIn("pattern:retest_long", last["pattern_reasons"])
+
+    def test_chart_pattern_features_do_not_use_future_rows(self):
+        frame = self._chart_pattern_frame()
+        first = chart_pattern_features.add_chart_pattern_features(frame, lookback=10)
+        changed = frame.copy()
+        changed.loc[changed.index[-3:], ["open", "high", "low", "close", "volume"]] = [
+            [20.0, 30.0, 5.0, 25.0, 9999.0],
+            [20.0, 30.0, 5.0, 25.0, 9999.0],
+            [20.0, 30.0, 5.0, 25.0, 9999.0],
+        ]
+        second = chart_pattern_features.add_chart_pattern_features(changed, lookback=10)
+        row = first.index[-5]
+        for column in ("pattern_range_high", "pattern_range_low", "pattern_breakout_up", "pattern_bias"):
+            self.assertEqual(first.loc[row, column], second.loc[row, column], column)
+
+    def test_social_signal_blocks_pump_language(self):
+        decision = social_signal_policy.classify_social_text(
+            "VIP pump DOGEUSDT 100x guaranteed no risk send USDT now",
+            platform="telegram",
+            source_tier="anonymous",
+            price_confirmation_score=0.9,
+            independent_confirmation_score=0.9,
+        )
+        self.assertEqual(decision.action, "block")
+        self.assertFalse(decision.can_open_trade)
+        self.assertIn("social:pump_or_scam_language", decision.reasons)
+
+    def test_social_signal_never_direct_opens_without_price_confirmation(self):
+        decision = social_signal_policy.classify_social_text(
+            "$LINK bullish breakout reclaim support",
+            platform="x_influencer",
+            source_tier="public",
+        )
+        self.assertIn(decision.action, {"observe", "alert_only"})
+        self.assertEqual(decision.bias, "long")
+        self.assertFalse(decision.can_open_trade)
+
+    def test_social_signal_allows_paper_context_only_with_confirmation(self):
+        decision = social_signal_policy.classify_social_text(
+            "$BTC bullish breakout reclaim support with volume confirmation",
+            platform="major_news",
+            source_tier="verified",
+            price_confirmation_score=0.8,
+            independent_confirmation_score=0.8,
+            source_diversity_score=0.7,
+            author_reputation=1.0,
+            historical_precision=1.0,
+        )
+        self.assertEqual(decision.action, "paper_long")
+        self.assertFalse(decision.can_open_trade)
+        self.assertIn("social:paper_context_only", decision.reasons)
+
+    def test_social_signal_extracts_allowlisted_symbols(self):
+        symbols = social_signal_policy.extract_symbols("DOGEUSDT $LINK BTC/USDT random PEPEUSDT")
+        self.assertEqual(symbols, ("LINK", "DOGE", "BTC"))
+
+    def test_social_signal_freshness_decay(self):
+        fresh = social_signal_policy.freshness_score("2026-05-04T10:00:00+00:00", "2026-05-04T10:00:00+00:00")
+        stale = social_signal_policy.freshness_score("2026-05-04T09:00:00+00:00", "2026-05-04T10:00:00+00:00")
+        self.assertGreater(fresh, stale)
+        self.assertLess(stale, 0.2)
 
 
 if __name__ == "__main__":
