@@ -26,6 +26,7 @@ import exit_ladder
 import exchange_filters
 import flow_data
 import carry_research
+import funding_predictability_report
 import go_live_preflight
 import live_state
 import order_manager
@@ -2046,6 +2047,43 @@ class SafetyTests(unittest.TestCase):
         self.assertIn(best["enter_rate"], {0.00005, 0.00015})
         self.assertGreater(best["net_vs_earn_pct"], -0.1)
 
+    def test_funding_predictability_future_sum_excludes_current_print(self):
+        idx = pd.date_range("2026-01-01", periods=5, freq="8h", tz="UTC")
+        values = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0], index=idx)
+        future = funding_predictability_report.future_sum(values, horizon=2)
+        self.assertEqual(float(future.iloc[0]), 5.0)
+        self.assertEqual(float(future.iloc[1]), 7.0)
+        self.assertEqual(len(future), 3)
+
+    def test_funding_predictability_detects_oos_persistent_signal(self):
+        idx = pd.date_range("2026-01-01", periods=120, freq="8h", tz="UTC")
+        pattern = [0.0003] * 8 + [-0.0001] * 8
+        rates = pd.DataFrame({"funding_rate": (pattern * 8)[: len(idx)]}, index=idx)
+        summary, folds = funding_predictability_report.walk_forward_predictability(
+            rates,
+            symbol="DOGE/USDT:USDT",
+            signal_window=3,
+            horizon=3,
+            top_quantile=0.6,
+            train_samples=48,
+            test_samples=24,
+            roll_samples=24,
+            min_selected=4,
+        )
+        self.assertTrue(summary["ok"])
+        self.assertGreaterEqual(summary["ok_folds"], 1)
+        self.assertGreater(summary["avg_edge_vs_baseline_pct"], 0.0)
+        self.assertTrue(folds)
+
+    def test_funding_predictability_rejects_empty_rates(self):
+        summary, folds = funding_predictability_report.walk_forward_predictability(
+            pd.DataFrame(columns=["funding_rate"]),
+            symbol="DOGE/USDT:USDT",
+        )
+        self.assertFalse(summary["ok"])
+        self.assertEqual(summary["reason"], "no_prediction_frame")
+        self.assertEqual(folds, [])
+
     def test_candle_correlation_overlay_buckets_setup_context(self):
         row = pd.Series({
             "candle_structure_alignment": "contra",
@@ -2180,10 +2218,12 @@ class SafetyTests(unittest.TestCase):
             },
             pbo={"pbo": 0.1429},
             candle_wf={"delta_total_pnl": 0.0, "reduced_overlay_trades": 0},
+            funding_poc={"passing_symbols": 0},
         )
         self.assertEqual(report["decision"], "benchmark_only")
         self.assertFalse(report["live_allowed"])
         self.assertIn("trend_candle_overlay_no_activation_case", report["negatives"])
+        self.assertIn("predictive_funding_poc_zero_pass", report["negatives"])
 
     def test_trend_quality_token_parser_ignores_empty_values(self):
         self.assertEqual(trend_quality_report.reason_tokens(" market:trend | | adx:strong "), ("market:trend", "adx:strong"))

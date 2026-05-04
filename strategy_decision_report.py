@@ -18,12 +18,15 @@ def strategy_verdict(
     risk_adjusted: dict[str, Any],
     pbo: dict[str, Any],
     candle_wf: dict[str, Any],
+    funding_poc: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    funding_poc = funding_poc or {}
     overfit = risk_adjusted.get("overfit_controls", {})
     sharpe_haircut = overfit.get("sharpe_haircut", {})
     degradation = overfit.get("walk_forward_degradation", {})
     candle_delta = float(candle_wf.get("delta_total_pnl", 0.0) or 0.0)
     reduced = int(candle_wf.get("reduced_overlay_trades", 0) or 0)
+    funding_passes = funding_poc.get("passing_symbols")
 
     positives: list[str] = []
     negatives: list[str] = []
@@ -39,6 +42,8 @@ def strategy_verdict(
         negatives.append("severe_train_test_degradation")
     if candle_delta <= 0.0 and reduced == 0:
         negatives.append("trend_candle_overlay_no_activation_case")
+    if funding_passes == 0:
+        negatives.append("predictive_funding_poc_zero_pass")
 
     if "deflated_sharpe_proxy_negative" in negatives or "trend_candle_overlay_no_activation_case" in negatives:
         decision = "benchmark_only"
@@ -51,11 +56,12 @@ def strategy_verdict(
         "paper_change_allowed": False,
         "positives": positives,
         "negatives": negatives,
-        "next_research_lane": "predictive_funding_poc",
+        "next_research_lane": "none_executor_ready",
         "plain_english": (
             "Keep Donchian as a benchmark/research line, not an active live-money strategy. "
             "Do not promote trend/candle/correlation overlays because the true entry-time "
-            "walk-forward produced no activation case."
+            "walk-forward produced no activation case. Do not build a funding executor unless "
+            "a stricter future PoC clears OOS fold stability and cost gates."
         ),
     }
 
@@ -85,13 +91,28 @@ def build_report(
     risk_adjusted_path: str = "risk_adjusted_report.json",
     pbo_path: str = "pbo_report.json",
     candle_wf_path: str = "trend_candle_entry_walk_forward.json",
+    funding_poc_path: str = "funding_predictability_report.json",
     carry_doc: str = "docs/CARRY_RESEARCH_2026_05_04.md",
+    funding_poc_doc: str = "docs/FUNDING_PREDICTABILITY_2026_05_04.md",
     holdout_doc: str = "docs/PORTFOLIO_HOLDOUT.md",
 ) -> dict[str, Any]:
     risk_adjusted = load_json(risk_adjusted_path)
     pbo = load_json(pbo_path)
     candle_wf = load_json(candle_wf_path)
-    verdict = strategy_verdict(risk_adjusted=risk_adjusted, pbo=pbo, candle_wf=candle_wf)
+    funding_payload = load_json(funding_poc_path)
+    funding_rows = funding_payload.get("summary", []) if funding_payload else []
+    funding_poc = {
+        "symbols_scanned": len(funding_rows),
+        "passing_symbols": sum(1 for row in funding_rows if row.get("ok")) if funding_rows else None,
+        "fold_rows": len(funding_payload.get("folds", [])) if funding_payload else 0,
+        "source": funding_poc_doc,
+    }
+    verdict = strategy_verdict(
+        risk_adjusted=risk_adjusted,
+        pbo=pbo,
+        candle_wf=candle_wf,
+        funding_poc=funding_poc,
+    )
     equity_metrics = risk_adjusted.get("equity_metrics", {})
     sharpe_haircut = risk_adjusted.get("overfit_controls", {}).get("sharpe_haircut", {})
     degradation = risk_adjusted.get("overfit_controls", {}).get("walk_forward_degradation", {})
@@ -125,6 +146,7 @@ def build_report(
             "summary": "simple_binance_spot_perp_carry_zero_pass",
             "source": carry_doc,
         },
+        "funding_predictability_poc": funding_poc,
         "holdout": {
             "summary": "final_500_bar_holdout_positive_but_not_live_approval",
             "source": holdout_doc,
@@ -137,6 +159,7 @@ def write_markdown(report: dict[str, Any], path: str | Path) -> None:
     baseline = report["donchian_baseline"]
     pbo = report["pbo"]
     candle = report["trend_candle_entry_wf"]
+    funding = report["funding_predictability_poc"]
     lines = [
         "# Strategy Decision - 2026-05-04",
         "",
@@ -149,7 +172,7 @@ def write_markdown(report: dict[str, Any], path: str | Path) -> None:
         "- Keep live trading blocked.",
         "- Keep Donchian as a benchmark/research line only.",
         "- Do not activate trend/candle/correlation reducers in paper/testnet.",
-        "- If research continues, use a small predictive-funding PoC next; no executor.",
+        "- Do not build a funding executor from the current predictive-funding PoC.",
         "",
         "## Evidence",
         "",
@@ -166,6 +189,9 @@ def write_markdown(report: dict[str, Any], path: str | Path) -> None:
                 {"metric": "pbo_avg_oos_rank_pct", "value": pbo.get("avg_oos_rank_pct")},
                 {"metric": "trend_candle_oos_delta_pnl", "value": candle.get("delta_total_pnl")},
                 {"metric": "trend_candle_reduced_trades", "value": candle.get("reduced_overlay_trades")},
+                {"metric": "funding_poc_symbols_scanned", "value": funding.get("symbols_scanned")},
+                {"metric": "funding_poc_passing_symbols", "value": funding.get("passing_symbols")},
+                {"metric": "funding_poc_fold_rows", "value": funding.get("fold_rows")},
             ],
             ["metric", "value"],
         ),
@@ -176,14 +202,16 @@ def write_markdown(report: dict[str, Any], path: str | Path) -> None:
         "selected walk-forward evidence are not garbage. It is still not an active",
         "alpha decision because the conservative Sharpe haircut/DSR proxy fails,",
         "train/test degradation is severe, simple Binance carry produced zero",
-        "passing candidates, and the true entry-time trend/candle reducer found no",
+        "passing candidates, the predictive-funding PoC produced zero strict",
+        "passing symbols, and the true entry-time trend/candle reducer found no",
         "train-proven bad setup to exploit.",
         "",
         "## Next Step",
         "",
-        "Run only a small predictive-funding research PoC if continuing. Do not",
-        "spend more engineering time on live execution gates until a new alpha path",
-        "has evidence after costs and walk-forward validation.",
+        "Do not spend more engineering time on live execution gates until a new",
+        "alpha path has evidence after costs and walk-forward validation. The",
+        "remaining research choices are stricter funding-model variants,",
+        "cross-exchange basis research, or keeping Donchian only as a benchmark.",
     ]
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -193,6 +221,7 @@ def main() -> int:
     parser.add_argument("--risk-adjusted", default="risk_adjusted_report.json")
     parser.add_argument("--pbo", default="pbo_report.json")
     parser.add_argument("--candle-wf", default="trend_candle_entry_walk_forward.json")
+    parser.add_argument("--funding-poc", default="funding_predictability_report.json")
     parser.add_argument("--json-out", default="strategy_decision_report.json")
     parser.add_argument("--md-out", default="docs/STRATEGY_DECISION_2026_05_04.md")
     args = parser.parse_args()
@@ -200,6 +229,7 @@ def main() -> int:
         risk_adjusted_path=args.risk_adjusted,
         pbo_path=args.pbo,
         candle_wf_path=args.candle_wf,
+        funding_poc_path=args.funding_poc,
     )
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")

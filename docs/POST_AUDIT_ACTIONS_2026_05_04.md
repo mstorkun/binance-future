@@ -47,6 +47,9 @@ approval.
   true entry-time side-by-side walk-forward through `portfolio_backtest.py`.
 - Added `strategy_decision_report.py` to consolidate the current Donchian,
   carry, trend/candle, PBO, and risk-adjusted evidence into a keep/kill report.
+- Added `funding_predictability_report.py` as a research-only OOS funding
+  persistence PoC. It learns thresholds on prior funding prints and validates
+  only on future funding windows; it does not create an executor.
 - Updated `config.example.py` to keep API-key examples env-only.
 
 ## Still Blocked
@@ -62,6 +65,8 @@ approval.
   exists yet.
 - Static and dynamic-threshold carry scans both produced `0` passing candidates
   under current cost and `6%` USDT benchmark assumptions.
+- Predictive-funding PoC scanned `42` liquid spot-backed USDT perpetuals and
+  produced `0` strict passing symbols with a minimum `3` OOS-fold gate.
 - Trend-quality attribution is diagnostic only; it is not wired as an active
   signal, filter, or risk gate.
 - Candle-structure attribution is diagnostic only; it is not wired as an active
@@ -75,8 +80,8 @@ approval.
 
 ## Validation
 
-- Safety/unit test count after follow-up carry, trend-quality, and candle-structure research pass: `123 passed, 3 subtests passed` for
-  both `tests/test_safety.py` and the full `python -m pytest -q` suite.
+- Safety/unit test count after follow-up carry, trend-quality, candle-structure,
+  and funding-predictability research pass: `133 passed, 3 subtests passed`.
 - `python go_live_preflight.py --json` returns `go_live_blocked`, as expected.
   Current blockers include `TESTNET=True`, `LIVE_TRADING_APPROVED=False`,
   runtime-profile mismatch, `USER_DATA_STREAM_READY=False`, and safety flags
@@ -89,3 +94,8 @@ approval.
   `6002.34` PnL, PF `5.9885`, max DD `505.72`, and `0` reduced overlay trades.
 - `python strategy_decision_report.py` returned verdict `benchmark_only` with
   `live_allowed=false` and `paper_change_allowed=false`.
+- `python funding_predictability_report.py --auto-universe --days 180 ...`
+  returned `42` scanned symbols, `203` fold rows, and `0` strict passing
+  symbols. Short-history rows such as DOT/WLD were rejected as
+  `insufficient_oos_folds`; longer-history rows such as AXL/BABY/ORCA failed
+  consistent OOS predictive-edge requirements.

@@ -16,9 +16,9 @@ strategy, risk, backtest, paper, testnet, or live-trading changes.
 - Live trading must stay blocked until paper/testnet/fill/monitoring gates pass.
 - Do not treat any result as investment advice.
 - After the 2026-05-04 12-agent audit, treat Donchian breakout as a benchmark
-  strategy until stronger out-of-sample evidence appears. The new preferred
-  research lane is funding-rate carry / delta-neutral, starting with scanners
-  and backtests before any executor work.
+  strategy until stronger out-of-sample evidence appears. Funding-rate carry /
+  delta-neutral research has scanner and predictive-PoC coverage now, but no
+  executor-ready edge has passed strict OOS gates.
 
 ## Current Strategy
 
@@ -117,8 +117,8 @@ Other previous validation context:
   `python bias_audit.py --symbol TRX/USDT --years 1 --sample-step 96` all
   returned `OK - no indicator drift detected`.
 - Unit tests passed:
-  `python -m pytest -q` -> `123` tests passed plus `3` subtests after
-  post-audit safety additions.
+  `python -m pytest -q` -> `133` tests passed plus `3` subtests after
+  post-audit safety and funding-predictability additions.
   Covered areas include client order id duplicate classification,
   fetch-by-client-id behavior, partial-fill handling, trailing stop cleanup,
   hard-stop precision, reduce-only market
@@ -159,6 +159,14 @@ Other previous validation context:
   entry, `13` active funding periods, `-0.3764%` net after cost, and `-0.4477%`
   versus the prorated `6%` USDT benchmark. Do not build a live carry executor
   from the simple Binance spot/perp carry model.
+- Funding predictability PoC:
+  `python funding_predictability_report.py --auto-universe --days 180 --min-quote-volume-usdt 50000000 --max-symbols 80 --signal-window 3 --horizon 3 --top-quantile 0.8 --train-samples 360 --test-samples 90 --roll-samples 90 --min-selected 10 --min-folds 3 --out funding_predictability_results.csv --folds-out funding_predictability_folds.csv --universe-out funding_predictability_universe.csv --json-out funding_predictability_report.json --md-out docs/FUNDING_PREDICTABILITY_2026_05_04.md`
+  scanned `42` liquid spot-backed USDT perpetuals and wrote
+  `docs/FUNDING_PREDICTABILITY_2026_05_04.md`. Strict pass count: `0`. Top
+  short-history apparent edges such as DOT/WLD were rejected as
+  `insufficient_oos_folds`; longer-history rows such as AXL/BABY/ORCA failed
+  consistent OOS predictive-edge requirements. Do not build a funding executor
+  from this PoC.
 - Trend-quality attribution:
   `python trend_quality_report.py --trades portfolio_trades.csv --json-out trend_quality_report.json --md-out docs/TREND_QUALITY_REPORT_2026_05_04.md --min-token-trades 10`
   is report-only and does not change bot behavior. Latest active portfolio
@@ -204,11 +212,11 @@ Other previous validation context:
   `docs/STRATEGY_DECISION_2026_05_04.md`. Current verdict is
   `benchmark_only`: keep Donchian as a benchmark/research line, keep live
   blocked, do not activate trend/candle/correlation reducers in paper/testnet,
-  and only continue with a small predictive-funding PoC if more alpha research
-  is desired. Positive evidence remains useful for benchmarking, but the
-  deflated-Sharpe proxy is negative, train/test degradation is severe, simple
-  carry has `0` passing candidates, and true entry-time trend/candle WF found
-  no activation case.
+  and do not build a funding executor from the current predictive-funding PoC.
+  Positive evidence remains useful for benchmarking, but the deflated-Sharpe
+  proxy is negative, train/test degradation is severe, simple carry has `0`
+  passing candidates, predictive funding has `0` strict passing symbols, and
+  true entry-time trend/candle WF found no activation case.
 - Overfit-control report:
   `python risk_adjusted_report.py` now includes conservative proxies. Latest
   output: nominal Sharpe `3.6935`, `455` candidate sweep tests, Bonferroni alpha
