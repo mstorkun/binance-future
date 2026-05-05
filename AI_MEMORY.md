@@ -708,6 +708,17 @@ Other previous validation context:
   timeframe/regime-gate hypothesis, but not a paper/live rule yet. Next valid
   experiment is a V2 regime-permission overlay, not arbitrary timeframe
   switching.
+- 2026-05-05 Volatility Breakout V2 regime-permission overlay: added BTC 72h
+  volatility, BTC 4h ADX, BTC shock, and BTC absolute funding gates to the
+  research harness only. Strict rerun used the same fixed 8-perp universe and
+  12-fold walk-forward. Result remains `benchmark_only`: severe total return
+  improved from V1 `-73.2745%` to `-28.2179%`, max DD improved from `75.2624%`
+  to `35.0186%`, and positive folds improved from `1/12` to `4/12`, but CAGR
+  stayed negative (`-18.2658%`), PBO worsened to `0.5`, DSR proxy was `-5.0906`,
+  Sortino was `-0.3894`, tail capture was `0.3178`, crisis alpha did not pass,
+  and sample fell to `107` trades. Diagnostics show the better folds are more
+  BTC-bearish / BTC-4h-short-leaning, but the evidence is still not enough for
+  paper, testnet, or live behavior.
 
 ## Runtime / Worktree Notes
 

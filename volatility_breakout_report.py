@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+import carry_research
 from hurst_mtf_momentum_report import (
     SCENARIOS,
     UNIVERSE,
@@ -44,13 +45,24 @@ class Candidate:
     min_breakout_atr: float = 0.05
     max_chase_atr: float = 1.50
     min_range_atr: float = 2.0
+    btc_vol_72h_max: float = 999.0
+    btc_h4_adx_max: float = 999.0
+    btc_abs_shock_max: float = 4.0
+    btc_funding_abs_max: float = 999.0
 
     @property
     def name(self) -> str:
-        return (
+        name = (
             f"BO{self.breakout_lookback}|SQ{self.squeeze_lookback}-{self.squeeze_pctile_max:.2f}|"
             f"VZ{self.volume_z_min:.1f}|ADX{self.h4_adx_min:.0f}|TV{self.target_vol:.2f}"
         )
+        if self.btc_vol_72h_max < 900.0 or self.btc_h4_adx_max < 900.0 or self.btc_funding_abs_max < 900.0:
+            name = (
+                f"{name}|BV{self.btc_vol_72h_max:.2f}|"
+                f"BADX{self.btc_h4_adx_max:.0f}|BS{self.btc_abs_shock_max:.1f}|"
+                f"BF{self.btc_funding_abs_max:.5f}"
+            )
+        return name
 
 
 @dataclass
@@ -76,6 +88,9 @@ class FeatureArrays:
     daily_side: np.ndarray
     btc_side: np.ndarray
     btc_shock_z: np.ndarray
+    btc_vol_72h: np.ndarray
+    btc_h4_adx: np.ndarray
+    btc_funding_rate: np.ndarray
     realized_vol_30d: np.ndarray
     breakout_high: dict[int, np.ndarray]
     breakout_low: dict[int, np.ndarray]
@@ -111,17 +126,39 @@ def _funding_rate_per_1h(scenario: dict[str, float]) -> float:
     return float(getattr(config, "DEFAULT_FUNDING_RATE_PER_8H", 0.0001)) * float(scenario.get("funding_mult", 1.0)) / 8.0
 
 
-def prepare_symbol(symbol: str, df_1h: pd.DataFrame, btc_1h: pd.DataFrame) -> PreparedSymbol:
+def prepare_symbol(
+    symbol: str,
+    df_1h: pd.DataFrame,
+    btc_1h: pd.DataFrame,
+    *,
+    btc_funding: pd.DataFrame | None = None,
+) -> PreparedSymbol:
     df_1h = df_1h.sort_index()
     btc_1h = btc_1h.sort_index()
     df_4h = resample_ohlcv(df_1h, "4h")
     df_1d = resample_ohlcv(df_1h, "1D")
     features = signal.build_signal_frame(df_1h=df_1h, df_4h=df_4h, df_1d=df_1d, btc_1h=btc_1h)
+    if btc_funding is not None and not btc_funding.empty and "funding_rate" in btc_funding:
+        funding = pd.to_numeric(btc_funding["funding_rate"], errors="coerce")
+        funding.index = pd.to_datetime(funding.index, utc=True)
+        features["btc_funding_rate"] = funding.sort_index().reindex(features.index, method="ffill").fillna(0.0)
+    else:
+        features["btc_funding_rate"] = 0.0
     features["symbol"] = symbol
     return PreparedSymbol(symbol=symbol, df_1h=df_1h, df_4h=df_4h, df_1d=df_1d, features=features)
 
 
-def generate_candidates(max_candidates: int | None = None) -> list[Candidate]:
+def generate_candidates(max_candidates: int | None = None, *, regime_v2: bool = False) -> list[Candidate]:
+    breakout_lookbacks = (72,) if regime_v2 else signal.BREAKOUT_LOOKBACKS
+    squeeze_lookbacks = signal.SQUEEZE_LOOKBACKS
+    squeeze_pctiles = (0.15, 0.25) if regime_v2 else (0.15, 0.25, 0.35)
+    volume_z_values = (1.2, 1.8) if regime_v2 else (0.8, 1.2, 1.8)
+    h4_adx_values = (15.0, 20.0)
+    target_vol_values = (0.45,) if regime_v2 else (0.45, 0.60)
+    btc_vol_values = (0.45, 0.55) if regime_v2 else (999.0,)
+    btc_h4_adx_values = (26.0, 30.0) if regime_v2 else (999.0,)
+    btc_abs_shock_values = (3.0, 4.0) if regime_v2 else (4.0,)
+    btc_funding_abs_values = (0.00012, 0.00020) if regime_v2 else (999.0,)
     rows = [
         Candidate(
             breakout_lookback=breakout_lookback,
@@ -130,13 +167,21 @@ def generate_candidates(max_candidates: int | None = None) -> list[Candidate]:
             volume_z_min=volume_z_min,
             h4_adx_min=h4_adx_min,
             target_vol=target_vol,
+            btc_vol_72h_max=btc_vol_72h_max,
+            btc_h4_adx_max=btc_h4_adx_max,
+            btc_abs_shock_max=btc_abs_shock_max,
+            btc_funding_abs_max=btc_funding_abs_max,
         )
-        for breakout_lookback in signal.BREAKOUT_LOOKBACKS
-        for squeeze_lookback in signal.SQUEEZE_LOOKBACKS
-        for squeeze_pctile_max in (0.15, 0.25, 0.35)
-        for volume_z_min in (0.8, 1.2, 1.8)
-        for h4_adx_min in (15.0, 20.0)
-        for target_vol in (0.45, 0.60)
+        for breakout_lookback in breakout_lookbacks
+        for squeeze_lookback in squeeze_lookbacks
+        for squeeze_pctile_max in squeeze_pctiles
+        for volume_z_min in volume_z_values
+        for h4_adx_min in h4_adx_values
+        for target_vol in target_vol_values
+        for btc_vol_72h_max in btc_vol_values
+        for btc_h4_adx_max in btc_h4_adx_values
+        for btc_abs_shock_max in btc_abs_shock_values
+        for btc_funding_abs_max in btc_funding_abs_values
     ]
     if max_candidates is not None and max_candidates > 0:
         rows = rows[: int(max_candidates)]
@@ -192,6 +237,9 @@ def build_backtest_data(prepared: dict[str, PreparedSymbol], index: pd.DatetimeI
             daily_side=_float_array(features, "daily_side"),
             btc_side=_float_array(features, "btc_side"),
             btc_shock_z=_float_array(features, "btc_shock_z"),
+            btc_vol_72h=_float_array(features, "btc_vol_72h"),
+            btc_h4_adx=_float_array(features, "btc_h4_adx"),
+            btc_funding_rate=_float_array(features, "btc_funding_rate"),
             realized_vol_30d=_float_array(features, "realized_vol_30d"),
             breakout_high=breakout_high,
             breakout_low=breakout_low,
@@ -217,7 +265,10 @@ def candidate_signal_sides(data: BacktestData, candidate: Candidate) -> dict[str
             & (arrays.h1_volume_z >= float(candidate.volume_z_min))
             & (arrays.h4_adx >= float(candidate.h4_adx_min))
             & (arrays.breakout_range_atr[breakout_lookback] >= float(candidate.min_range_atr))
-            & (np.abs(arrays.btc_shock_z) <= 4.0)
+            & (np.abs(arrays.btc_shock_z) <= float(candidate.btc_abs_shock_max))
+            & (arrays.btc_vol_72h <= float(candidate.btc_vol_72h_max))
+            & (arrays.btc_h4_adx <= float(candidate.btc_h4_adx_max))
+            & (np.abs(arrays.btc_funding_rate) <= float(candidate.btc_funding_abs_max))
         )
         long_ok = (
             base_ok
@@ -609,6 +660,10 @@ def run_walk_forward(
                     "volume_z_min": round(float(candidate.volume_z_min), 6),
                     "h4_adx_min": round(float(candidate.h4_adx_min), 6),
                     "target_vol": round(float(candidate.target_vol), 6),
+                    "btc_vol_72h_max": round(float(candidate.btc_vol_72h_max), 6),
+                    "btc_h4_adx_max": round(float(candidate.btc_h4_adx_max), 6),
+                    "btc_abs_shock_max": round(float(candidate.btc_abs_shock_max), 6),
+                    "btc_funding_abs_max": round(float(candidate.btc_funding_abs_max), 8),
                     "selected": False,
                 }
             )
@@ -638,6 +693,10 @@ def run_walk_forward(
                 "volume_z_min": round(float(selected.volume_z_min), 6),
                 "h4_adx_min": round(float(selected.h4_adx_min), 6),
                 "target_vol": round(float(selected.target_vol), 6),
+                "btc_vol_72h_max": round(float(selected.btc_vol_72h_max), 6),
+                "btc_h4_adx_max": round(float(selected.btc_h4_adx_max), 6),
+                "btc_abs_shock_max": round(float(selected.btc_abs_shock_max), 6),
+                "btc_funding_abs_max": round(float(selected.btc_funding_abs_max), 8),
             }
         )
         for row in matrix_rows:
@@ -679,6 +738,10 @@ def run_walk_forward(
                 "volume_z_min": round(float(selected.volume_z_min), 6),
                 "h4_adx_min": round(float(selected.h4_adx_min), 6),
                 "target_vol": round(float(selected.target_vol), 6),
+                "btc_vol_72h_max": round(float(selected.btc_vol_72h_max), 6),
+                "btc_h4_adx_max": round(float(selected.btc_h4_adx_max), 6),
+                "btc_abs_shock_max": round(float(selected.btc_abs_shock_max), 6),
+                "btc_funding_abs_max": round(float(selected.btc_funding_abs_max), 8),
             }
             scenario_rows.append(scenario_row)
             if scenario_name == "severe":
@@ -724,8 +787,24 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
     selected = report["selected"].to_dict(orient="records") if not report["selected"].empty else []
     scenarios = report["scenarios"].to_dict(orient="records") if not report["scenarios"].empty else []
     checks = [{"gate": key, "pass": value} for key, value in strict["checks"].items()]
+    is_v2 = "V2" in str(path).upper()
+    title = "Volatility Breakout V2 Regime Gate Report - 2026-05-05" if is_v2 else "Volatility Breakout V1 Report - 2026-05-05"
+    method = [
+        "Methodology: fixed 8-perp universe, 1h entries, recent Bollinger-bandwidth",
+        "squeeze, volume-confirmed 1h range breakout, 4h trend/ADX alignment, BTC",
+        "market-leader direction gate, 12-fold train/test walk-forward, purge gap,",
+        "severe cost stress, PBO matrix, concentration, tail-capture, and crisis-alpha checks.",
+    ]
+    if is_v2:
+        method.extend(
+            [
+                "V2 keeps the V1 signal family but adds BTC regime-permission gates:",
+                "BTC 72h volatility max, BTC 4h ADX max, BTC shock max, and BTC",
+                "absolute funding max. If a gate fails, the candidate stays flat.",
+            ]
+        )
     lines = [
-        "# Volatility Breakout V1 Report - 2026-05-05",
+        f"# {title}",
         "",
         "Status: research-only. This does not enable paper, testnet, or live execution.",
         "",
@@ -733,10 +812,7 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
         "",
         f"Strict status: `{strict['status']}`",
         "",
-        "Methodology: fixed 8-perp universe, 1h entries, recent Bollinger-bandwidth",
-        "squeeze, volume-confirmed 1h range breakout, 4h trend/ADX alignment, BTC",
-        "market-leader direction gate, 12-fold train/test walk-forward, purge gap,",
-        "severe cost stress, PBO matrix, concentration, tail-capture, and crisis-alpha checks.",
+        *method,
         "",
         "## Strict Gates",
         "",
@@ -776,6 +852,10 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
                 "embargo_bars",
                 "test_start",
                 "test_end",
+                "btc_vol_72h_max",
+                "btc_h4_adx_max",
+                "btc_abs_shock_max",
+                "btc_funding_abs_max",
             ],
         ),
         "",
@@ -783,7 +863,20 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
         "",
         markdown_table(
             scenarios,
-            ["period", "scenario", "candidate", "trades", "total_return_pct", "max_dd_pct", "sortino", "profit_factor"],
+            [
+                "period",
+                "scenario",
+                "candidate",
+                "trades",
+                "total_return_pct",
+                "max_dd_pct",
+                "sortino",
+                "profit_factor",
+                "btc_vol_72h_max",
+                "btc_h4_adx_max",
+                "btc_abs_shock_max",
+                "btc_funding_abs_max",
+            ],
         ),
         "",
         "## Decision",
@@ -809,6 +902,7 @@ def main() -> int:
     parser.add_argument("--purge-bars", type=int, default=36)
     parser.add_argument("--embargo-bars", type=int, default=0)
     parser.add_argument("--max-candidates", type=int, default=0)
+    parser.add_argument("--regime-v2", action="store_true", help="Enable V2 BTC regime-permission candidate grid.")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--progress-every-candidates", type=int, default=24)
     parser.add_argument("--out", default="volatility_breakout_v1_results.csv")
@@ -835,14 +929,27 @@ def main() -> int:
     btc_1h = raw.get(btc_symbol)
     if btc_1h is None or btc_1h.empty:
         raise RuntimeError("BTC/USDT:USDT data is required for the BTC market-leader gate.")
+    if args.regime_v2:
+        try:
+            btc_funding = carry_research.fetch_funding_history(exchange, btc_symbol, days=days)
+            if not btc_funding.empty:
+                btc_funding.index = pd.to_datetime(btc_funding.index, utc=True)
+        except Exception as exc:
+            _log_progress(progress, f"btc funding unavailable; using zero funding-rate gate input reason={exc}")
+            btc_funding = pd.DataFrame(columns=["funding_rate"])
+    else:
+        btc_funding = pd.DataFrame(columns=["funding_rate"])
     prepared: dict[str, PreparedSymbol] = {}
     for symbol_name, df_1h in raw.items():
-        prepared[symbol_name] = prepare_symbol(symbol_name, df_1h, btc_1h)
+        prepared[symbol_name] = prepare_symbol(symbol_name, df_1h, btc_1h, btc_funding=btc_funding)
         _log_progress(progress, f"prepared symbol={symbol_name} bars_1h={len(df_1h)} feature_bars={len(prepared[symbol_name].features)}")
 
-    candidates = generate_candidates(max_candidates=args.max_candidates or None)
+    candidates = generate_candidates(max_candidates=args.max_candidates or None, regime_v2=bool(args.regime_v2))
     if args.max_candidates:
-        _log_progress(progress, f"debug max-candidates active candidates={len(candidates)} strict_full_candidates={len(generate_candidates())}")
+        _log_progress(
+            progress,
+            f"debug max-candidates active candidates={len(candidates)} strict_full_candidates={len(generate_candidates(regime_v2=bool(args.regime_v2)))}",
+        )
     report = run_walk_forward(
         prepared,
         candidates=candidates,

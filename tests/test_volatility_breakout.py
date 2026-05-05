@@ -45,7 +45,7 @@ class VolatilityBreakoutTests(unittest.TestCase):
         second = volatility_breakout_signal.build_signal_frame(df_1h=changed_1h, df_4h=changed_4h, df_1d=changed_1d, btc_1h=changed_1h)
 
         row = first.index[-60]
-        for column in ("bo24_high", "bo24_low", "sq120_recent_squeeze", "h4_side", "btc_side", "daily_side"):
+        for column in ("bo24_high", "bo24_low", "sq120_recent_squeeze", "h4_side", "btc_side", "btc_vol_72h", "btc_h4_adx", "daily_side"):
             left = first.loc[row, column]
             right = second.loc[row, column]
             if pd.isna(left) and pd.isna(right):
@@ -54,6 +54,7 @@ class VolatilityBreakoutTests(unittest.TestCase):
 
     def test_candidate_grid_count_and_debug_cap(self):
         self.assertEqual(len(volatility_breakout_report.generate_candidates()), 216)
+        self.assertEqual(len(volatility_breakout_report.generate_candidates(regime_v2=True)), 256)
         capped = volatility_breakout_report.generate_candidates(max_candidates=7)
         self.assertEqual(len(capped), 7)
         self.assertEqual(capped[0].breakout_lookback, 24)
@@ -74,6 +75,9 @@ class VolatilityBreakoutTests(unittest.TestCase):
             daily_side=np.array([1.0, -1.0, 1.0]),
             btc_side=np.array([1.0, -1.0, -1.0]),
             btc_shock_z=np.array([1.0, -1.0, 1.0]),
+            btc_vol_72h=np.array([0.40, 0.40, 0.40]),
+            btc_h4_adx=np.array([24.0, 24.0, 24.0]),
+            btc_funding_rate=np.array([0.00001, -0.00001, 0.00001]),
             realized_vol_30d=np.array([0.50, 0.50, 0.50]),
             breakout_high={24: zeros, 48: zeros, 72: zeros},
             breakout_low={24: zeros, 48: zeros, 72: zeros},
@@ -99,6 +103,54 @@ class VolatilityBreakoutTests(unittest.TestCase):
         )
         sides = volatility_breakout_report.candidate_signal_sides(data, candidate)["BTC/USDT:USDT"].tolist()
         self.assertEqual(sides, [1, -1, 0])
+
+    def test_regime_v2_gate_blocks_bad_btc_context(self):
+        index = pd.date_range("2026-01-01", periods=1, freq="1h", tz="UTC")
+        arrays = volatility_breakout_report.FeatureArrays(
+            symbol="BTC/USDT:USDT",
+            entry_open=np.array([100.0]),
+            entry_high=np.array([101.0]),
+            entry_low=np.array([99.0]),
+            entry_close=np.array([100.0]),
+            h1_atr=np.array([1.0]),
+            h1_volume_z=np.array([1.5]),
+            h4_side=np.array([1.0]),
+            h4_adx=np.array([22.0]),
+            daily_side=np.array([1.0]),
+            btc_side=np.array([1.0]),
+            btc_shock_z=np.array([1.0]),
+            btc_vol_72h=np.array([0.70]),
+            btc_h4_adx=np.array([35.0]),
+            btc_funding_rate=np.array([0.00030]),
+            realized_vol_30d=np.array([0.50]),
+            breakout_high={24: np.zeros(1), 48: np.zeros(1), 72: np.zeros(1)},
+            breakout_low={24: np.zeros(1), 48: np.zeros(1), 72: np.zeros(1)},
+            breakout_range_atr={24: np.array([3.0]), 48: np.zeros(1), 72: np.zeros(1)},
+            breakout_up_atr={24: np.array([0.30]), 48: np.zeros(1), 72: np.zeros(1)},
+            breakout_down_atr={24: np.zeros(1), 48: np.zeros(1), 72: np.zeros(1)},
+            breakout_up={24: np.array([1.0]), 48: np.zeros(1), 72: np.zeros(1)},
+            breakout_down={24: np.zeros(1), 48: np.zeros(1), 72: np.zeros(1)},
+            recent_squeeze={120: np.array([0.10]), 240: np.zeros(1)},
+        )
+        data = volatility_breakout_report.BacktestData(
+            index=index,
+            symbols=("BTC/USDT:USDT",),
+            by_symbol={"BTC/USDT:USDT": arrays},
+        )
+        candidate = volatility_breakout_report.Candidate(
+            breakout_lookback=24,
+            squeeze_lookback=120,
+            squeeze_pctile_max=0.15,
+            volume_z_min=1.2,
+            h4_adx_min=20.0,
+            target_vol=0.45,
+            btc_vol_72h_max=0.55,
+            btc_h4_adx_max=30.0,
+            btc_abs_shock_max=3.0,
+            btc_funding_abs_max=0.00020,
+        )
+        sides = volatility_breakout_report.candidate_signal_sides(data, candidate)["BTC/USDT:USDT"].tolist()
+        self.assertEqual(sides, [0])
 
     def test_metrics_use_1h_timeframe(self):
         index = pd.date_range("2026-01-01", periods=25, freq="1h", tz="UTC")

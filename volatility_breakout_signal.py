@@ -88,11 +88,12 @@ def btc_context_features(df_btc_1h: pd.DataFrame) -> pd.DataFrame:
     ema50 = close.ewm(span=50, adjust=False, min_periods=50).mean()
     ema200 = close.ewm(span=200, adjust=False, min_periods=200).mean()
     ret_4h = close.pct_change(4)
+    returns = np.log(close / close.shift(1)).replace([float("inf"), float("-inf")], pd.NA)
     side = ((close > ema50) & (ema50 > ema200) & (ret_4h > 0)).astype(int) - (
         (close < ema50) & (ema50 < ema200) & (ret_4h < 0)
     ).astype(int)
-    returns = np.log(close / close.shift(1)).replace([float("inf"), float("-inf")], pd.NA)
     shock = returns / returns.rolling(72, min_periods=24).std(ddof=1).replace(0, pd.NA)
+    vol_72h = returns.rolling(72, min_periods=24).std(ddof=1) * math.sqrt(24.0 * 365.0)
     return pd.DataFrame(
         {
             "btc_close": close,
@@ -101,6 +102,7 @@ def btc_context_features(df_btc_1h: pd.DataFrame) -> pd.DataFrame:
             "btc_ret_4h": ret_4h,
             "btc_side": side,
             "btc_shock_z": shock,
+            "btc_vol_72h": vol_72h,
         },
         index=df_btc_1h.index,
     ).replace([float("inf"), float("-inf")], pd.NA)
@@ -172,5 +174,17 @@ def build_signal_frame(
     h4 = _available(h4_context_features(df_4h), pd.Timedelta(hours=4), base.index)
     daily = _available(daily_trend_features(df_1d), pd.Timedelta(days=1), base.index)
     btc = _available(btc_context_features(btc_1h), pd.Timedelta(hours=1), base.index)
-    return base.join([h1, h4, daily, btc], how="left").replace([float("inf"), float("-inf")], pd.NA)
-
+    btc_h4 = h4_context_features(btc_1h.resample("4h", label="left", closed="left").agg(
+        {
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+        }
+    ).dropna(subset=["open", "high", "low", "close"]))
+    btc_h4 = btc_h4.rename(columns={"h4_side": "btc_h4_side", "h4_adx": "btc_h4_adx"})[
+        ["btc_h4_side", "btc_h4_adx"]
+    ]
+    btc_h4 = _available(btc_h4, pd.Timedelta(hours=4), base.index)
+    return base.join([h1, h4, daily, btc, btc_h4], how="left").replace([float("inf"), float("-inf")], pd.NA)
