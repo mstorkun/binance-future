@@ -75,6 +75,10 @@ hurst_mtf_cost_robust_v3_results.csv
 hurst_mtf_cost_robust_v3_pbo_matrix.csv
 hurst_mtf_cost_robust_v3_trades.csv
 hurst_mtf_cost_robust_v3_diagnostics.json
+htf_reversion_report.json
+htf_reversion_results.csv
+htf_reversion_pbo_matrix.csv
+htf_reversion_trades.csv
 timeframe_sweep_results.csv
 timeframe_walk_forward_results.csv
 timeframe_sweep_scaled_results.csv

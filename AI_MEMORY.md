@@ -683,6 +683,17 @@ Other previous validation context:
   `LEAVE_HURST_MTF_FAMILY`. Do not add more Hurst-MTF filters; switch to a
   different alpha family unless a future independent candidate passes strict
   gates. No paper/live promotion.
+- 2026-05-05 HTF support/resistance reversion result: added research-only
+  `htf_reversion_signal.py`, `htf_reversion_report.py`, tests, and
+  `docs/HTF_REVERSION_BRIEF_2026_05_05.md`. Full strict rerun used fixed
+  8-perp universe, 324 candidates, 12 folds, 4h support/resistance levels,
+  RSI exhaustion, low-ADX range filter, optional volume exhaustion, severe
+  cost stress, PBO matrix, concentration, tail, and crisis checks. Result is
+  `benchmark_only`: severe total return `-2.0765%`, CAGR `-1.2687%`, max DD
+  `11.4489%`, positive folds `5/12`, PBO `0.3333`, DSR proxy `-2.9421`,
+  Sortino `-0.0265`, sample `31` trades, no crisis-day trades. The family did
+  not blow up, but it is too sparse and too weak for the `80%+` target. No
+  paper/live promotion.
 
 ## Runtime / Worktree Notes
 
