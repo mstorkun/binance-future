@@ -1,6 +1,6 @@
 # AI Memory / Project Handoff
 
-Last updated: 2026-05-04
+Last updated: 2026-05-05
 
 This file is the repo-local memory for future AI agents. Read it before making
 strategy, risk, backtest, paper, testnet, or live-trading changes.
@@ -741,6 +741,19 @@ Other previous validation context:
   PnL. Interpretation: the earlier rotation bucket separation is useful
   context, but it did not produce an OOS entry-time overlay. No paper/live
   promotion.
+- 2026-05-05 range mean-reversion result: added research-only
+  `range_reversion_signal.py`, `range_reversion_report.py`,
+  `tests/test_range_reversion.py`, and
+  `docs/RANGE_REVERSION_REPORT_2026_05_05.md`. The harness uses prior closed
+  1h bars only, 4h low-ADX regime context, optional reclaim entries, daily trend
+  opposition guard, 96 candidates, 12-fold train/test walk-forward, 24-bar purge,
+  severe cost stress, PBO matrix, concentration, tail, and crisis checks. Result
+  is `benchmark_only`: severe total return `-51.8707%`, CAGR `-44.7446%`, max
+  DD `52.1327%`, positive folds `1/12`, PBO `0.0`, DSR proxy negative, Sortino
+  `-1.4618`, sample `136` trades, no crisis-alpha pass. This gives enough
+  evidence to avoid spending more time on simple Bollinger/RSI/range
+  mean-reversion filters unless a new independent data source changes the
+  premise. No paper/live promotion.
 - 2026-05-05 shutdown/restart anchor: created `PROJECT_HANDOFF.md` so a fresh
   VS Code/Codex session can resume without chat history. Read that file first,
   then this `AI_MEMORY.md`, then verify with `git status --short`,
@@ -794,9 +807,12 @@ Other previous validation context:
    already-running Python processes may still use the old imported config.
 4. Testnet-prove `user_stream_runner.py` before considering any
    `USER_DATA_STREAM_READY=True` change.
-5. If continuing the strategy pivot, move beyond simple Binance spot/perp carry:
-   research funding prediction, cross-exchange basis/funding, or a stat-arb
-   overlay before writing any spot/perp executor.
+5. If continuing the strategy pivot, move beyond simple Binance OHLCV-only
+   variants. Hurst-MTF, HTF support/reversion, volatility breakout, market
+   rotation overlay, and range mean-reversion are all `benchmark_only`; the next
+   useful step should require genuinely different evidence such as real
+   liquidation flow, external breadth/dominance history, or news/event reaction
+   data before any executor work.
 6. Tune `protections.py` and `exit_ladder.py` parameters only in backtest-only
    mode; current parameters reduce CAGR.
 7. Add a real executor-backed paper implementation only after a net-positive

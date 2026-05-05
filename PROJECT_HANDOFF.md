@@ -9,8 +9,8 @@ preflight commands below.
 - Repo: `C:\Users\mustafa devecioglu\Documents\GitHub\binance-bot`
 - Remote: `https://github.com/mstorkun/binance-future.git`
 - Branch: `main`
-- Latest pushed research commit before this handoff: `3cbce54 Add market rotation context diagnostic`
-- Current unpushed work after resume: market rotation overlay walk-forward diagnostic.
+- Latest pushed research commit before this handoff update: `8d5c0a8 Add market rotation overlay walk-forward`
+- Current handoff update: range mean-reversion strict walk-forward diagnostic.
 
 ## Latest Strategy Work
 
@@ -45,6 +45,17 @@ preflight commands below.
   `31.1677`; overlay test identical, `0` reduced trades and `0.0` delta PnL.
   Decision remains `benchmark_only`; rotation diagnostic did not survive
   walk-forward as an actionable overlay.
+- Range mean-reversion was added as a separate research-only family:
+  `range_reversion_signal.py`, `range_reversion_report.py`,
+  `tests/test_range_reversion.py`, and
+  `docs/RANGE_REVERSION_REPORT_2026_05_05.md`. It uses prior closed 1h bars,
+  4h low-ADX regime context, optional reclaim entries, daily trend opposition
+  guard, 96 candidate grid, 12-fold walk-forward, severe cost stress, PBO,
+  concentration, tail, and crisis gates. Real result: strict `benchmark_only`;
+  severe total return `-51.8707%`, CAGR `-44.7446%`, max DD `52.1327%`,
+  `1/12` positive folds, PBO `0.0`, DSR proxy negative, sample `136` trades.
+  This family is not ready for paper/live and should not be enlarged with more
+  filters without a new independent reason.
 
 ## Important Safety State
 
@@ -63,7 +74,7 @@ Run these after reopening:
 git status --short
 git log -3 --oneline
 python go_live_preflight.py
-python -m pytest tests/test_volatility_breakout.py tests/test_htf_reversion.py tests/test_hurst_mtf_momentum.py tests/test_safety.py -q
+python -m pytest tests/test_range_reversion.py tests/test_volatility_breakout.py tests/test_htf_reversion.py tests/test_hurst_mtf_momentum.py tests/test_safety.py -q
 ```
 
 Expected after this handoff is committed and pushed:
@@ -76,10 +87,11 @@ Expected after this handoff is committed and pushed:
 ## Next Useful Research Step
 
 Do not spend the next step on live execution gates. The last useful learning is
-that regime filters reduce damage but do not create enough edge. A sensible
-next experiment is a different family, for example:
+that Hurst-MTF, HTF support/reversion, volatility breakout, rotation overlay,
+and simple range mean-reversion all failed strict promotion. A sensible next
+experiment should use genuinely different evidence, for example:
 
 - real liquidation feed experiment if paid/real data is available;
-- BTC-dominance / rotation research;
-- strict mean-reversion variant with enough sample size;
-- volatility expansion with a different exit model, still research-only.
+- BTC dominance / external market breadth if real historical data is available;
+- news/event-reaction dataset research;
+- another external-data stat-arb lead, still research-only.

@@ -79,6 +79,10 @@ htf_reversion_report.json
 htf_reversion_results.csv
 htf_reversion_pbo_matrix.csv
 htf_reversion_trades.csv
+range_reversion_report.json
+range_reversion_results.csv
+range_reversion_pbo_matrix.csv
+range_reversion_trades.csv
 volatility_breakout_v1_report.json
 volatility_breakout_v1_results.csv
 volatility_breakout_v1_pbo_matrix.csv
