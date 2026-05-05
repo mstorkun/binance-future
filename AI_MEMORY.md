@@ -694,6 +694,20 @@ Other previous validation context:
   Sortino `-0.0265`, sample `31` trades, no crisis-day trades. The family did
   not blow up, but it is too sparse and too weak for the `80%+` target. No
   paper/live promotion.
+- 2026-05-05 Volatility Breakout V1 and regime diagnostic: added research-only
+  `volatility_breakout_signal.py`, `volatility_breakout_report.py`,
+  `volatility_breakout_regime_diagnostics.py`, tests, and docs. Full strict
+  V1 rerun used fixed 8-perp universe, 216 candidates, 1h entries, BTC
+  market-leader gate, 4h trend/ADX alignment, 12 folds, severe cost stress,
+  and produced `benchmark_only`: severe total return `-73.2745%`, CAGR
+  `-55.1919%`, max DD `75.2624%`, positive folds `1/12`, PBO `0.3333`, DSR
+  proxy `-8.9916`, Sortino `-1.2828`, sample `296`. Diagnostic checked BTC
+  vol/trend/ADX/squeeze/funding by fold. Claude's suggested folds `2,5,10,12`
+  do not match the current artifact; current baseline-positive folds are
+  `6,7,8,11,12`, severe-positive only `6`. This supports an adaptive
+  timeframe/regime-gate hypothesis, but not a paper/live rule yet. Next valid
+  experiment is a V2 regime-permission overlay, not arbitrary timeframe
+  switching.
 
 ## Runtime / Worktree Notes
 
