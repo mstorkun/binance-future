@@ -351,6 +351,66 @@ class HurstMtfMomentumTests(unittest.TestCase):
         self.assertEqual(hurst_mtf_momentum_report.UNIVERSE[0], "BTC/USDT:USDT")
         self.assertIn("DOGE/USDT:USDT", hurst_mtf_momentum_report.UNIVERSE)
 
+    def test_loss_cooldown_blocks_same_symbol_reentry_after_losing_exit(self):
+        index = pd.date_range("2026-01-01", periods=8, freq="4h", tz="UTC")
+        arrays = hurst_mtf_momentum_report.FeatureArrays(
+            symbol="BTC/USDT:USDT",
+            entry_open=np.full(8, 100.0),
+            entry_high=np.full(8, 101.0),
+            entry_low=np.full(8, 96.0),
+            entry_close=np.full(8, 99.0),
+            h4_atr=np.full(8, 1.0),
+            h4_hurst=np.full(8, 0.60),
+            h4_adx=np.full(8, 30.0),
+            h4_ema_side=np.full(8, 1.0),
+            daily_side=np.full(8, 1.0),
+            h1_last_trigger_volume_z=np.full(8, 2.0),
+            h1_last_long_trigger_volume_z=np.full(8, 2.0),
+            h1_last_short_trigger_volume_z=np.full(8, 0.0),
+            h1_long_trigger_age_hours=np.zeros(8),
+            h1_short_trigger_age_hours=np.full(8, 99.0),
+            realized_vol_30d=np.full(8, 0.50),
+        )
+        data = hurst_mtf_momentum_report.BacktestData(
+            index=index,
+            symbols=("BTC/USDT:USDT",),
+            by_symbol={"BTC/USDT:USDT": arrays},
+        )
+        candidate = hurst_mtf_momentum_report.Candidate(
+            hurst_min=0.53,
+            hurst_exit=0.43,
+            adx_min=20.0,
+            volume_z_min=1.2,
+            target_vol=0.45,
+        )
+        signals = {"BTC/USDT:USDT": np.ones(8, dtype="int8")}
+        no_cooldown_trades, _, _ = hurst_mtf_momentum_report._run_candidate_backtest_arrays(
+            data,
+            0,
+            8,
+            candidate,
+            signals,
+            start_balance=5000.0,
+            loss_cooldown_bars=0,
+        )
+        cooldown_trades, _, _ = hurst_mtf_momentum_report._run_candidate_backtest_arrays(
+            data,
+            0,
+            8,
+            candidate,
+            signals,
+            start_balance=5000.0,
+            loss_cooldown_bars=2,
+        )
+
+        self.assertGreater(len(no_cooldown_trades), len(cooldown_trades))
+        self.assertFalse(
+            (
+                pd.to_datetime(cooldown_trades["entry_time"], utc=True)
+                == pd.to_datetime(cooldown_trades["exit_time"], utc=True).shift()
+            ).any()
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

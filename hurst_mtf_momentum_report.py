@@ -331,12 +331,14 @@ def _run_candidate_backtest_arrays(
     atr_stop_mult: float = 2.5,
     atr_trail_mult: float = 1.5,
     time_stop_bars: int = 12,
+    loss_cooldown_bars: int = 0,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
     scenario = scenario or SCENARIOS["baseline"]
     round_trip_cost_rate = _scenario_cost_rate(scenario)
     funding_rate = _funding_rate_per_4h(scenario)
     balance = float(start_balance)
     positions: dict[str, dict[str, Any]] = {}
+    cooldown_until: dict[str, int] = {}
     trades: list[dict[str, Any]] = []
     equity_rows: list[dict[str, Any]] = []
     current_closes: dict[str, float] = {}
@@ -407,6 +409,15 @@ def _run_candidate_backtest_arrays(
                 balance += float(trade["balance_delta"])
                 trade["balance"] = round(float(balance), 4)
                 trades.append(trade)
+                if (
+                    int(loss_cooldown_bars) > 0
+                    and float(trade["pnl"]) < 0.0
+                    and exit_reason in {"hard_stop", "time_stop", "regime_exit"}
+                ):
+                    cooldown_until[symbol] = max(
+                        int(cooldown_until.get(symbol, -1)),
+                        int(offset) + int(loss_cooldown_bars),
+                    )
                 positions.pop(symbol, None)
 
         equity_now = balance
@@ -418,6 +429,8 @@ def _run_candidate_backtest_arrays(
 
         for symbol in data.symbols:
             if len(positions) >= int(max_concurrent) or symbol in positions:
+                continue
+            if int(loss_cooldown_bars) > 0 and int(offset) < int(cooldown_until.get(symbol, -1)):
                 continue
             side_value = int(candidate_signals[symbol][offset])
             if side_value == 0:
@@ -695,6 +708,7 @@ def run_walk_forward(
     max_concurrent: int = 4,
     purge_bars: int = 12,
     embargo_bars: int = 0,
+    loss_cooldown_bars: int = 0,
     progress: bool = False,
     progress_every_candidates: int = 12,
 ) -> dict[str, Any]:
@@ -754,6 +768,7 @@ def run_walk_forward(
                 per_position_max_pct=per_position_max_pct,
                 max_concurrent=max_concurrent,
                 scenario=SCENARIOS["baseline"],
+                loss_cooldown_bars=loss_cooldown_bars,
             )
             score = _score(train_metrics, min_train_trades=min_train_trades)
             test_trades, test_equity, test_metrics = _run_candidate_backtest_arrays(
@@ -767,6 +782,7 @@ def run_walk_forward(
                 per_position_max_pct=per_position_max_pct,
                 max_concurrent=max_concurrent,
                 scenario=SCENARIOS["baseline"],
+                loss_cooldown_bars=loss_cooldown_bars,
             )
             test_metrics_by_candidate[candidate] = test_metrics
             train_results.append({"candidate": candidate, "score": score, "metrics": train_metrics})
@@ -803,6 +819,7 @@ def run_walk_forward(
                 "train_score": round(float(best["score"]), 6),
                 "train_trades": int(best["metrics"].get("trades", 0)),
                 "train_return_pct": round(float(best["metrics"].get("total_return_pct", 0.0)), 6),
+                "loss_cooldown_bars": int(loss_cooldown_bars),
             }
         )
         for row in matrix_rows:
@@ -827,6 +844,7 @@ def run_walk_forward(
                     per_position_max_pct=per_position_max_pct,
                     max_concurrent=max_concurrent,
                     scenario=scenario,
+                    loss_cooldown_bars=loss_cooldown_bars,
                 )
             scenario_row = {
                 "period": period,
@@ -838,6 +856,7 @@ def run_walk_forward(
                 "max_dd_pct": round(float(metrics.get("max_dd_pct", 0.0)), 6),
                 "sortino": round(float(metrics.get("sortino", 0.0)), 6),
                 "profit_factor": round(float(metrics.get("profit_factor", 0.0)), 6),
+                "loss_cooldown_bars": int(loss_cooldown_bars),
             }
             scenario_rows.append(scenario_row)
             if scenario_name == "severe":
@@ -892,8 +911,10 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
     selected = report["selected"].to_dict(orient="records") if not report["selected"].empty else []
     scenarios = report["scenarios"].to_dict(orient="records") if not report["scenarios"].empty else []
     checks = [{"gate": key, "pass": value} for key, value in strict["checks"].items()]
+    path_text = str(path).upper()
+    title = "Hurst MTF Cooldown V2 Report - 2026-05-05" if "COOLDOWN_V2" in path_text else "Hurst MTF Momentum Phase A Report - 2026-05-04"
     lines = [
-        "# Hurst MTF Momentum Phase A Report - 2026-05-04",
+        f"# {title}",
         "",
         "Status: research-only. This does not enable paper, testnet, or live execution.",
         "",
@@ -905,7 +926,9 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
         "debug-capped by CLI, 12-fold train/test walk-forward, default 12-bar",
         "purge gap before each test window, direction-specific 1h trigger volume",
         "confirmation, severe cost stress, PBO matrix, concentration, tail-capture,",
-        "and crisis-alpha checks.",
+        "and crisis-alpha checks. Optional loss-cooldown variants block same-symbol",
+        "reentry after losing hard_stop/time_stop/regime_exit exits only when",
+        "`--loss-cooldown-bars` is greater than zero.",
         "",
         "## Strict Gates",
         "",
@@ -943,6 +966,7 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
                 "train_return_pct",
                 "purge_bars",
                 "embargo_bars",
+                "loss_cooldown_bars",
                 "test_start",
                 "test_end",
             ],
@@ -950,7 +974,7 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
         "",
         "## Scenario Folds",
         "",
-        markdown_table(scenarios, ["period", "scenario", "candidate", "trades", "total_return_pct", "max_dd_pct", "sortino", "profit_factor"]),
+        markdown_table(scenarios, ["period", "scenario", "candidate", "trades", "total_return_pct", "max_dd_pct", "sortino", "profit_factor", "loss_cooldown_bars"]),
         "",
         "## Decision",
         "",
@@ -974,6 +998,7 @@ def main() -> int:
     parser.add_argument("--max-concurrent", type=int, default=4)
     parser.add_argument("--purge-bars", type=int, default=12, help="Train/test gap in 4h bars; default covers the 12-bar time stop.")
     parser.add_argument("--embargo-bars", type=int, default=0, help="Additional train/test embargo in 4h bars.")
+    parser.add_argument("--loss-cooldown-bars", type=int, default=0, help="Optional same-symbol entry cooldown after losing hard/time/regime exits; 6 bars is 24h on 4h data.")
     parser.add_argument("--max-candidates", type=int, default=0, help="Debug-only cap; omit for the strict full 72-candidate grid.")
     parser.add_argument("--quiet", action="store_true", help="Disable stderr progress logging.")
     parser.add_argument("--progress-every-candidates", type=int, default=12)
@@ -1013,6 +1038,7 @@ def main() -> int:
         max_concurrent=args.max_concurrent,
         purge_bars=args.purge_bars,
         embargo_bars=args.embargo_bars,
+        loss_cooldown_bars=args.loss_cooldown_bars,
         progress=progress,
         progress_every_candidates=args.progress_every_candidates,
     )

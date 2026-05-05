@@ -657,6 +657,19 @@ Other previous validation context:
   JSON/CSV outputs, baseline compound return was also negative (`-73.7979%`),
   severe compound return remained `-95.3959%`, and status stays
   `benchmark_only`; continue alpha research without promoting Phase B.
+- 2026-05-05 Hurst-MTF diagnostics and cooldown V2: added
+  `hurst_mtf_trade_diagnostics.py`,
+  `docs/HURST_MTF_TRADE_DIAGNOSTICS_2026_05_05.md`,
+  `docs/HURST_MTF_COOLDOWN_V2_BRIEF_2026_05_05.md`,
+  `docs/HURST_MTF_COOLDOWN_V2_REPORT_2026_05_05.md`, and
+  `docs/HURST_MTF_COOLDOWN_V2_DIAGNOSTICS_2026_05_05.md`. Phase A leak:
+  hard stops `-27898.1850`, trailing stops `+25565.9561`, losing-exit
+  reentries within 24h `-8038.1325`. V2 added `loss_cooldown_bars=6`;
+  severe improved to `-70.5401%`, positive folds `4/12`, sample `381`, but
+  status remains `benchmark_only` with failed CAGR/PBO/folds/DSR/Sortino/tail/
+  crisis gates. Baseline V2 was `+20.5578%` while severe was `-70.5401%`, so
+  next brief is `docs/HURST_MTF_COST_ROBUST_V3_BRIEF_2026_05_05.md`: keep
+  cooldown and test cost-cushion/turnover reduction. No paper/live promotion.
 
 ## Runtime / Worktree Notes
 
