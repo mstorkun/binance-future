@@ -9,8 +9,8 @@ preflight commands below.
 - Repo: `C:\Users\mustafa devecioglu\Documents\GitHub\binance-bot`
 - Remote: `https://github.com/mstorkun/binance-future.git`
 - Branch: `main`
-- Latest pushed research commit before this handoff: `ff9d00a Save restart handoff state`
-- Current unpushed work after resume: market rotation context diagnostic.
+- Latest pushed research commit before this handoff: `3cbce54 Add market rotation context diagnostic`
+- Current unpushed work after resume: market rotation overlay walk-forward diagnostic.
 
 ## Latest Strategy Work
 
@@ -35,6 +35,16 @@ preflight commands below.
   and `-235.06` PnL / PF `0.5522`. This is diagnostic evidence only; the next
   valid step is an entry-time walk-forward rotation overlay, not paper/live
   activation.
+- Market rotation overlay walk-forward was added as report-only:
+  `market_rotation_overlay.py`,
+  `docs/MARKET_ROTATION_OVERLAY_WF_2026_05_05.md`,
+  `market_rotation_overlay_report.json`, and
+  `market_rotation_overlay_trades.csv`. It trains on earlier annotated trades
+  and reduces weak/negative rotation buckets only in the next chronological test
+  slice. Real run result: baseline test `120` trades / `6886.98` PnL / PF
+  `31.1677`; overlay test identical, `0` reduced trades and `0.0` delta PnL.
+  Decision remains `benchmark_only`; rotation diagnostic did not survive
+  walk-forward as an actionable overlay.
 
 ## Important Safety State
 

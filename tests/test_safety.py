@@ -34,6 +34,7 @@ import go_live_preflight
 import liquidation_hunting_report
 import live_state
 import macro_event_policy
+import market_rotation_overlay
 import market_rotation_report
 import multi_timeframe_candle
 import news_direction_policy
@@ -2761,6 +2762,36 @@ class SafetyTests(unittest.TestCase):
         report = market_rotation_report.build_report(trades, rotation)
         self.assertEqual(report["status"], "diagnostic_only")
         self.assertEqual(report["overall"]["trades"], 2)
+
+    def test_market_rotation_overlay_learns_and_reduces_bad_bucket(self):
+        base_time = pd.Timestamp("2026-01-01 00:00:00", tz="UTC")
+        rows = []
+        for i in range(10):
+            rows.append({
+                "entry_time": base_time + pd.Timedelta(hours=4 * i),
+                "side": "long" if i % 2 == 0 else "short",
+                "rotation_regime": "risk_off_broad" if i % 2 == 0 else "mixed_neutral",
+                "rotation_alignment": "against_rotation" if i % 2 == 0 else "neutral_rotation",
+                "pnl": -2.0 if i % 2 == 0 else 3.0,
+                "pnl_return_pct": -0.2 if i % 2 == 0 else 0.3,
+            })
+        annotated = pd.DataFrame(rows)
+        schedules = market_rotation_overlay.build_fold_schedules(
+            annotated,
+            train_trades=6,
+            test_trades=4,
+            roll_trades=4,
+            min_bucket_trades=3,
+        )
+        self.assertEqual(len(schedules), 1)
+        self.assertIn("align:against_rotation", schedules[0].bad_buckets)
+        overlay = market_rotation_overlay.apply_overlay(annotated, schedules, reduce_multiplier=0.0)
+        test_rows = overlay[overlay["rotation_overlay_fold"].notna()]
+        self.assertEqual(int((test_rows["rotation_overlay_multiplier"] == 0.0).sum()), 2)
+        report = market_rotation_overlay.build_report(annotated, schedules, overlay)
+        self.assertEqual(report["status"], "diagnostic_only")
+        self.assertEqual(report["decision"], "benchmark_only")
+        self.assertGreater(report["delta_pnl"], 0.0)
 
     def test_candle_structure_features_detect_bullish_impulse(self):
         idx = pd.date_range("2026-01-01", periods=80, freq="4h")

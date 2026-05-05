@@ -1,0 +1,70 @@
+{
+  "status": "diagnostic_only",
+  "decision": "benchmark_only",
+  "baseline": {
+    "segment": "baseline_test",
+    "trades": 120,
+    "active_trades": 120,
+    "win_rate_pct": 85.8333,
+    "pnl": 6886.98,
+    "mean_return_pct": 0.9541,
+    "profit_factor": 31.1677
+  },
+  "overlay": {
+    "segment": "rotation_overlay_test",
+    "trades": 120,
+    "active_trades": 120,
+    "win_rate_pct": 85.8333,
+    "pnl": 6886.98,
+    "mean_return_pct": 0.9541,
+    "profit_factor": 31.1677
+  },
+  "delta_pnl": 0.0,
+  "reduced_trades": 0,
+  "folds": [
+    {
+      "fold": 1,
+      "test_start": "2024-11-03 20:00:00+00:00",
+      "test_end": "2025-04-03 20:00:00+00:00",
+      "bad_bucket_count": 0,
+      "reduced_trades": 0,
+      "baseline_pnl": 1464.5,
+      "overlay_pnl": 1464.5,
+      "delta_pnl": 0.0
+    },
+    {
+      "fold": 2,
+      "test_start": "2025-04-03 20:00:00+00:00",
+      "test_end": "2025-08-17 20:00:00+00:00",
+      "bad_bucket_count": 0,
+      "reduced_trades": 0,
+      "baseline_pnl": 1285.07,
+      "overlay_pnl": 1285.07,
+      "delta_pnl": 0.0
+    },
+    {
+      "fold": 3,
+      "test_start": "2025-08-23 00:00:00+00:00",
+      "test_end": "2026-01-29 20:00:00+00:00",
+      "bad_bucket_count": 0,
+      "reduced_trades": 0,
+      "baseline_pnl": 4137.41,
+      "overlay_pnl": 4137.41,
+      "delta_pnl": 0.0
+    }
+  ],
+  "learned_bucket_counts": [
+    {
+      "fold": 1,
+      "bad_buckets": []
+    },
+    {
+      "fold": 2,
+      "bad_buckets": []
+    },
+    {
+      "fold": 3,
+      "bad_buckets": []
+    }
+  ]
+}

@@ -730,6 +730,17 @@ Other previous validation context:
   `against_rotation` `11` trades / `-235.06` PnL / PF `0.5522`. This supports
   testing a true entry-time rotation overlay next, but it is not activation
   evidence by itself.
+- 2026-05-05 market rotation overlay walk-forward: added report-only
+  `market_rotation_overlay.py`,
+  `docs/MARKET_ROTATION_OVERLAY_WF_2026_05_05.md`,
+  `market_rotation_overlay_report.json`, and
+  `market_rotation_overlay_trades.csv`. It trains on earlier annotated trades,
+  learns weak/negative rotation buckets, and reduces only the next chronological
+  test slice. Real run result: baseline test `120` trades / `6886.98` PnL /
+  PF `31.1677`; overlay test identical with `0` reduced trades and `0.0` delta
+  PnL. Interpretation: the earlier rotation bucket separation is useful
+  context, but it did not produce an OOS entry-time overlay. No paper/live
+  promotion.
 - 2026-05-05 shutdown/restart anchor: created `PROJECT_HANDOFF.md` so a fresh
   VS Code/Codex session can resume without chat history. Read that file first,
   then this `AI_MEMORY.md`, then verify with `git status --short`,
