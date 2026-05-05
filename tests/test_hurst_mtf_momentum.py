@@ -350,6 +350,12 @@ class HurstMtfMomentumTests(unittest.TestCase):
         self.assertEqual(len(candidates), 72)
         self.assertEqual(hurst_mtf_momentum_report.UNIVERSE[0], "BTC/USDT:USDT")
         self.assertIn("DOGE/USDT:USDT", hurst_mtf_momentum_report.UNIVERSE)
+        v3_candidates = hurst_mtf_momentum_report.generate_candidates(
+            cost_floor_mults=(2.0, 3.0, 4.0),
+            signal_strength_mins=(0.45, 0.55, 0.65),
+        )
+        self.assertEqual(len(v3_candidates), 648)
+        self.assertIn("CF2.0|SS0.45", v3_candidates[0].name)
 
     def test_loss_cooldown_blocks_same_symbol_reentry_after_losing_exit(self):
         index = pd.date_range("2026-01-01", periods=8, freq="4h", tz="UTC")
@@ -369,6 +375,7 @@ class HurstMtfMomentumTests(unittest.TestCase):
             h1_last_short_trigger_volume_z=np.full(8, 0.0),
             h1_long_trigger_age_hours=np.zeros(8),
             h1_short_trigger_age_hours=np.full(8, 99.0),
+            signal_strength=np.full(8, 0.70),
             realized_vol_30d=np.full(8, 0.50),
         )
         data = hurst_mtf_momentum_report.BacktestData(
@@ -410,6 +417,44 @@ class HurstMtfMomentumTests(unittest.TestCase):
                 == pd.to_datetime(cooldown_trades["exit_time"], utc=True).shift()
             ).any()
         )
+
+    def test_cost_robust_candidate_filters_low_cushion_or_weak_strength(self):
+        index = pd.date_range("2026-01-01", periods=4, freq="4h", tz="UTC")
+        arrays = hurst_mtf_momentum_report.FeatureArrays(
+            symbol="BTC/USDT:USDT",
+            entry_open=np.full(4, 100.0),
+            entry_high=np.full(4, 101.0),
+            entry_low=np.full(4, 99.0),
+            entry_close=np.full(4, 100.5),
+            h4_atr=np.array([0.5, 2.0, 2.0, 2.0]),
+            h4_hurst=np.full(4, 0.60),
+            h4_adx=np.full(4, 30.0),
+            h4_ema_side=np.full(4, 1.0),
+            daily_side=np.full(4, 1.0),
+            h1_last_trigger_volume_z=np.full(4, 2.0),
+            h1_last_long_trigger_volume_z=np.full(4, 2.0),
+            h1_last_short_trigger_volume_z=np.full(4, 0.0),
+            h1_long_trigger_age_hours=np.zeros(4),
+            h1_short_trigger_age_hours=np.full(4, 99.0),
+            signal_strength=np.array([0.70, 0.40, 0.70, 0.70]),
+            realized_vol_30d=np.full(4, 0.50),
+        )
+        data = hurst_mtf_momentum_report.BacktestData(
+            index=index,
+            symbols=("BTC/USDT:USDT",),
+            by_symbol={"BTC/USDT:USDT": arrays},
+        )
+        candidate = hurst_mtf_momentum_report.Candidate(
+            hurst_min=0.53,
+            hurst_exit=0.43,
+            adx_min=20.0,
+            volume_z_min=1.2,
+            target_vol=0.45,
+            cost_floor_mult=2.0,
+            signal_strength_min=0.65,
+        )
+        sides = hurst_mtf_momentum_report.candidate_signal_sides(data, candidate)["BTC/USDT:USDT"].tolist()
+        self.assertEqual(sides, [0, 0, 1, 1])
 
 
 if __name__ == "__main__":

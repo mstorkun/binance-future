@@ -70,6 +70,11 @@ hurst_mtf_cooldown_v2_results.csv
 hurst_mtf_cooldown_v2_pbo_matrix.csv
 hurst_mtf_cooldown_v2_trades.csv
 hurst_mtf_cooldown_v2_diagnostics.json
+hurst_mtf_cost_robust_v3_report.json
+hurst_mtf_cost_robust_v3_results.csv
+hurst_mtf_cost_robust_v3_pbo_matrix.csv
+hurst_mtf_cost_robust_v3_trades.csv
+hurst_mtf_cost_robust_v3_diagnostics.json
 timeframe_sweep_results.csv
 timeframe_walk_forward_results.csv
 timeframe_sweep_scaled_results.csv

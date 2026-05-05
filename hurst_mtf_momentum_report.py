@@ -50,13 +50,18 @@ class Candidate:
     adx_min: float
     volume_z_min: float
     target_vol: float
+    cost_floor_mult: float = 0.0
+    signal_strength_min: float = 0.0
 
     @property
     def name(self) -> str:
-        return (
+        name = (
             f"H{self.hurst_min:.2f}|HX{self.hurst_exit:.2f}|"
             f"ADX{self.adx_min:.0f}|VZ{self.volume_z_min:.1f}|TV{self.target_vol:.2f}"
         )
+        if self.cost_floor_mult > 0.0 or self.signal_strength_min > 0.0:
+            name = f"{name}|CF{self.cost_floor_mult:.1f}|SS{self.signal_strength_min:.2f}"
+        return name
 
 
 @dataclass
@@ -85,6 +90,7 @@ class FeatureArrays:
     h1_last_short_trigger_volume_z: np.ndarray
     h1_long_trigger_age_hours: np.ndarray
     h1_short_trigger_age_hours: np.ndarray
+    signal_strength: np.ndarray
     realized_vol_30d: np.ndarray
 
 
@@ -163,14 +169,29 @@ def prepare_symbol(symbol: str, df_1h: pd.DataFrame, *, hurst_window: int = 200)
     return PreparedSymbol(symbol=symbol, df_1h=df_1h, df_4h=df_4h, df_1d=df_1d, features=features)
 
 
-def generate_candidates(max_candidates: int | None = None) -> list[Candidate]:
+def generate_candidates(
+    max_candidates: int | None = None,
+    *,
+    cost_floor_mults: tuple[float, ...] = (0.0,),
+    signal_strength_mins: tuple[float, ...] = (0.0,),
+) -> list[Candidate]:
     rows = [
-        Candidate(hurst_min=hurst_min, hurst_exit=hurst_exit, adx_min=adx_min, volume_z_min=volume_z, target_vol=target_vol)
+        Candidate(
+            hurst_min=hurst_min,
+            hurst_exit=hurst_exit,
+            adx_min=adx_min,
+            volume_z_min=volume_z,
+            target_vol=target_vol,
+            cost_floor_mult=cost_floor_mult,
+            signal_strength_min=signal_strength_min,
+        )
         for hurst_min in (0.53, 0.55, 0.58)
         for hurst_exit in (0.43, 0.45)
         for adx_min in (20.0, 25.0)
         for volume_z in (1.2, 1.5, 2.0)
         for target_vol in (0.45, 0.60)
+        for cost_floor_mult in cost_floor_mults
+        for signal_strength_min in signal_strength_mins
     ]
     if max_candidates is not None and max_candidates > 0:
         rows = rows[: int(max_candidates)]
@@ -220,6 +241,7 @@ def build_backtest_data(prepared: dict[str, PreparedSymbol], index: pd.DatetimeI
             h1_last_short_trigger_volume_z=_float_array(features, "h1_last_short_trigger_volume_z"),
             h1_long_trigger_age_hours=_float_array(features, "h1_long_trigger_age_hours"),
             h1_short_trigger_age_hours=_float_array(features, "h1_short_trigger_age_hours"),
+            signal_strength=_float_array(features, "signal_strength"),
             realized_vol_30d=_float_array(features, "realized_vol_30d"),
         )
     return BacktestData(index=index, symbols=tuple(symbols), by_symbol=by_symbol)
@@ -236,8 +258,18 @@ def candidate_signal_sides(data: BacktestData, candidate: Candidate) -> dict[str
         short_volume_ok = arrays.h1_last_short_trigger_volume_z >= float(candidate.volume_z_min)
         long_recent = (arrays.h1_long_trigger_age_hours >= 0.0) & (arrays.h1_long_trigger_age_hours <= TRIGGER_MAX_AGE_HOURS)
         short_recent = (arrays.h1_short_trigger_age_hours >= 0.0) & (arrays.h1_short_trigger_age_hours <= TRIGGER_MAX_AGE_HOURS)
-        long_ok = (arrays.daily_side == 1.0) & (arrays.h4_ema_side == 1.0) & adx_ok & hurst_ok & long_volume_ok & long_recent
-        short_ok = (arrays.daily_side == -1.0) & (arrays.h4_ema_side == -1.0) & adx_ok & hurst_ok & short_volume_ok & short_recent
+        if float(candidate.signal_strength_min) > 0.0:
+            strength_ok = arrays.signal_strength >= float(candidate.signal_strength_min)
+        else:
+            strength_ok = np.ones(len(data.index), dtype=bool)
+        if float(candidate.cost_floor_mult) > 0.0:
+            severe_round_trip_cost = _scenario_cost_rate(SCENARIOS["severe"])
+            expected_move_proxy = arrays.h4_atr / np.where(arrays.entry_open > 0.0, arrays.entry_open, np.nan)
+            cost_ok = expected_move_proxy >= float(candidate.cost_floor_mult) * severe_round_trip_cost
+        else:
+            cost_ok = np.ones(len(data.index), dtype=bool)
+        long_ok = (arrays.daily_side == 1.0) & (arrays.h4_ema_side == 1.0) & adx_ok & hurst_ok & long_volume_ok & long_recent & strength_ok & cost_ok
+        short_ok = (arrays.daily_side == -1.0) & (arrays.h4_ema_side == -1.0) & adx_ok & hurst_ok & short_volume_ok & short_recent & strength_ok & cost_ok
         side[long_ok] = 1
         side[short_ok] = -1
         signals[symbol] = side
@@ -795,6 +827,8 @@ def run_walk_forward(
                     "test_return_pct": round(float(test_metrics.get("total_return_pct", 0.0)), 6),
                     "train_trades": int(train_metrics.get("trades", 0)),
                     "test_trades": int(test_metrics.get("trades", 0)),
+                    "cost_floor_mult": round(float(candidate.cost_floor_mult), 6),
+                    "signal_strength_min": round(float(candidate.signal_strength_min), 6),
                     "selected": False,
                 }
             )
@@ -820,6 +854,8 @@ def run_walk_forward(
                 "train_trades": int(best["metrics"].get("trades", 0)),
                 "train_return_pct": round(float(best["metrics"].get("total_return_pct", 0.0)), 6),
                 "loss_cooldown_bars": int(loss_cooldown_bars),
+                "cost_floor_mult": round(float(selected.cost_floor_mult), 6),
+                "signal_strength_min": round(float(selected.signal_strength_min), 6),
             }
         )
         for row in matrix_rows:
@@ -857,6 +893,8 @@ def run_walk_forward(
                 "sortino": round(float(metrics.get("sortino", 0.0)), 6),
                 "profit_factor": round(float(metrics.get("profit_factor", 0.0)), 6),
                 "loss_cooldown_bars": int(loss_cooldown_bars),
+                "cost_floor_mult": round(float(selected.cost_floor_mult), 6),
+                "signal_strength_min": round(float(selected.signal_strength_min), 6),
             }
             scenario_rows.append(scenario_row)
             if scenario_name == "severe":
@@ -912,7 +950,12 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
     scenarios = report["scenarios"].to_dict(orient="records") if not report["scenarios"].empty else []
     checks = [{"gate": key, "pass": value} for key, value in strict["checks"].items()]
     path_text = str(path).upper()
-    title = "Hurst MTF Cooldown V2 Report - 2026-05-05" if "COOLDOWN_V2" in path_text else "Hurst MTF Momentum Phase A Report - 2026-05-04"
+    if "COST_ROBUST_V3" in path_text:
+        title = "Hurst MTF Cost-Robust V3 Report - 2026-05-05"
+    elif "COOLDOWN_V2" in path_text:
+        title = "Hurst MTF Cooldown V2 Report - 2026-05-05"
+    else:
+        title = "Hurst MTF Momentum Phase A Report - 2026-05-04"
     lines = [
         f"# {title}",
         "",
@@ -928,7 +971,9 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
         "confirmation, severe cost stress, PBO matrix, concentration, tail-capture,",
         "and crisis-alpha checks. Optional loss-cooldown variants block same-symbol",
         "reentry after losing hard_stop/time_stop/regime_exit exits only when",
-        "`--loss-cooldown-bars` is greater than zero.",
+        "`--loss-cooldown-bars` is greater than zero. Optional cost-robust",
+        "variants add ATR/entry cost-cushion and signal-strength gates only when",
+        "`--cost-robust-v3` is enabled.",
         "",
         "## Strict Gates",
         "",
@@ -967,6 +1012,8 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
                 "purge_bars",
                 "embargo_bars",
                 "loss_cooldown_bars",
+                "cost_floor_mult",
+                "signal_strength_min",
                 "test_start",
                 "test_end",
             ],
@@ -974,7 +1021,22 @@ def write_markdown(report: dict[str, Any], path: str | Path, *, command: str) ->
         "",
         "## Scenario Folds",
         "",
-        markdown_table(scenarios, ["period", "scenario", "candidate", "trades", "total_return_pct", "max_dd_pct", "sortino", "profit_factor", "loss_cooldown_bars"]),
+        markdown_table(
+            scenarios,
+            [
+                "period",
+                "scenario",
+                "candidate",
+                "trades",
+                "total_return_pct",
+                "max_dd_pct",
+                "sortino",
+                "profit_factor",
+                "loss_cooldown_bars",
+                "cost_floor_mult",
+                "signal_strength_min",
+            ],
+        ),
         "",
         "## Decision",
         "",
@@ -999,7 +1061,10 @@ def main() -> int:
     parser.add_argument("--purge-bars", type=int, default=12, help="Train/test gap in 4h bars; default covers the 12-bar time stop.")
     parser.add_argument("--embargo-bars", type=int, default=0, help="Additional train/test embargo in 4h bars.")
     parser.add_argument("--loss-cooldown-bars", type=int, default=0, help="Optional same-symbol entry cooldown after losing hard/time/regime exits; 6 bars is 24h on 4h data.")
-    parser.add_argument("--max-candidates", type=int, default=0, help="Debug-only cap; omit for the strict full 72-candidate grid.")
+    parser.add_argument("--cost-robust-v3", action="store_true", help="Enable V3 cost-cushion and signal-strength candidate grid.")
+    parser.add_argument("--cost-floor-mults", nargs="*", type=float, default=None, help="V3 grid values for ATR/entry cost cushion multiplier.")
+    parser.add_argument("--signal-strength-mins", nargs="*", type=float, default=None, help="V3 grid values for minimum MTF signal strength.")
+    parser.add_argument("--max-candidates", type=int, default=0, help="Debug-only cap; omit for the strict full candidate grid.")
     parser.add_argument("--quiet", action="store_true", help="Disable stderr progress logging.")
     parser.add_argument("--progress-every-candidates", type=int, default=12)
     parser.add_argument("--out", default="hurst_mtf_momentum_results.csv")
@@ -1023,9 +1088,16 @@ def main() -> int:
         prepared[symbol] = prepare_symbol(symbol, df_1h)
         _log_progress(progress, f"prepared symbol={symbol} bars_1h={len(df_1h)} feature_bars={len(prepared[symbol].features)}")
 
-    candidates = generate_candidates(max_candidates=args.max_candidates or None)
+    cost_floor_mults = tuple(float(value) for value in (args.cost_floor_mults if args.cost_floor_mults is not None else (2.0, 3.0, 4.0))) if args.cost_robust_v3 else (0.0,)
+    signal_strength_mins = tuple(float(value) for value in (args.signal_strength_mins if args.signal_strength_mins is not None else (0.45, 0.55, 0.65))) if args.cost_robust_v3 else (0.0,)
+    candidates = generate_candidates(
+        max_candidates=args.max_candidates or None,
+        cost_floor_mults=cost_floor_mults,
+        signal_strength_mins=signal_strength_mins,
+    )
     if args.max_candidates:
-        _log_progress(progress, f"debug max-candidates active candidates={len(candidates)} strict_full_candidates=72")
+        strict_full_candidates = 72 * len(cost_floor_mults) * len(signal_strength_mins)
+        _log_progress(progress, f"debug max-candidates active candidates={len(candidates)} strict_full_candidates={strict_full_candidates}")
     report = run_walk_forward(
         prepared,
         candidates=candidates,

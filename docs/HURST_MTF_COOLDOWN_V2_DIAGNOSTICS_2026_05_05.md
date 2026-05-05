@@ -1,13 +1,13 @@
-# Hurst MTF Trade Diagnostics - 2026-05-05
+# Hurst MTF Cooldown V2 Diagnostics - 2026-05-05
 
 Status: diagnostic-only. This does not enable paper, testnet, or live execution.
 
 ## Primary Findings
 
 - Hard-stop losses are the main structural leak.
-- Trailing-stop winners are strong enough to preserve; the issue is repeated failed entries and whipsaw, not absence of winners.
-- Immediate reentries after losing hard_stop/time_stop/regime_exit are negative and should be tested as a cooldown variant.
-- Baseline is also negative, so the result is not only caused by severe cost stress.
+- Trailing-stop winners are strong enough to preserve; the issue is failed-entry control, not absence of winners.
+- Losing-exit reentry is no longer the dominant leak after cooldown.
+- Baseline is positive but severe cost stress is negative, so the remaining issue is cost/turnover fragility.
 - Live market validation remains mandatory, but only after paper/shadow and micro-live gates are explicit.
 
 ## Key Numbers

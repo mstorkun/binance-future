@@ -5,7 +5,7 @@ Status: diagnostic-only. This does not enable paper, testnet, or live execution.
 ## Primary Findings
 
 - Hard-stop losses are the main structural leak.
-- Trailing-stop winners are strong enough to preserve; the issue is repeated failed entries and whipsaw, not absence of winners.
+- Trailing-stop winners are strong enough to preserve; the issue is failed-entry control, not absence of winners.
 - Immediate reentries after losing hard_stop/time_stop/regime_exit are negative and should be tested as a cooldown variant.
 - Baseline is also negative, so the result is not only caused by severe cost stress.
 - Live market validation remains mandatory, but only after paper/shadow and micro-live gates are explicit.

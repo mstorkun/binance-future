@@ -110,6 +110,30 @@ class HurstMtfTradeDiagnosticsTests(unittest.TestCase):
         self.assertEqual(report["next_candidate"]["name"], "HURST_MTF_COST_ROBUST_V3")
         self.assertEqual(report["key_numbers"]["selected_next_candidate"], "HURST_MTF_COST_ROBUST_V3")
 
+    def test_build_diagnostics_leaves_family_when_limit_reached(self):
+        trades = pd.DataFrame(
+            {
+                "period": [1],
+                "symbol": ["BTC"],
+                "entry_time": ["2026-01-01T00:00:00Z"],
+                "exit_time": ["2026-01-01T04:00:00Z"],
+                "side": ["long"],
+                "exit_reason": ["hard_stop"],
+                "pnl": [-8.0],
+                "bars_held": [1],
+                "reached_1r": [False],
+            }
+        )
+        results = pd.DataFrame(
+            {
+                "scenario": ["baseline", "severe"],
+                "total_return_pct": [25.0, -40.0],
+            }
+        )
+        report = diagnostics.build_diagnostics(trades, results, family_limit_reached=True)
+        self.assertEqual(report["next_candidate"]["name"], "LEAVE_HURST_MTF_FAMILY")
+        self.assertEqual(report["key_numbers"]["selected_next_candidate"], "LEAVE_HURST_MTF_FAMILY")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -670,6 +670,19 @@ Other previous validation context:
   crisis gates. Baseline V2 was `+20.5578%` while severe was `-70.5401%`, so
   next brief is `docs/HURST_MTF_COST_ROBUST_V3_BRIEF_2026_05_05.md`: keep
   cooldown and test cost-cushion/turnover reduction. No paper/live promotion.
+- 2026-05-05 Hurst-MTF cost-robust V3 result: added explicit V3 candidate grid
+  to `hurst_mtf_momentum_report.py` (`--cost-robust-v3`, cost floor
+  multipliers `2/3/4`, signal strength mins `0.45/0.55/0.65`) and full strict
+  rerun with `648` candidates, `loss_cooldown_bars=6`, fixed 8-perp universe,
+  12 folds. Result stayed `benchmark_only`: severe total return `-45.0242%`,
+  CAGR `-30.5146%`, max DD `86.2011%`, positive folds `5/12`, PBO `0.3333`,
+  DSR proxy `-2.9569`, Sortino `-0.0050`, sample `246`, crisis `2024-08-05`
+  positive (`8511.3580`) but `2025-10-10` negative (`-104.1218`). Diagnostic:
+  baseline compound `+26.9181%`, severe `-45.0242%`, hard stops `-17641.6079`,
+  trailing stops `+22887.4962`, selected next candidate
+  `LEAVE_HURST_MTF_FAMILY`. Do not add more Hurst-MTF filters; switch to a
+  different alpha family unless a future independent candidate passes strict
+  gates. No paper/live promotion.
 
 ## Runtime / Worktree Notes
 
