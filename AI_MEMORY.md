@@ -648,6 +648,15 @@ Other previous validation context:
   `-95.3959%`, CAGR `-84.6355%`, max DD `98.7345%`, Sortino `-1.5344`,
   2/12 positive folds, DSR proxy `-4.8542`, sample `454` trades. Do not advance
   to Phase B; hand to Claude review if requested.
+- 2026-05-05 Hurst-MTF false-negative audit: added
+  `hurst_mtf_false_negative_audit.py` and
+  `docs/HURST_MTF_FALSE_NEGATIVE_AUDIT_2026_05_05.md`. The external review
+  had factual errors: 2024-08-05 crisis alpha was positive, the implied start
+  balance was about `5000` not `1000`, and fold 12 was positive despite the
+  "folds 6-12 all negative" wording. Artifact recomputation still matched the
+  JSON/CSV outputs, baseline compound return was also negative (`-73.7979%`),
+  severe compound return remained `-95.3959%`, and status stays
+  `benchmark_only`; continue alpha research without promoting Phase B.
 
 ## Runtime / Worktree Notes
 

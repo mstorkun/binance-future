@@ -63,6 +63,7 @@ hurst_mtf_momentum_report.json
 hurst_mtf_momentum_results.csv
 hurst_mtf_momentum_pbo_matrix.csv
 hurst_mtf_momentum_trades.csv
+hurst_mtf_false_negative_audit.json
 timeframe_sweep_results.csv
 timeframe_walk_forward_results.csv
 timeframe_sweep_scaled_results.csv
