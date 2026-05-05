@@ -719,6 +719,13 @@ Other previous validation context:
   and sample fell to `107` trades. Diagnostics show the better folds are more
   BTC-bearish / BTC-4h-short-leaning, but the evidence is still not enough for
   paper, testnet, or live behavior.
+- 2026-05-05 shutdown/restart anchor: created `PROJECT_HANDOFF.md` so a fresh
+  VS Code/Codex session can resume without chat history. Read that file first,
+  then this `AI_MEMORY.md`, then verify with `git status --short`,
+  `git log -3 --oneline`, `python go_live_preflight.py`, and the focused
+  volatility/HTF/Hurst/safety pytest set. The user explicitly asked to commit
+  and push everything before closing, so the remaining tracked
+  `walk_forward_results.csv` artifact is allowed to be saved with the handoff.
 
 ## Runtime / Worktree Notes
 
