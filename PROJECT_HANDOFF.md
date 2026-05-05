@@ -14,6 +14,10 @@ preflight commands below.
 
 ## Latest Strategy Work
 
+- Gemini added `docs/FUNDING_RATE_CARRY_POC.md` as a research-only
+  delta-neutral funding-rate carry architecture note. It is not an executor
+  approval and must not affect paper/testnet/live behavior until validated by
+  data, backtest/walk-forward, cost stress, and explicit user approval.
 - HTF support/resistance reversion was added as research-only and failed strict
   promotion: severe total return `-2.0765%`, CAGR `-1.2687%`, max DD
   `11.4489%`, `5/12` positive folds, sample `31`.

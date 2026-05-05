@@ -20,6 +20,10 @@ strategy, risk, backtest, paper, testnet, or live-trading changes.
   delta-neutral research has scanner and predictive-PoC coverage now, but no
   executor-ready edge has passed strict OOS gates. Cross-exchange basis has
   also been checked as a PoC and remains non-executor-ready.
+- Gemini added `docs/FUNDING_RATE_CARRY_POC.md` as a research-only architecture
+  note on 2026-05-05. Keep it report-only; do not wire spot/futures transfer,
+  delta-neutral execution, rebalancing, paper, testnet, or live behavior from
+  that note without side-by-side evidence and explicit approval.
 
 ## Current Strategy
 
