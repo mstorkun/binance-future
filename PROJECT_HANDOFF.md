@@ -9,9 +9,8 @@ preflight commands below.
 - Repo: `C:\Users\mustafa devecioglu\Documents\GitHub\binance-bot`
 - Remote: `https://github.com/mstorkun/binance-future.git`
 - Branch: `main`
-- Latest pushed research commit before this handoff: `8ee71a9 Add volatility breakout regime V2`
-- This handoff commit should save the remaining tracked walk-forward artifact
-  plus this restart note.
+- Latest pushed research commit before this handoff: `ff9d00a Save restart handoff state`
+- Current unpushed work after resume: market rotation context diagnostic.
 
 ## Latest Strategy Work
 
@@ -26,6 +25,16 @@ preflight commands below.
   loss profile but still failed strict promotion: severe total return
   `-28.2179%`, CAGR `-18.2658%`, max DD `35.0186%`, PBO `0.5`, DSR proxy
   `-5.0906`, Sortino `-0.3894`, `4/12` positive folds, sample `107`.
+- Market rotation context diagnostic was added as report-only:
+  `market_rotation_report.py` and
+  `docs/MARKET_ROTATION_CONTEXT_2026_05_05.md`. It annotates existing
+  `portfolio_trades.csv` entries with prior closed 4h BTC/ETH leadership
+  context. Overall stays the same `264` trades / `83.3333%` win rate /
+  `10271.77` PnL. Useful signal: `with_rotation` has `159` trades and
+  `6756.27` PnL / PF `21.3827`, while `against_rotation` has only `11` trades
+  and `-235.06` PnL / PF `0.5522`. This is diagnostic evidence only; the next
+  valid step is an entry-time walk-forward rotation overlay, not paper/live
+  activation.
 
 ## Important Safety State
 

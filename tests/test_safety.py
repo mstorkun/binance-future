@@ -34,6 +34,7 @@ import go_live_preflight
 import liquidation_hunting_report
 import live_state
 import macro_event_policy
+import market_rotation_report
 import multi_timeframe_candle
 import news_direction_policy
 import order_manager
@@ -2712,6 +2713,54 @@ class SafetyTests(unittest.TestCase):
         self.assertEqual(bucket_rows["high"]["pnl"], 10.0)
         self.assertEqual(bucket_rows["low"]["trades"], 1)
         self.assertEqual(bucket_rows["low"]["pnl"], -5.0)
+
+    def test_market_rotation_report_uses_prior_closed_context(self):
+        idx = pd.date_range("2026-01-01", periods=30, freq="4h", tz="UTC")
+        btc = pd.DataFrame(
+            {
+                "open": range(100, 130),
+                "high": range(101, 131),
+                "low": range(99, 129),
+                "close": [100.0 + i for i in range(30)],
+                "volume": [1000.0] * 30,
+            },
+            index=idx,
+        )
+        eth = pd.DataFrame(
+            {
+                "open": range(100, 160, 2),
+                "high": range(101, 161, 2),
+                "low": range(99, 159, 2),
+                "close": [100.0 + i * 2.0 for i in range(30)],
+                "volume": [1000.0] * 30,
+            },
+            index=idx,
+        )
+        rotation = market_rotation_report.build_rotation_frame(btc, eth, lookback_bars=6)
+        trades = pd.DataFrame(
+            [
+                {
+                    "symbol": "DOGE/USDT",
+                    "entry_time": idx[10],
+                    "side": "long",
+                    "pnl": 10.0,
+                    "pnl_return_pct": 1.0,
+                },
+                {
+                    "symbol": "DOGE/USDT",
+                    "entry_time": idx[11],
+                    "side": "short",
+                    "pnl": -5.0,
+                    "pnl_return_pct": -0.5,
+                },
+            ]
+        )
+        annotated = market_rotation_report.annotate_trades(trades, rotation)
+        self.assertEqual(annotated.iloc[0]["rotation_regime"], "eth_alt_leads_up")
+        self.assertEqual(annotated.iloc[0]["rotation_alignment"], "with_rotation")
+        report = market_rotation_report.build_report(trades, rotation)
+        self.assertEqual(report["status"], "diagnostic_only")
+        self.assertEqual(report["overall"]["trades"], 2)
 
     def test_candle_structure_features_detect_bullish_impulse(self):
         idx = pd.date_range("2026-01-01", periods=80, freq="4h")

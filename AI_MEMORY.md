@@ -719,6 +719,17 @@ Other previous validation context:
   and sample fell to `107` trades. Diagnostics show the better folds are more
   BTC-bearish / BTC-4h-short-leaning, but the evidence is still not enough for
   paper, testnet, or live behavior.
+- 2026-05-05 market rotation context diagnostic: added report-only
+  `market_rotation_report.py`, `market_rotation_report.json`, and
+  `docs/MARKET_ROTATION_CONTEXT_2026_05_05.md`. It annotates existing
+  `portfolio_trades.csv` with prior closed 4h BTC/ETH leadership context, so
+  there is no lookahead and no behavior change. Overall active trade set remains
+  `264` trades, `83.3333%` win rate, `10271.77` PnL, PF `10.1688`. Buckets:
+  `with_rotation` `159` trades / `6756.27` PnL / PF `21.3827`,
+  `neutral_rotation` `94` trades / `3750.56` PnL / PF `15.211`, and
+  `against_rotation` `11` trades / `-235.06` PnL / PF `0.5522`. This supports
+  testing a true entry-time rotation overlay next, but it is not activation
+  evidence by itself.
 - 2026-05-05 shutdown/restart anchor: created `PROJECT_HANDOFF.md` so a fresh
   VS Code/Codex session can resume without chat history. Read that file first,
   then this `AI_MEMORY.md`, then verify with `git status --short`,
